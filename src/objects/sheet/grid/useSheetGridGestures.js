@@ -2,7 +2,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { cellAddress } from "../../../sheet/coordinates.js";
 import { fillChanges, fillRange } from "../../../sheet/ranges.js";
 import { rangeLabel } from "../../../sheet/ranges.js";
-import { naturalColumnWidth, naturalRowHeight } from "../../../sheet/textMeasure.js";
+import {
+  AUTO_FIT_COLUMN_MAX,
+  AUTO_FIT_ROW_MAX,
+  columnFitWidth,
+  measureColumnWidths,
+  measureRowHeights,
+  rowFitHeight,
+} from "../../../sheet/textMeasure.js";
 import {
   CELL_EDIT_SEED_EVENT,
   dispatchCellEditCommitAny,
@@ -87,10 +94,11 @@ export function useSheetGridGestures({
   normalizedSelection,
   scrollRef,
   metrics,
-  rowIndexMap,
-  columnIndexMap,
-  formulaValues,
-  columnPositionForIndex,
+    rowIndexMap,
+    columnIndexMap,
+    formulaValues,
+    displayForCell,
+    columnPositionForIndex,
   columnOffsetForPosition,
   columnSizeForPosition,
   columnSizeForIndex,
@@ -738,16 +746,19 @@ export function useSheetGridGestures({
   const autoFitAxisSize = useCallback((axis, index) => {
     const targets = axisResizeTargets(axis, index);
     const minimum = axis === "column" ? 56 : 24;
-    const maximum = axis === "column" ? 8000 : 8000;
+    const maximum = axis === "column" ? AUTO_FIT_COLUMN_MAX : AUTO_FIT_ROW_MAX;
+    // Measure every affected column/row in one sweep over the cells map so a
+    // whole-sheet fit stays O(cells) instead of O(columns x cells). The display
+    // provider makes embedded objects and links measure what they render.
+    const widths = axis === "column" ? measureColumnWidths(object, formulaValues, displayForCell) : null;
+    const heights = axis === "row" ? measureRowHeights(object, columnSizeForIndex) : null;
     const nextSizes = { ...(axis === "column" ? object.columnWidths : object.rowHeights) };
     targets.forEach((target) => {
-      const fit = axis === "column"
-        ? naturalColumnWidth(object, target, formulaValues)
-        : naturalRowHeight(object, target);
+      const fit = axis === "column" ? columnFitWidth(widths, target) : rowFitHeight(heights, target);
       nextSizes[target] = Math.max(minimum, Math.min(maximum, fit));
     });
     onUpdateObject?.(axis === "column" ? { columnWidths: nextSizes } : { rowHeights: nextSizes });
-  }, [axisResizeTargets, formulaValues, object.columnWidths, object.rowHeights, onUpdateObject]);
+  }, [axisResizeTargets, columnSizeForIndex, displayForCell, formulaValues, object.columnWidths, object.rowHeights, onUpdateObject]);
 
   const startAxisDrag = useCallback((event, axis, index) => {
     if (event.button !== 0 || event.target.closest(".column-resize-handle, .row-resize-handle, .column-group-toggle, .row-group-toggle")) return;

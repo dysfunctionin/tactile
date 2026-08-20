@@ -4,6 +4,7 @@ import { SheetGridContextMenu } from "./grid/SheetGridContextMenu.jsx";
 import { useSheetGridContextMenu } from "./grid/useSheetGridContextMenu.js";
 import { useSheetGridGestures } from "./grid/useSheetGridGestures.js";
 import { useSheetGridProjection } from "./grid/useSheetGridProjection.js";
+import { cellDisplayText } from "./cellDisplay.js";
 import { cellIdsInRange } from "../../sheet/ranges.js";
 import {
   isObjectDragEvent,
@@ -86,6 +87,10 @@ export function SheetGrid({
     sheetMetrics,
     resizePreview,
   });
+  const displayForCell = useCallback(
+    (cell, row, column) => cellDisplayText(cell, { row, column }, projection.formulaValues, object, workspaceObjects),
+    [object, projection.formulaValues, workspaceObjects],
+  );
   const gestures = useSheetGridGestures({
     object,
     selectedAddress: projection.selectedAddress,
@@ -98,6 +103,7 @@ export function SheetGrid({
     rowIndexMap: projection.rowIndexMap,
     columnIndexMap: projection.columnIndexMap,
     formulaValues: projection.formulaValues,
+    displayForCell,
     columnPositionForIndex: projection.columnPositionForIndex,
     columnOffsetForPosition: projection.columnOffsetForPosition,
     columnSizeForPosition: projection.columnSizeForPosition,
