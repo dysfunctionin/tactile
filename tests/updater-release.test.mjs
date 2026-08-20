@@ -34,7 +34,7 @@ test("generates updater manifests with immutable tag-specific artifact URLs", as
       "--tag",
       "v1.2.0-rc.2",
       "--repo",
-      "aryanxxvii/tactile",
+      "dysfunctionin/tactile",
       "--output",
       output,
     ]);
@@ -68,7 +68,7 @@ test("updater manifest URLs use GitHub-sanitized asset names", async () => {
       "--tag",
       "v1.2.0-alpha.3",
       "--repo",
-      "aryanxxvii/tactile",
+      "dysfunctionin/tactile",
       "--output",
       output,
     ]);
@@ -76,11 +76,11 @@ test("updater manifest URLs use GitHub-sanitized asset names", async () => {
     const manifest = JSON.parse(await readFile(output, "utf8"));
     assert.equal(
       manifest.platforms["windows-x86_64"].url,
-      "https://github.com/aryanxxvii/tactile/releases/download/v1.2.0-alpha.3/tactile-windows-x64-alpha-Tactile.Alpha_1.2.0-10003_x64_en-US.msi",
+      "https://github.com/dysfunctionin/tactile/releases/download/v1.2.0-alpha.3/tactile-windows-x64-alpha-Tactile.Alpha_1.2.0-10003_x64_en-US.msi",
     );
     assert.equal(
       manifest.platforms["darwin-aarch64"].url,
-      "https://github.com/aryanxxvii/tactile/releases/download/v1.2.0-alpha.3/tactile-macos-universal-alpha-ad-hoc-Tactile.Alpha.app.tar.gz",
+      "https://github.com/dysfunctionin/tactile/releases/download/v1.2.0-alpha.3/tactile-macos-universal-alpha-ad-hoc-Tactile.Alpha.app.tar.gz",
     );
     for (const platform of Object.values(manifest.platforms)) {
       assert.doesNotMatch(platform.url, / /);

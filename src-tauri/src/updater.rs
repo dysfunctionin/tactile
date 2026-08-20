@@ -7,9 +7,9 @@ use tauri_plugin_updater::{Updater, UpdaterExt};
 
 const UPDATE_CHANNEL_FILE: &str = "update-channel.txt";
 const STABLE_ENDPOINT: &str =
-    "https://github.com/aryanxxvii/tactile/releases/latest/download/latest.json";
+    "https://github.com/dysfunctionin/tactile/releases/latest/download/latest.json";
 const NIGHTLY_ENDPOINT: &str =
-    "https://github.com/aryanxxvii/tactile/releases/download/nightly/latest.json";
+    "https://github.com/dysfunctionin/tactile/releases/download/nightly/latest.json";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "lowercase")]

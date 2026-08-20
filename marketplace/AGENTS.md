@@ -26,7 +26,7 @@ These instructions apply to every file under `marketplace/`.
 
 `npm run dev` is the local plugin preview path. It builds `marketplace/dist` before Vite starts, serves that directory at `/marketplace/` with `no-store`, watches `marketplace/plugins/` and `marketplace/sdk/`, rebuilds on source changes, and reloads after a successful build. Development activation prefers the current local artifact over an installed IndexedDB bundle without overwriting the persistent production cache.
 
-Production does not embed `marketplace/dist` in the client. It defaults to the verified catalog at `https://raw.githubusercontent.com/aryanxxvii/tactile/main/marketplace/dist/catalog.json`; relative artifact URLs remain on that allowlisted origin.
+Production does not embed `marketplace/dist` in the client. It defaults to the verified catalog at `https://raw.githubusercontent.com/dysfunctionin/tactile/main/marketplace/dist/catalog.json`; relative artifact URLs remain on that allowlisted origin.
 
 1. Change only the target package where possible.
 2. Bump its semantic `version` in `manifest.json` for every published behavior or artifact change. The Marketplace displays Update only when the catalog version is newer than the locally installed version.

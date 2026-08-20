@@ -33,7 +33,7 @@
   "plugins": {
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEY4REI1MTkwMjlBMkY4RTYKUldUbStLSXBrRkhiK0NPcGRGcnVjRlNlaU9RTFZRTld3NEZXeDgzSlR2ZytNTnIzL0pJRnM3K0QK",
-      "endpoints": ["https://github.com/aryanxxvii/tactile/releases/latest/download/latest.json"]
+      "endpoints": ["https://github.com/dysfunctionin/tactile/releases/latest/download/latest.json"]
     }
   },
   "bundle": {

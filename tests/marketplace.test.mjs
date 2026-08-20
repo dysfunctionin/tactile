@@ -55,7 +55,7 @@ test("development uses local marketplace artifacts while production defaults to 
 });
 
 test("alpha and RC builds use the alpha marketplace catalog while stable uses main", () => {
-  const alphaUrl = "https://raw.githubusercontent.com/aryanxxvii/tactile/alpha/marketplace/dist/catalog.json";
+  const alphaUrl = "https://raw.githubusercontent.com/dysfunctionin/tactile/alpha/marketplace/dist/catalog.json";
   assert.equal(hostedMarketplaceCatalogUrl("alpha"), alphaUrl);
   assert.equal(hostedMarketplaceCatalogUrl("rc"), alphaUrl);
   assert.equal(hostedMarketplaceCatalogUrl("release"), HOSTED_MARKETPLACE_CATALOG_URL);

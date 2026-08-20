@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-	<a href="https://github.com/aryanxxvii/tactile/releases">Downloads</a> ·
+	<a href="https://github.com/dysfunctionin/tactile/releases">Downloads</a> ·
 	<a href="CONTRIBUTING.md">Contributing</a> ·
 	<a href="SECURITY.md">Security</a> ·
 	<a href="LICENSE">MIT License</a>
@@ -37,7 +37,7 @@ Tactile stores source rather than rendered output. Text remains Markdown, sheets
 
 ## Get Tactile
 
-Signed-where-configured installers and checksums for Windows, macOS, and Linux are published on the [GitHub Releases](https://github.com/aryanxxvii/tactile/releases) page.
+Signed-where-configured installers and checksums for Windows, macOS, and Linux are published on the [GitHub Releases](https://github.com/dysfunctionin/tactile/releases) page.
 
 - Stable versions use standard `vX.Y.Z` releases.
 - Development previews use clearly marked `vX.Y.Z-alpha.N` or `vX.Y.Z-rc.N` prereleases and blue branding.
@@ -54,7 +54,7 @@ Signed-where-configured installers and checksums for Windows, macOS, and Linux a
 ### Clone and run the web app
 
 ```bash
-git clone https://github.com/aryanxxvii/tactile.git
+git clone https://github.com/dysfunctionin/tactile.git
 cd tactile
 npm ci
 npm run dev

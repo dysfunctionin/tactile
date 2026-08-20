@@ -7,11 +7,11 @@ const DATABASE_VERSION = 1;
 const STORE_NAME = "plugins";
 const CATALOG_STORAGE_KEY = "tactile.marketplace.catalogUrl";
 export const LOCAL_MARKETPLACE_CATALOG_URL = "/marketplace/catalog.json";
-export const HOSTED_MARKETPLACE_CATALOG_URL = "https://raw.githubusercontent.com/aryanxxvii/tactile/main/marketplace/dist/catalog.json";
+export const HOSTED_MARKETPLACE_CATALOG_URL = "https://raw.githubusercontent.com/dysfunctionin/tactile/main/marketplace/dist/catalog.json";
 
 export function hostedMarketplaceCatalogUrl(channel = TACTILE_CHANNEL) {
   if (channel === "alpha" || channel === "rc") {
-    return "https://raw.githubusercontent.com/aryanxxvii/tactile/alpha/marketplace/dist/catalog.json";
+    return "https://raw.githubusercontent.com/dysfunctionin/tactile/alpha/marketplace/dist/catalog.json";
   }
   return HOSTED_MARKETPLACE_CATALOG_URL;
 }
