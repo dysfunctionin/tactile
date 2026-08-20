@@ -533,7 +533,7 @@ export function App() {
   const floatingLayerActive = topLayer?.phase === "floating";
   // The worksheet and ancestor layers become inert under a floating child,
   // but the global dock remains available for direct breadcrumb navigation.
-  const dockBlocked = shell.settingsOpen;
+  const dockBlocked = false;
   const parentLayerSuspended = visibleLayers.length > 1;
   const parentContextVisible = parentLayerSuspended && topLayer?.phase !== "full";
   const filesSidebarWidth = shell.filesPinned && shell.filesOpen && viewport.width > 620

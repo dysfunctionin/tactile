@@ -77,7 +77,7 @@ export function useShellState({ schedule, settings, onUpdateSettings, workspaceH
 
   const openSettings = useCallback((sourceElement) => {
     settingsReturnFocusRef.current = sourceElement || document.activeElement;
-    setFilesOpen(false);
+    // setFilesOpen(false);
     setSettingsOpen(true);
   }, []);
 
