@@ -32,7 +32,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEY4REI1MTkwMjlBMkY4RTYKUldUbStLSXBrRkhiK0NPcGRGcnVjRlNlaU9RTFZRTld3NEZXeDgzSlR2ZytNTnIzL0pJRnM3K0QK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDE2RTgxRjFDMUJFQTNFNjYKUldSbVB1b2JIQi9vRms2NVVIUS9vWVFPNDBsUzc1dmh1aGV6S3o1QldsMDExVGRpUStWYXNYT2wK",
       "endpoints": ["https://github.com/dysfunctionin/tactile/releases/latest/download/latest.json"]
     }
   },
