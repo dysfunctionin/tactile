@@ -148,24 +148,6 @@
     },
     {
       "schemaVersion": 1,
-      "packageId": "tactile.sites",
-      "type": "sites",
-      "name": "Sites",
-      "description": "A web site embedded in the Tactile window as a real browser view.",
-      "version": "1.0.0",
-      "tactile": ">=1.1.0",
-      "permissions": [
-        "native.embedded-webview"
-      ],
-      "entry": "plugin.jsx",
-      "status": "available",
-      "artifact": "plugins/tactile.sites/1.0.0/plugin.js",
-      "sha256": "55c40681516189c09f07c7b8d762d00a28b48ddc25cc6e5e1d0d9e5c3814017a",
-      "size": 10957,
-      "assets": []
-    },
-    {
-      "schemaVersion": 1,
       "packageId": "tactile.svg",
       "type": "svg",
       "name": "SVG",
