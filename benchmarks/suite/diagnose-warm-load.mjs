@@ -63,56 +63,59 @@ async function storageReport(page) {
     } catch {
       bootMetadata = "unparseable";
     }
-    const readMeta = () => new Promise((resolve) => {
-      const request = indexedDB.open("tactile-local-workspace-records");
-      request.onerror = () => resolve("open failed");
-      request.onsuccess = () => {
-        const database = request.result;
-        const wanted = ["workspaceMeta", "cells", "objects"].filter((name) => database.objectStoreNames.contains(name));
-        if (!wanted.length) {
-          database.close();
-          resolve({});
-          return;
-        }
-        const transaction = database.transaction(wanted, "readonly");
-        const results = {};
-        let remaining = wanted.length;
-        wanted.forEach((storeName) => {
-          const all = transaction.objectStore(storeName).getAll();
-          all.onsuccess = () => {
-            results[storeName] = all.result;
-            remaining -= 1;
-            if (!remaining) {
-              database.close();
-              const byWorkspace = {};
-              for (const kind of ["cells", "objects"]) {
-                for (const record of results[kind] || []) {
-                  const id = String(record.workspaceId);
-                  byWorkspace[id] ||= { cells: 0, objects: 0 };
-                  byWorkspace[id][kind] += 1;
+    const readMeta = () =>
+      new Promise((resolve) => {
+        const request = indexedDB.open("tactile-local-workspace-records");
+        request.onerror = () => resolve("open failed");
+        request.onsuccess = () => {
+          const database = request.result;
+          const wanted = ["workspaceMeta", "cells", "objects"].filter((name) =>
+            database.objectStoreNames.contains(name),
+          );
+          if (!wanted.length) {
+            database.close();
+            resolve({});
+            return;
+          }
+          const transaction = database.transaction(wanted, "readonly");
+          const results = {};
+          let remaining = wanted.length;
+          wanted.forEach((storeName) => {
+            const all = transaction.objectStore(storeName).getAll();
+            all.onsuccess = () => {
+              results[storeName] = all.result;
+              remaining -= 1;
+              if (!remaining) {
+                database.close();
+                const byWorkspace = {};
+                for (const kind of ["cells", "objects"]) {
+                  for (const record of results[kind] || []) {
+                    const id = String(record.workspaceId);
+                    byWorkspace[id] ||= { cells: 0, objects: 0 };
+                    byWorkspace[id][kind] += 1;
+                  }
                 }
+                resolve({
+                  meta: (results.workspaceMeta || []).map((record) => ({
+                    workspaceId: record.workspaceId,
+                    storageState: record.storageState,
+                    updatedAt: record.updatedAt,
+                  })),
+                  recordsByWorkspace: byWorkspace,
+                });
               }
-              resolve({
-                meta: (results.workspaceMeta || []).map((record) => ({
-                  workspaceId: record.workspaceId,
-                  storageState: record.storageState,
-                  updatedAt: record.updatedAt,
-                })),
-                recordsByWorkspace: byWorkspace,
-              });
-            }
-          };
-          all.onerror = () => {
-            results[storeName] = [];
-            remaining -= 1;
-            if (!remaining) {
-              database.close();
-              resolve("read failed");
-            }
-          };
-        });
-      };
-    });
+            };
+            all.onerror = () => {
+              results[storeName] = [];
+              remaining -= 1;
+              if (!remaining) {
+                database.close();
+                resolve("read failed");
+              }
+            };
+          });
+        };
+      });
     const databases = (await indexedDB.databases?.()) || [];
     const stores = {};
     for (const { name } of databases) {
@@ -184,9 +187,18 @@ try {
   }
   console.log(`restored: ${restored} after ${Date.now() - started}ms`);
   console.log("after reload:", JSON.stringify(await storageReport(page), null, 1));
-  console.log("visible objects:", JSON.stringify(await page.evaluate(() => [...new Set(
-    [...document.querySelectorAll("[data-object-id]")].map((node) => node.getAttribute("data-object-id")),
-  )].slice(0, 6))));
+  console.log(
+    "visible objects:",
+    JSON.stringify(
+      await page.evaluate(() =>
+        [
+          ...new Set(
+            [...document.querySelectorAll("[data-object-id]")].map((node) => node.getAttribute("data-object-id")),
+          ),
+        ].slice(0, 6),
+      ),
+    ),
+  );
 } finally {
   await browser.close();
   server.child.kill();

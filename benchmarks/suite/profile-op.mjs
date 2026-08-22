@@ -89,7 +89,10 @@ function aggregate(profile) {
   const describe = (id) => {
     const frame = nodesById.get(id)?.callFrame;
     if (!frame) return "(unknown)";
-    const file = String(frame.url || "").split("/").slice(-1)[0] || "(native)";
+    const file =
+      String(frame.url || "")
+        .split("/")
+        .slice(-1)[0] || "(native)";
     return `${frame.functionName || "(anonymous)"} @ ${file}:${frame.lineNumber + 1}`;
   };
   const ancestry = (id, depth = 6) => {
@@ -142,13 +145,15 @@ try {
 
   const rows = aggregate(profile);
   const total = rows.reduce((sum, row) => sum + row.ms, 0);
-  const storage = await page.evaluate(() => {
-    const report = {};
-    for (const key of Object.keys(window.localStorage)) {
-      report[key] = window.localStorage.getItem(key)?.length ?? 0;
-    }
-    return report;
-  }).catch(() => ({}));
+  const storage = await page
+    .evaluate(() => {
+      const report = {};
+      for (const key of Object.keys(window.localStorage)) {
+        report[key] = window.localStorage.getItem(key)?.length ?? 0;
+      }
+      return report;
+    })
+    .catch(() => ({}));
   console.log(`\n${args.scenario}: ${elapsed}ms wall, ${Math.round(total)}ms sampled`);
   console.log(`localStorage: ${JSON.stringify(storage)}\n`);
   console.log("  self ms   share  function");

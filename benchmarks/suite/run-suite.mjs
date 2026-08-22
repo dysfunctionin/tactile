@@ -7,12 +7,7 @@ import { fileURLToPath } from "node:url";
 
 import { freeMemMB, machineSnapshot, prepareEnvironment, sampleProcessTree } from "./env-guard.mjs";
 import { powershell } from "./powershell.mjs";
-import {
-  ensureNativeBinary,
-  killNativeApp,
-  launchNativeApp,
-  sampleNativeProcesses,
-} from "./native.mjs";
+import { ensureNativeBinary, killNativeApp, launchNativeApp, sampleNativeProcesses } from "./native.mjs";
 import { writeProfileFixture } from "./profiles.mjs";
 import {
   addColumnsAction,
@@ -53,7 +48,11 @@ function parseArgs(argv) {
   };
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
-    if (argument === "--profiles") args.profiles = argv[++index].split(",").map((p) => p.trim()).filter(Boolean);
+    if (argument === "--profiles")
+      args.profiles = argv[++index]
+        .split(",")
+        .map((p) => p.trim())
+        .filter(Boolean);
     else if (argument === "--repeats") args.repeats = Math.max(1, Number(argv[++index]));
     else if (argument === "--server") args.server = argv[++index];
     else if (argument === "--port") args.port = Number(argv[++index]);
@@ -62,7 +61,11 @@ function parseArgs(argv) {
     else if (argument === "--build") args.build = true;
     else if (argument === "--headed") args.headless = false;
     else if (argument === "--target") args.target = argv[++index];
-    else if (argument === "--scenarios") args.scenarios = argv[++index].split(",").map((name) => name.trim()).filter(Boolean);
+    else if (argument === "--scenarios")
+      args.scenarios = argv[++index]
+        .split(",")
+        .map((name) => name.trim())
+        .filter(Boolean);
     else if (argument === "--cdp-port") args.cdpPort = Number(argv[++index]);
     else if (argument === "--help") args.help = true;
   }
@@ -93,12 +96,14 @@ async function startServer(args, log) {
   let mode = args.server;
   // `--build` implies preview: a dev server serves unbundled modules, which is
   // far too slow to import the high fixture and makes the numbers meaningless.
-  if (mode === "auto") mode = (args.build || (await exists(distIndex))) ? "preview" : "dev";
+  if (mode === "auto") mode = args.build || (await exists(distIndex)) ? "preview" : "dev";
 
   if (mode === "preview" && (!(await exists(distIndex)) || args.build)) {
     log("suite: building production bundle (npm run build)…");
     const build = spawn("npm.cmd", ["run", "build"], { cwd: ROOT, stdio: "inherit", shell: true });
-    await new Promise((resolve, reject) => build.on("exit", (code) => (code === 0 ? resolve() : reject(new Error(`npm run build exited ${code}`)))));
+    await new Promise((resolve, reject) =>
+      build.on("exit", (code) => (code === 0 ? resolve() : reject(new Error(`npm run build exited ${code}`)))),
+    );
   }
 
   // Ensure target port is free (previous preview may still be holding it)
@@ -107,7 +112,9 @@ async function startServer(args, log) {
       `Get-NetTCPConnection -LocalPort ${args.port} -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }`,
     );
     await new Promise((r) => setTimeout(r, 800));
-  } catch {}
+  } catch {
+    // Nothing was holding the port.
+  }
 
   const command = mode === "preview" ? "npx.cmd" : "npm.cmd";
   const serverArgs =
@@ -218,13 +225,14 @@ async function measureScenario(page, sampleSystem, label, action, settleMs = 250
     appRssBeforeMB: sysBefore.proc?.rssMB ?? null,
     appRssAfterMB: sysAfter.proc?.rssMB ?? null,
     appCpuDeltaSec:
-      sysBefore.proc && sysAfter.proc
-        ? Math.round((sysAfter.proc.cpuSec - sysBefore.proc.cpuSec) * 100) / 100
-        : null,
+      sysBefore.proc && sysAfter.proc ? Math.round((sysAfter.proc.cpuSec - sysBefore.proc.cpuSec) * 100) / 100 : null,
   };
   if (extras && Array.isArray(extras.ops)) {
     summary.opDurationsMs = extras.ops.map((op) => op.ms);
-    summary.opMedianMs = percentile(extras.ops.map((op) => op.ms), 0.5);
+    summary.opMedianMs = percentile(
+      extras.ops.map((op) => op.ms),
+      0.5,
+    );
   }
   return summary;
 }
@@ -235,7 +243,14 @@ export function aggregateRepeats(repeats) {
   const metric = (path) =>
     pick((list) => {
       const values = list.map((r) => path.reduce((acc, key) => acc?.[key], r)).filter((v) => Number.isFinite(v));
-      return values.length ? { median: percentile(values, 0.5), p95: percentile(values, 0.95), min: Math.min(...values), max: Math.max(...values) } : null;
+      return values.length
+        ? {
+            median: percentile(values, 0.5),
+            p95: percentile(values, 0.95),
+            min: Math.min(...values),
+            max: Math.max(...values),
+          }
+        : null;
     });
   return {
     repeats: repeats.length,
@@ -249,16 +264,21 @@ export function aggregateRepeats(repeats) {
     stages: (() => {
       const names = [...new Set(repeats.flatMap((repeat) => Object.keys(repeat?.stages || {})))];
       if (!names.length) return null;
-      return Object.fromEntries(names.map((name) => {
-        const totals = repeats.map((repeat) => repeat?.stages?.[name]?.totalMs).filter(Number.isFinite);
-        const maxes = repeats.map((repeat) => repeat?.stages?.[name]?.maxMs).filter(Number.isFinite);
-        const counts = repeats.map((repeat) => repeat?.stages?.[name]?.count).filter(Number.isFinite);
-        return [name, {
-          calls: counts.length ? percentile(counts, 0.5) : null,
-          totalMs: totals.length ? percentile(totals, 0.5) : null,
-          maxMs: maxes.length ? Math.max(...maxes) : null,
-        }];
-      }));
+      return Object.fromEntries(
+        names.map((name) => {
+          const totals = repeats.map((repeat) => repeat?.stages?.[name]?.totalMs).filter(Number.isFinite);
+          const maxes = repeats.map((repeat) => repeat?.stages?.[name]?.maxMs).filter(Number.isFinite);
+          const counts = repeats.map((repeat) => repeat?.stages?.[name]?.count).filter(Number.isFinite);
+          return [
+            name,
+            {
+              calls: counts.length ? percentile(counts, 0.5) : null,
+              totalMs: totals.length ? percentile(totals, 0.5) : null,
+              maxMs: maxes.length ? Math.max(...maxes) : null,
+            },
+          ];
+        }),
+      );
     })(),
     reactCommits: metric(["react", "commitCount"]),
     domMutationBatches: metric(["domMutationBatches"]),
@@ -348,7 +368,9 @@ async function seedNativeFixture(page, fixture, profile) {
     try {
       localStorage.setItem("tactile.workspace.v3", workspaceJson);
       localStorage.removeItem("tactile.native.workspace.path");
-    } catch {}
+    } catch {
+      // Storage is unavailable; the reload below still exercises the boot path.
+    }
   }, json);
   try {
     await page.reload({ waitUntil: "domcontentloaded", timeout: 120_000 });
@@ -421,10 +443,7 @@ async function runProfilePass(playwright, options) {
 function summarizeProfile(passes, fingerprint, validation) {
   const scenarioNames = [...Object.keys(passes[0].scenarios)];
   const scenarios = Object.fromEntries(
-    scenarioNames.map((name) => [
-      name,
-      aggregateRepeats(passes.map((pass) => pass.scenarios[name])),
-    ]),
+    scenarioNames.map((name) => [name, aggregateRepeats(passes.map((pass) => pass.scenarios[name]))]),
   );
   const loadWarmRuns = passes.map((pass) => pass.loadWarm?.wallClockMs).filter(Number.isFinite);
   return {
@@ -460,10 +479,17 @@ async function main(argv = process.argv.slice(2)) {
 
   const fixtures = {};
   for (const profile of args.profiles) {
-    const outputDir = path.join(ROOT, "benchmarks", ".generated", profile === "high" ? "tactile-250k-suite" : "tactile-low-suite");
+    const outputDir = path.join(
+      ROOT,
+      "benchmarks",
+      ".generated",
+      profile === "high" ? "tactile-250k-suite" : "tactile-low-suite",
+    );
     log(`suite: generating ${profile}-stress fixture…`);
     fixtures[profile] = await writeProfileFixture(profile, outputDir);
-    log(`  ${profile}: fingerprint ${fixtures[profile].fingerprint.slice(0, 12)}… counts ${JSON.stringify(fixtures[profile].validation.counts ?? {})}`);
+    log(
+      `  ${profile}: fingerprint ${fixtures[profile].fingerprint.slice(0, 12)}… counts ${JSON.stringify(fixtures[profile].validation.counts ?? {})}`,
+    );
   }
 
   let server = null;
@@ -511,7 +537,8 @@ async function main(argv = process.argv.slice(2)) {
     git,
     machine: machineSnapshot(),
     envGuard,
-    server: args.target === "native" ? { mode: "native", cdpPort: args.cdpPort } : { mode: server.mode, port: args.port },
+    server:
+      args.target === "native" ? { mode: "native", cdpPort: args.cdpPort } : { mode: server.mode, port: args.port },
     target: args.target,
     repeats: args.repeats,
     profiles,

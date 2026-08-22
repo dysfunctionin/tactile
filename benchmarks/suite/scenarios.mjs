@@ -28,10 +28,15 @@ export async function ensureBase(page, profile) {
     await page.waitForTimeout(950);
   }
   // Reset scroll to origin so next scenario's anchors (B1/B3/C2/M9) are mounted.
-  await page.evaluate(() => {
-    const scroller = document.querySelector("[data-sheet-scroll]");
-    if (scroller) { scroller.scrollTop = 0; scroller.scrollLeft = 0; }
-  }).catch(() => {});
+  await page
+    .evaluate(() => {
+      const scroller = document.querySelector("[data-sheet-scroll]");
+      if (scroller) {
+        scroller.scrollTop = 0;
+        scroller.scrollLeft = 0;
+      }
+    })
+    .catch(() => {});
   await page.waitForTimeout(180);
   if (!profile) return;
   // A scenario anchored on a base-sheet cell measures nothing if the previous
@@ -45,38 +50,59 @@ export async function ensureBase(page, profile) {
 async function scrollCellIntoView(page, rootId, address) {
   // Virtual grid only mounts visible window. If target cell is not in DOM,
   // we must scroll the [data-sheet-scroll] so it becomes mounted.
-  await page.evaluate(({ addr }) => {
-    const scroller = document.querySelector("[data-sheet-scroll]");
-    if (!scroller) return;
-    // Parse address e.g. M9 → col 12, row 8 (0-indexed)
-    const m = /^([A-Z]+)(\d+)$/.exec(String(addr).toUpperCase());
-    if (!m) { scroller.scrollTop = 0; scroller.scrollLeft = 0; return; }
-    const letters = m[1];
-    let col = 0;
-    for (let i = 0; i < letters.length; i++) col = col * 26 + (letters.charCodeAt(i) - 64);
-    col -= 1;
-    const row = parseInt(m[2], 10) - 1;
-    // Match sheet metrics (rowHeight 31, columnWidth 126, headers 34/25)
-    const colWidth = 126, rowHeight = 31;
-    // Scroll just enough to bring target into view, with small margin.
-    const targetLeft = col * colWidth;
-    const targetTop = row * rowHeight;
-    // Keep existing scroll if already in view; otherwise jump.
-    const margin = 120;
-    if (scroller.scrollLeft > targetLeft + margin || scroller.scrollLeft + scroller.clientWidth < targetLeft + colWidth + margin) {
-      scroller.scrollLeft = Math.max(0, targetLeft - margin);
-    }
-    if (scroller.scrollTop > targetTop + margin || scroller.scrollTop + scroller.clientHeight < targetTop + rowHeight + margin) {
-      scroller.scrollTop = Math.max(0, targetTop - margin);
-    }
-  }, { addr: address }).catch(() => {});
+  await page
+    .evaluate(
+      ({ addr }) => {
+        const scroller = document.querySelector("[data-sheet-scroll]");
+        if (!scroller) return;
+        // Parse address e.g. M9 → col 12, row 8 (0-indexed)
+        const m = /^([A-Z]+)(\d+)$/.exec(String(addr).toUpperCase());
+        if (!m) {
+          scroller.scrollTop = 0;
+          scroller.scrollLeft = 0;
+          return;
+        }
+        const letters = m[1];
+        let col = 0;
+        for (let i = 0; i < letters.length; i++) col = col * 26 + (letters.charCodeAt(i) - 64);
+        col -= 1;
+        const row = parseInt(m[2], 10) - 1;
+        // Match sheet metrics (rowHeight 31, columnWidth 126, headers 34/25)
+        const colWidth = 126,
+          rowHeight = 31;
+        // Scroll just enough to bring target into view, with small margin.
+        const targetLeft = col * colWidth;
+        const targetTop = row * rowHeight;
+        // Keep existing scroll if already in view; otherwise jump.
+        const margin = 120;
+        if (
+          scroller.scrollLeft > targetLeft + margin ||
+          scroller.scrollLeft + scroller.clientWidth < targetLeft + colWidth + margin
+        ) {
+          scroller.scrollLeft = Math.max(0, targetLeft - margin);
+        }
+        if (
+          scroller.scrollTop > targetTop + margin ||
+          scroller.scrollTop + scroller.clientHeight < targetTop + rowHeight + margin
+        ) {
+          scroller.scrollTop = Math.max(0, targetTop - margin);
+        }
+      },
+      { addr: address },
+    )
+    .catch(() => {});
   // Wait a frame for virtual range to recompute and mount, plus React commit.
   await page.waitForTimeout(240);
   // Fallback: if still not attached, reset and try scrollIntoView after mount
-  await page.evaluate(({ objectId, addr }) => {
-    const cell = document.querySelector(`[data-object-id="${objectId}"][data-cell-address="${addr}"]`);
-    if (cell) cell.scrollIntoView({ block: "nearest", inline: "nearest" });
-  }, { objectId: rootId, addr: address }).catch(() => {});
+  await page
+    .evaluate(
+      ({ objectId, addr }) => {
+        const cell = document.querySelector(`[data-object-id="${objectId}"][data-cell-address="${addr}"]`);
+        if (cell) cell.scrollIntoView({ block: "nearest", inline: "nearest" });
+      },
+      { objectId: rootId, addr: address },
+    )
+    .catch(() => {});
   await page.waitForTimeout(140);
 }
 
@@ -127,12 +153,17 @@ export async function typingBurstAction(page, profile) {
   // Strict validation: exact full value, not just prefix
   await page.waitForFunction(
     ({ objectId, address: addr, expected }) =>
-      (document.querySelector(`[data-object-id="${objectId}"][data-cell-address="${addr}"] .cell-value`)
-        ?.textContent || "") === expected,
+      (document.querySelector(`[data-object-id="${objectId}"][data-cell-address="${addr}"] .cell-value`)?.textContent ||
+        "") === expected,
     { objectId: rootId, address, expected: expectedFull },
     { timeout: 30_000 },
   );
-  const final = await page.evaluate(({ objectId, addr }) => document.querySelector(`[data-object-id="${objectId}"][data-cell-address="${addr}"] .cell-value`)?.textContent || "", { objectId: rootId, addr: address });
+  const final = await page.evaluate(
+    ({ objectId, addr }) =>
+      document.querySelector(`[data-object-id="${objectId}"][data-cell-address="${addr}"] .cell-value`)?.textContent ||
+      "",
+    { objectId: rootId, addr: address },
+  );
   if (final !== expectedFull) throw new Error(`typing validation failed: expected "${expectedFull}" got "${final}"`);
   return { typedChars: chars.length, initial, expectedFull, final };
 }
@@ -153,8 +184,9 @@ export async function formulaAddAction(page, profile) {
   const inline = page.locator(`[data-object-id="${rootId}"][data-cell-address="${address}"] .cell-inline-editor`);
   const bar = page.locator(".formula-editor");
   let editor = inline;
-  try { await inline.waitFor({ state: "visible", timeout: 3500 }); }
-  catch {
+  try {
+    await inline.waitFor({ state: "visible", timeout: 3500 });
+  } catch {
     await cell.press("F2");
     await bar.waitFor({ state: "visible", timeout: 10_000 });
     editor = bar;
@@ -166,37 +198,54 @@ export async function formulaAddAction(page, profile) {
   // Wait for formula to resolve (any non-"=" value)
   await page.waitForFunction(
     ({ objectId, address: addr }) => {
-      const text = (document.querySelector(`[data-object-id="${objectId}"][data-cell-address="${addr}"] .cell-value`)?.textContent || "").trim();
+      const text = (
+        document.querySelector(`[data-object-id="${objectId}"][data-cell-address="${addr}"] .cell-value`)
+          ?.textContent || ""
+      ).trim();
       return text.length > 0 && !text.startsWith("=");
     },
     { objectId: rootId, address },
     { timeout: 30_000 },
   );
-  const final = await page.evaluate(({ objectId, addr }) => (document.querySelector(`[data-object-id="${objectId}"][data-cell-address="${addr}"] .cell-value`)?.textContent || "").trim(), { objectId: rootId, addr: address });
-  if (!final || final.startsWith("=") || final.startsWith("#")) throw new Error(`formula validation failed at ${address}: got "${final}" from ${formula}`);
-  const finalNum = Number(final.replace(/,/g,""));
-  if (!Number.isFinite(finalNum)) throw new Error(`formula validation failed at ${address}: expected numeric result got "${final}" from ${formula}`);
+  const final = await page.evaluate(
+    ({ objectId, addr }) =>
+      (
+        document.querySelector(`[data-object-id="${objectId}"][data-cell-address="${addr}"] .cell-value`)
+          ?.textContent || ""
+      ).trim(),
+    { objectId: rootId, addr: address },
+  );
+  if (!final || final.startsWith("=") || final.startsWith("#"))
+    throw new Error(`formula validation failed at ${address}: got "${final}" from ${formula}`);
+  const finalNum = Number(final.replace(/,/g, ""));
+  if (!Number.isFinite(finalNum))
+    throw new Error(`formula validation failed at ${address}: expected numeric result got "${final}" from ${formula}`);
   return { formula, address, final };
 }
 
 async function describeMountedState(page, rootId) {
-  const state = await page.evaluate((objectId) => {
-    const rowOf = (address) => Number(/^[A-Z]+(\d+)$/.exec(address || "")?.[1] ?? NaN);
-    const addresses = [...document.querySelectorAll(`[data-object-id="${objectId}"][data-cell-address]`)]
-      .map((node) => node.getAttribute("data-cell-address"));
-    const rows = [...new Set(addresses.map(rowOf).filter(Number.isFinite))].sort((a, b) => a - b);
-    const columns = [...new Set(addresses.map((a) => /^([A-Z]+)/.exec(a || "")?.[1]).filter(Boolean))];
-    const scroller = document.querySelector("[data-sheet-scroll]");
-    return {
-      mountedCells: addresses.length,
-      rowNumbers: rows.slice(0, 40),
-      columnLabels: columns.slice(0, 20),
-      rowHeaders: [...document.querySelectorAll("[data-row-index]")]
-        .map((node) => Number(node.getAttribute("data-row-index"))).sort((a, b) => a - b).slice(0, 40),
-      spatialLayers: document.querySelectorAll(".spatial-layer").length,
-      scroll: scroller ? { top: scroller.scrollTop, left: scroller.scrollLeft } : null,
-    };
-  }, rootId).catch(() => null);
+  const state = await page
+    .evaluate((objectId) => {
+      const rowOf = (address) => Number(/^[A-Z]+(\d+)$/.exec(address || "")?.[1] ?? NaN);
+      const addresses = [...document.querySelectorAll(`[data-object-id="${objectId}"][data-cell-address]`)].map(
+        (node) => node.getAttribute("data-cell-address"),
+      );
+      const rows = [...new Set(addresses.map(rowOf).filter(Number.isFinite))].sort((a, b) => a - b);
+      const columns = [...new Set(addresses.map((a) => /^([A-Z]+)/.exec(a || "")?.[1]).filter(Boolean))];
+      const scroller = document.querySelector("[data-sheet-scroll]");
+      return {
+        mountedCells: addresses.length,
+        rowNumbers: rows.slice(0, 40),
+        columnLabels: columns.slice(0, 20),
+        rowHeaders: [...document.querySelectorAll("[data-row-index]")]
+          .map((node) => Number(node.getAttribute("data-row-index")))
+          .sort((a, b) => a - b)
+          .slice(0, 40),
+        spatialLayers: document.querySelectorAll(".spatial-layer").length,
+        scroll: scroller ? { top: scroller.scrollTop, left: scroller.scrollLeft } : null,
+      };
+    }, rootId)
+    .catch(() => null);
   return JSON.stringify(state);
 }
 
@@ -205,14 +254,19 @@ async function describeMountedState(page, rootId) {
 // discovered from what is actually mounted, and the post-check uses the grid's
 // own row/column count rather than neighbouring cell values.
 async function firstMountedAddressInColumn(page, rootId, columnLabel, minRowNumber) {
-  return page.evaluate(({ objectId, column, minRow }) => {
-    const pattern = new RegExp(`^${column}(\\d+)$`);
-    return [...document.querySelectorAll(`[data-object-id="${objectId}"][data-cell-address]`)]
-      .map((node) => node.getAttribute("data-cell-address"))
-      .map((address) => ({ address, row: Number(pattern.exec(address || "")?.[1]) }))
-      .filter(({ row }) => Number.isFinite(row) && row >= minRow)
-      .sort((left, right) => left.row - right.row)[0]?.address || null;
-  }, { objectId: rootId, column: columnLabel, minRow: minRowNumber });
+  return page.evaluate(
+    ({ objectId, column, minRow }) => {
+      const pattern = new RegExp(`^${column}(\\d+)$`);
+      return (
+        [...document.querySelectorAll(`[data-object-id="${objectId}"][data-cell-address]`)]
+          .map((node) => node.getAttribute("data-cell-address"))
+          .map((address) => ({ address, row: Number(pattern.exec(address || "")?.[1]) }))
+          .filter(({ row }) => Number.isFinite(row) && row >= minRow)
+          .sort((left, right) => left.row - right.row)[0]?.address || null
+      );
+    },
+    { objectId: rootId, column: columnLabel, minRow: minRowNumber },
+  );
 }
 
 function axisCountAttribute(axis) {
@@ -220,18 +274,23 @@ function axisCountAttribute(axis) {
 }
 
 async function readAxisCount(page, rootId, axis) {
-  return page.evaluate(({ objectId, attribute }) => {
-    const canvas = [...document.querySelectorAll(".virtual-sheet-canvas")]
-      .find((node) => node.querySelector(`[data-object-id="${objectId}"]`));
-    return Number(canvas?.getAttribute(attribute) ?? NaN);
-  }, { objectId: rootId, attribute: axisCountAttribute(axis) });
+  return page.evaluate(
+    ({ objectId, attribute }) => {
+      const canvas = [...document.querySelectorAll(".virtual-sheet-canvas")].find((node) =>
+        node.querySelector(`[data-object-id="${objectId}"]`),
+      );
+      return Number(canvas?.getAttribute(attribute) ?? NaN);
+    },
+    { objectId: rootId, attribute: axisCountAttribute(axis) },
+  );
 }
 
 async function insertAxisViaMenu(page, profile, axis) {
   const rootId = rootObjectId(profile);
-  const addr = axis === "row"
-    ? await firstMountedAddressInColumn(page, rootId, "B", 2)
-    : await firstMountedAddressInColumn(page, rootId, "C", 1);
+  const addr =
+    axis === "row"
+      ? await firstMountedAddressInColumn(page, rootId, "B", 2)
+      : await firstMountedAddressInColumn(page, rootId, "C", 1);
   if (!addr) {
     throw new Error(`${axis} insert found no mounted anchor: ${await describeMountedState(page, rootId)}`);
   }
@@ -244,7 +303,9 @@ async function insertAxisViaMenu(page, profile, axis) {
   try {
     await loc.waitFor({ state: "attached", timeout: 15_000 });
   } catch (error) {
-    throw new Error(`${axis} insert anchor ${addr} never mounted: ${await describeMountedState(page, rootId)}`, { cause: error });
+    throw new Error(`${axis} insert anchor ${addr} never mounted: ${await describeMountedState(page, rootId)}`, {
+      cause: error,
+    });
   }
   await loc.click({ button: "right" });
   const menu = page.locator(".cell-context-menu");
@@ -258,11 +319,16 @@ async function insertAxisViaMenu(page, profile, axis) {
   await item.waitFor({ state: "visible", timeout: 15_000 });
   await item.click();
   await menu.waitFor({ state: "detached", timeout: 10_000 }).catch(() => {});
-  await page.waitForFunction(({ objectId, attribute, expected }) => {
-    const canvas = [...document.querySelectorAll(".virtual-sheet-canvas")]
-      .find((node) => node.querySelector(`[data-object-id="${objectId}"]`));
-    return Number(canvas?.getAttribute(attribute) ?? NaN) === expected;
-  }, { objectId: rootId, attribute: axisCountAttribute(axis), expected: countBefore + 1 }, { timeout: 30_000 });
+  await page.waitForFunction(
+    ({ objectId, attribute, expected }) => {
+      const canvas = [...document.querySelectorAll(".virtual-sheet-canvas")].find((node) =>
+        node.querySelector(`[data-object-id="${objectId}"]`),
+      );
+      return Number(canvas?.getAttribute(attribute) ?? NaN) === expected;
+    },
+    { objectId: rootId, attribute: axisCountAttribute(axis), expected: countBefore + 1 },
+    { timeout: 30_000 },
+  );
   const ms = Date.now() - opStart;
   const countAfter = await readAxisCount(page, rootId, axis);
   if (countAfter !== countBefore + 1) {

@@ -2,11 +2,7 @@ import { createPerformanceWorkspace } from "../generate-fixture.mjs";
 import { normalizeWorkspace } from "../../src/model.js";
 import { createFormulaEngine } from "../../src/sheet/formulas.js";
 import { cellAddress } from "../../src/sheet/coordinates.js";
-import {
-  removeSheetAxisCells,
-  reorderSheetAxis,
-  shiftCells,
-} from "../../src/sheet/axisCells.js";
+import { removeSheetAxisCells, reorderSheetAxis, shiftCells } from "../../src/sheet/axisCells.js";
 import { autoRowHeightsIncremental } from "../../src/sheet/textMeasure.js";
 import { cloneHistoryWorkspace } from "../../src/core/history/snapshot.js";
 import { repairWorkspaceTopology } from "../../src/core/topology.js";

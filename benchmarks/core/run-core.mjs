@@ -18,7 +18,11 @@ function parseArgs(argv) {
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
     if (argument === "--gate") args.gate = true;
-    else if (argument === "--only") args.only = argv[++index].split(",").map((name) => name.trim()).filter(Boolean);
+    else if (argument === "--only")
+      args.only = argv[++index]
+        .split(",")
+        .map((name) => name.trim())
+        .filter(Boolean);
     else if (argument === "--out") args.out = argv[++index];
     else if (argument === "--label") args.label = argv[++index];
   }

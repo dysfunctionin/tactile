@@ -47,8 +47,7 @@ export async function runCase(descriptor, context) {
 }
 
 export function formatRow(result) {
-  const status =
-    result.status === "pass" ? "PASS" : result.status === "fail" ? "FAIL" : "----";
+  const status = result.status === "pass" ? "PASS" : result.status === "fail" ? "FAIL" : "----";
   const budget = Number.isFinite(result.budgetMs) ? `${result.budgetMs}` : "n/a";
   return [
     status.padEnd(4),
