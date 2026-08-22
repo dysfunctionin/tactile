@@ -1,11 +1,11 @@
-import { coordinatesFromCellId } from "../../../sheet/coordinates.js";
+import { cellId, coordinatesFromCellId } from "../../../sheet/coordinates.js";
 import {
   CELL_LINE_HEIGHT,
   CELL_V_PADDING,
   DEFAULT_CELL_FONT,
   wrappedLineCount,
 } from "../../../sheet/textMeasure.js";
-import { cellChangesSince, cellChangeVersion } from "./cellChangeJournal.js";
+import { cellChangesSince, cellChangeVersion, structureChangeFrom } from "./cellChangeJournal.js";
 
 function contributionFor(id, cell, columnWidthForIndex, valueOverride, forceWrap = false) {
   const value = valueOverride === undefined ? cell?.value : valueOverride;
@@ -57,6 +57,32 @@ function createState(object, columnWidthForIndex) {
   return state;
 }
 
+function remapState(state, object, columnWidthForIndex, change) {
+  const next = {
+    objectId: object.id,
+    sourceCells: object.cells || {},
+    columnWidthForIndex,
+    journalVersion: cellChangeVersion(object.cells),
+    cells: new Map(),
+    rows: new Map(),
+  };
+  state.cells.forEach((contribution, id) => {
+    const coordinates = coordinatesFromCellId(id);
+    if (!coordinates) return;
+    const coordinate = change.axis === "row" ? coordinates.row : coordinates.column;
+    if (change.operation === "delete" && coordinate === change.index) return;
+    const shifted = change.operation === "insert" && coordinate >= change.index
+      ? coordinate + 1
+      : change.operation === "delete" && coordinate > change.index
+        ? coordinate - 1
+        : coordinate;
+    const row = change.axis === "row" ? shifted : coordinates.row;
+    const column = change.axis === "column" ? shifted : coordinates.column;
+    setContribution(next, cellId(row, column), { ...contribution, row });
+  });
+  return next;
+}
+
 function materialize(state) {
   const heights = {};
   state.rows.forEach((cells, row) => {
@@ -68,10 +94,13 @@ function materialize(state) {
 export function projectAutoRowHeights(previousState, object, columnWidthForIndex, liveDrafts = null) {
   let state = previousState;
   const sourceCells = object.cells || {};
+  const structureChange = state ? structureChangeFrom(sourceCells, state.sourceCells) : null;
   const journal = state?.sourceCells === sourceCells
     ? cellChangesSince(sourceCells, state.journalVersion)
     : null;
-  if (
+  if (state?.objectId === object.id && structureChange) {
+    state = remapState(state, object, columnWidthForIndex, structureChange);
+  } else if (
     !state
     || state.objectId !== object.id
     || state.columnWidthForIndex !== columnWidthForIndex

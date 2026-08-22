@@ -236,6 +236,7 @@ export function createWave2Shadow(initialWorkspace, options = {}) {
   let engine = createTransactionEngine(normalizeWorkspace(initialWorkspace), { initialRevision: "0" });
   const persistence = options.persistence || createBrowserPersistence();
   const useInitialSnapshot = options.useInitialSnapshot === true;
+  const preferActiveWorkspace = options.preferActiveWorkspace === true;
   const formulaWorkerEnabled = options.formulaWorker === true;
   const formulaClients = new Map();
   const state = {
@@ -258,14 +259,15 @@ export function createWave2Shadow(initialWorkspace, options = {}) {
 
   const ready = (async () => {
     try {
+      const openRequest = preferActiveWorkspace ? {} : { workspaceId: previous.id };
       const stored = useInitialSnapshot
         ? null
-        : await persistence.open({ workspaceId: previous.id });
+        : await persistence.open(openRequest);
       if (stored) {
         previous = normalizeWorkspace(stored);
         engine = createTransactionEngine(previous, { initialRevision: "0" });
       } else {
-        await persistence.open({ workspaceId: previous.id });
+        await persistence.open(openRequest);
         await persistence.writeSnapshot(previous, { revision: "0", activate: true });
       }
       state.persistence = "active";

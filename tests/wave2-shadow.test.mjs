@@ -88,6 +88,23 @@ test("the normalized transaction engine is the only runtime mode", () => {
   defaultEngine.dispose();
 });
 
+test("browser boot can prefer the active persisted workspace", async () => {
+  const initial = createBlankWorkspace({ id: "legacy-workspace" });
+  const active = createBlankWorkspace({ id: "active-workspace" });
+  const persistence = fakePersistence();
+  persistence.open = async (request) => {
+    persistence.calls.push({ type: "open", request });
+    return active;
+  };
+
+  const shadow = createWave2Shadow(initial, { persistence, preferActiveWorkspace: true });
+  const resolved = await shadow.ready;
+
+  assert.equal(resolved.id, active.id);
+  assert.deepEqual(persistence.calls[0], { type: "open", request: {} });
+  shadow.dispose();
+});
+
 test("shadow transition batches a rectangular edit and leaves unrelated objects out of the command", () => {
   const initial = createBlankWorkspace({ id: "workspace-wave2-batch" });
   const next = workspaceWithCell(initial, "A1", { value: "A" });

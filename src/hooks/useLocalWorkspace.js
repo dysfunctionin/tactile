@@ -19,16 +19,34 @@ import { repairWorkspaceTopology, TOPOLOGY_REVISION } from "../core/topology.js"
 import { reparentWorkspace } from "../core/reparenting.js";
 import { cellAddress, cellId, coordinatesFromCellId } from "../sheet/coordinates.js";
 import { reorderFormulaForAxis } from "../sheet/structure.js";
-import { loadWorkspace, loadWorkspaceCache, saveWorkspace, saveWorkspaceCache } from "../storage.js";
+import {
+  loadWorkspace,
+  loadWorkspaceBootState,
+  loadWorkspaceCache,
+  saveWorkspace,
+  saveWorkspaceBootState,
+  saveWorkspaceCache,
+} from "../storage.js";
 import { createWave2Shadow } from "../core/engine/shadow.js";
 import { createStructureWorker } from "../workers/structure/index.js";
-import { recordCellChanges } from "../objects/sheet/grid/cellChangeJournal.js";
+import { recordCellChanges, recordStructureChange } from "../objects/sheet/grid/cellChangeJournal.js";
 import { isTauriRuntime } from "../platform/tauri/runtime.ts";
+import { readBootMetadata } from "../platform/browser/bootMetadata.js";
 import { getObjectTypeDefinition } from "../objects/registry/index.js";
 
 function initialWorkspace() {
   const cached = loadWorkspaceCache();
-  const workspace = normalizeWorkspace(cached || createBlankWorkspace());
+  const boot = loadWorkspaceBootState();
+  const source = cached && boot?.workspaceId === cached.id
+    ? {
+        ...cached,
+        homeObjectId: boot.homeObjectId ?? cached.homeObjectId,
+        homePath: boot.homePath ?? cached.homePath,
+        activeThemeId: boot.activeThemeId ?? cached.activeThemeId,
+        settings: boot.settings ?? cached.settings,
+      }
+    : cached;
+  const workspace = normalizeWorkspace(source || createBlankWorkspace());
   if (isTauriRuntime() && !cached) {
     return normalizeWorkspace({
       ...workspace,
@@ -160,8 +178,12 @@ export function useLocalWorkspace() {
     loadWorkspace().then(async (stored) => {
       if (cancelled) return;
       const initial = normalizeWorkspace(stored || initialWorkspace());
+      const nativeRuntime = isTauriRuntime();
+      const activeBrowserWorkspaceId = readBootMetadata()?.activeWorkspaceId;
+      const normalizedWorkspaceMatches = String(activeBrowserWorkspaceId || "") === String(initial.id);
       const controller = createWave2Shadow(initial, {
-        useInitialSnapshot: true,
+        useInitialSnapshot: nativeRuntime || !normalizedWorkspaceMatches,
+        preferActiveWorkspace: !nativeRuntime && normalizedWorkspaceMatches,
       });
       wave2ShadowRef.current = controller;
       const resolved = await controller.ready;
@@ -200,6 +222,7 @@ export function useLocalWorkspace() {
     // fixtures and binary metadata. Keep the snapshot writer for environments
     // where the record adapter is unavailable.
     window.clearTimeout(saveTimer.current);
+    saveWorkspaceBootState(workspace);
     if (shadow?.state?.persistence === "active") return undefined;
     saveWorkspaceCache(workspace);
     setSaveState("saving");
@@ -322,7 +345,10 @@ export function useLocalWorkspace() {
   const replaceWorkspace = useCallback((nextWorkspace) => {
     workspaceMutationRef.current = true;
     historyRef.current = { past: [], future: [], lastKey: null, lastAt: 0 };
-    setWorkspace(normalizeWorkspace(nextWorkspace));
+    const normalized = normalizeWorkspace(nextWorkspace);
+    saveWorkspaceCache(normalized);
+    saveWorkspaceBootState(normalized);
+    setWorkspace(normalized);
   }, []);
 
   const updateObject = useCallback((objectId, patch) => {
@@ -582,6 +608,7 @@ export function useLocalWorkspace() {
     setSaveState("saving");
     const result = await structureWorkerRef.current.mutate(source, axis, index, operation);
     const nextObject = result.object;
+    recordStructureChange(nextObject.cells, source.cells, axis, index, operation);
     setWorkspace((current) => {
       if (current.objects[objectId] !== source) return current;
       const history = historyRef.current;

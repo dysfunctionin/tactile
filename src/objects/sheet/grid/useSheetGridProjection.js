@@ -72,7 +72,7 @@ export function useSheetGridProjection({
     const groupStarts = new Set(rowGroups.map((group) => group.start));
     const rows = Array.from({ length: object.rows }, (_, row) => row).filter((row) => {
       if (hidden.has(row)) return false;
-      if (!filters.length || groupStarts.has(row)) return true;
+      if (row === selectedCoordinates.row || !filters.length || groupStarts.has(row)) return true;
       return filters.every((filter) => {
         const cell = object.cells?.[cellId(row, filter.column)];
         const value = cell?.formula ? formulaValues.get(cell.address) : cell?.value;
@@ -80,7 +80,7 @@ export function useSheetGridProjection({
       });
     });
     return rows.length ? rows : [0];
-  }, [filters, formulaValues, object.cells, object.rows, rowGroups]);
+  }, [filters, formulaValues, object.cells, object.rows, rowGroups, selectedCoordinates.row]);
   const visibleColumnIndexMap = useMemo(() => {
     const hidden = new Set();
     columnGroups.filter((group) => group.collapsed).forEach((group) => {

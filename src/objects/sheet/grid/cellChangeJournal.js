@@ -1,6 +1,7 @@
 const JOURNAL_LIMIT = 32;
 
 const journals = new WeakMap();
+const structureChanges = new WeakMap();
 
 function normalizeCellIds(cellIds) {
   return [...new Set((cellIds || []).map((cellId) => String(cellId)).filter(Boolean))];
@@ -42,4 +43,14 @@ export function cellChangesSince(cells, version = 0) {
 
 export function cellChangeVersion(cells) {
   return journals.get(cells)?.version || 0;
+}
+
+export function recordStructureChange(cells, previousCells, axis, index, operation) {
+  if (!cells || !previousCells) return;
+  structureChanges.set(cells, { previousCells, axis, index, operation });
+}
+
+export function structureChangeFrom(cells, previousCells) {
+  const change = structureChanges.get(cells);
+  return change?.previousCells === previousCells ? change : null;
 }

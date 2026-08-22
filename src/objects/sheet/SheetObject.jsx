@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { IconBrackets, IconTable } from "@tabler/icons-react";
 import { FormulaBar } from "../../components/FormulaBar.jsx";
 import { ObjectHeader } from "../../components/ObjectHeader.jsx";
@@ -38,6 +38,14 @@ export function SheetObject({
   onCreateFile,
 }) {
   const object = objectHandle.current;
+  const headerObject = useMemo(() => ({
+    id: object.id,
+    type: object.type,
+    title: object.title,
+    parent: object.parent,
+    iconEmoji: object.iconEmoji,
+    iconColor: object.iconColor,
+  }), [object.iconColor, object.iconEmoji, object.id, object.parent, object.title, object.type]);
   const [formulaMode, setFormulaMode] = useState(false);
   const [editingCellId, setEditingCellId] = useState(null);
   const formulaEditorRef = useRef(null);
@@ -144,7 +152,7 @@ export function SheetObject({
   return (
     <article className="object-surface sheet-object" data-object-type="sheet">
       <ObjectHeader
-        object={object}
+        object={headerObject}
         path={path}
         saveState={saveState}
         onChange={onUpdateObject}
