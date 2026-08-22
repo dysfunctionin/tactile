@@ -655,6 +655,7 @@ export function App() {
             layer={layer}
             depth={childIndex + 1}
             viewportInsetLeft={filesSidebarWidth}
+            liveViewport={viewport}
             key={childIndex}
             onExpand={inOut.expandLayer}
             onClose={inOut.closeTopLayer}

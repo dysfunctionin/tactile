@@ -2,11 +2,11 @@ import { IconArrowsMaximize } from "@tabler/icons-react";
 import { useRef, useState } from "react";
 import { PaperPortal } from "./PaperPortal.jsx";
 
-export function SpatialLayer({ layer, children, onExpand, onClose, depth = 1, viewportInsetLeft = 0 }) {
+export function SpatialLayer({ layer, children, onExpand, onClose, depth = 1, viewportInsetLeft = 0, liveViewport = null }) {
   const [expandHintVisible, setExpandHintVisible] = useState(false);
   const expandRef = useRef(null);
   const sourceRect = layer.sourceRect;
-  const rawViewport = layer.viewport || { width: window.innerWidth, height: window.innerHeight };
+  const rawViewport = liveViewport || layer.viewport || { width: window.innerWidth, height: window.innerHeight };
   const insetLeft = Math.min(Math.max(0, viewportInsetLeft), Math.max(0, rawViewport.width - 1));
   const viewport = {
     width: Math.max(1, rawViewport.width - insetLeft),

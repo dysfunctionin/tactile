@@ -169,6 +169,22 @@ async function importWorkspace(page, workspace = nestedWorkspace()) {
   await expect(cellLocator(page, "home", "A1")).toHaveClass(/is-embedded/);
 }
 
+test("updates floating layer geometry when the browser viewport resizes", async ({ page }) => {
+  await page.setViewportSize({ width: 900, height: 700 });
+  await page.goto("/");
+  await importWorkspace(page);
+  await cellLocator(page, "home", "A1").click();
+
+  const layer = page.locator('[data-layer-object="layer-two"]');
+  await expect(layer).toHaveAttribute("data-spatial-phase", "floating");
+  await page.setViewportSize({ width: 1400, height: 900 });
+
+  await expect.poll(() => layer.evaluate((element) => ({
+    width: element.getBoundingClientRect().width,
+    floatingX: Math.round(Number.parseFloat(getComputedStyle(element).getPropertyValue("--floating-x"))),
+  }))).toEqual({ width: 1400, floatingX: 56 });
+});
+
 test("renders only the active parent and child during nested In & Out navigation", async ({ page }) => {
   await page.goto("/");
   await importWorkspace(page);
