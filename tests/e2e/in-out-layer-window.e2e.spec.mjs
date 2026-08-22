@@ -169,6 +169,26 @@ async function importWorkspace(page, workspace = nestedWorkspace()) {
   await expect(cellLocator(page, "home", "A1")).toHaveClass(/is-embedded/);
 }
 
+test("updates floating layer geometry when the browser viewport resizes", async ({ page }) => {
+  await page.setViewportSize({ width: 900, height: 700 });
+  await page.goto("/");
+  await importWorkspace(page);
+  await cellLocator(page, "home", "A1").click();
+
+  const layer = page.locator('[data-layer-object="layer-two"]');
+  await expect(layer).toHaveAttribute("data-spatial-phase", "floating");
+  await page.setViewportSize({ width: 1400, height: 900 });
+
+  await expect
+    .poll(() =>
+      layer.evaluate((element) => ({
+        width: element.getBoundingClientRect().width,
+        floatingX: Math.round(Number.parseFloat(getComputedStyle(element).getPropertyValue("--floating-x"))),
+      })),
+    )
+    .toEqual({ width: 1400, floatingX: 56 });
+});
+
 test("renders only the active parent and child during nested In & Out navigation", async ({ page }) => {
   await page.goto("/");
   await importWorkspace(page);
@@ -313,7 +333,8 @@ test("does not retain listeners across 100 floating In & Out cycles", async ({ p
       });
 
     for (let cycle = 0; cycle < 100; cycle += 1) {
-      document.querySelector('[data-object-id="home"][data-cell-address="A1"]')?.click();
+      await waitFor(() => document.querySelector('[data-object-id="home"][data-cell-address="A1"]'));
+      document.querySelector('[data-object-id="home"][data-cell-address="A1"]').click();
       await waitFor(
         () => document.querySelector('[data-layer-object="layer-two"]')?.dataset.spatialPhase === "floating",
       );
@@ -786,7 +807,11 @@ test("dock breadcrumbs jump directly and reveal the complete path from the ellip
 
   for (let index = 1; index <= 5; index += 1) {
     await cellLocator(page, index === 1 ? "home" : `deep-layer-${index - 1}`, "A1").click();
-    await expect(page.locator(".spatial-layer .object-header-parent")).toHaveCount(1, { timeout: 4_000 });
+    await expect(page.locator(`[data-layer-object="deep-layer-${index}"]`)).toHaveAttribute(
+      "data-spatial-phase",
+      "floating",
+      { timeout: 4_000 },
+    );
   }
 
   const compactSegment = page.locator(
