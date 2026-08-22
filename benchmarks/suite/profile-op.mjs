@@ -126,7 +126,15 @@ try {
 
   const rows = aggregate(profile);
   const total = rows.reduce((sum, row) => sum + row.ms, 0);
-  console.log(`\n${args.scenario}: ${elapsed}ms wall, ${Math.round(total)}ms sampled\n`);
+  const storage = await page.evaluate(() => {
+    const report = {};
+    for (const key of Object.keys(window.localStorage)) {
+      report[key] = window.localStorage.getItem(key)?.length ?? 0;
+    }
+    return report;
+  }).catch(() => ({}));
+  console.log(`\n${args.scenario}: ${elapsed}ms wall, ${Math.round(total)}ms sampled`);
+  console.log(`localStorage: ${JSON.stringify(storage)}\n`);
   console.log("  self ms   share  function");
   for (const row of rows.slice(0, args.top)) {
     console.log(`  ${row.ms.toFixed(1).padStart(8)}  ${((row.ms / total) * 100).toFixed(1).padStart(5)}%  ${row.name}`);

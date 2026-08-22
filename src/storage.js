@@ -16,6 +16,7 @@ const NATIVE_WORKSPACE_PATH_KEY = "tactile.native.workspace.path";
 let pendingCacheWorkspace = null;
 let cacheFlushScheduled = false;
 let lastCacheFlushAt = 0;
+let cacheQuotaExceededFor = null;
 // The boot cache is a fast-restore fallback, not a per-edit log. Coalescing the
 // flush to at most once per second keeps JSON.stringify(workspace) off every
 // commit's macrotask cadence; pagehide still force-flushes.
@@ -35,15 +36,17 @@ function flushWorkspaceCache() {
   if (!pendingCacheWorkspace) return false;
   const workspace = pendingCacheWorkspace;
   pendingCacheWorkspace = null;
+  // A workspace past the localStorage quota can never be cached, and retrying
+  // re-serializes the whole thing on every commit only to throw again.
+  if (cacheQuotaExceededFor && cacheQuotaExceededFor === (workspace.id || "unknown")) return false;
   try {
     measureStage("cache-flush", () => {
       window.localStorage.setItem(CACHE_KEY, JSON.stringify(cachePayload(workspace)));
     });
+    cacheQuotaExceededFor = null;
     return true;
   } catch {
-    // Quota/availability failures keep the latest pending snapshot so the next
-    // flush (or saveWorkspace) retries.
-    pendingCacheWorkspace = workspace;
+    cacheQuotaExceededFor = workspace.id || "unknown";
     return false;
   }
 }
