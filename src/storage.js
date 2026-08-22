@@ -1,4 +1,5 @@
 import { isTauriRuntime, resolveTauriInvoke } from "./platform/tauri/runtime.ts";
+import { measureStage } from "./core/perf/stageTimer.js";
 
 const DATABASE_NAME = "tactile-local-workspace";
 const DATABASE_VERSION = 3;
@@ -35,7 +36,9 @@ function flushWorkspaceCache() {
   const workspace = pendingCacheWorkspace;
   pendingCacheWorkspace = null;
   try {
-    window.localStorage.setItem(CACHE_KEY, JSON.stringify(cachePayload(workspace)));
+    measureStage("cache-flush", () => {
+      window.localStorage.setItem(CACHE_KEY, JSON.stringify(cachePayload(workspace)));
+    });
     return true;
   } catch {
     // Quota/availability failures keep the latest pending snapshot so the next

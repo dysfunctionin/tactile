@@ -99,6 +99,8 @@ export default defineConfig({
   build: {
     outDir: "dist/client",
     chunkSizeWarningLimit: 700,
+    // Readable frames for benchmarks/suite/profile-op.mjs; never set for releases.
+    minify: process.env.TACTILE_PROFILE_BUILD === "1" ? false : "esbuild",
     rollupOptions: {
       output: {
         manualChunks(id) {

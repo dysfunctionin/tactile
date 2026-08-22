@@ -7,6 +7,7 @@ import { layerHistoryEntry, MAX_VISIBLE_LAYERS, useInOut } from "./shell/inOut.j
 import { useSelectionCommands } from "./shell/selectionCommands.js";
 import { useShellState } from "./shell/useShellState.js";
 import { buildFilesIndex } from "./shell/filesIndex.js";
+import { measureStage } from "./core/perf/stageTimer.js";
 import { useWorkspaceCommands } from "./shell/workspaceCommands.js";
 import { reparentReasonMessage } from "./core/reparenting.js";
 import { buildPortablePackage } from "./export.js";
@@ -96,7 +97,7 @@ export function App() {
   const filesIndexRef = useRef(null);
   const resetSelectionRef = useRef(null);
   const filesIndex = useMemo(() => {
-    const next = buildFilesIndex(workspace, filesIndexRef.current);
+    const next = measureStage("files-index", () => buildFilesIndex(workspace, filesIndexRef.current));
     filesIndexRef.current = next;
     return next;
   }, [workspace]);

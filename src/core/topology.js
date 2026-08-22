@@ -15,6 +15,8 @@ export const EMBED_RELATIONS = Object.freeze({
 // need to rebuild the containment graph.
 export const TOPOLOGY_REVISION = Symbol.for("tactile.topologyRevision");
 
+const REPAIR_CACHE = new WeakMap();
+
 export const ROUTE_VERSION = 1;
 
 function compareText(left, right) {
@@ -110,6 +112,14 @@ function sameParent(left, right) {
  */
 export function repairObjectTopology(objects = {}, { preferredPath = [] } = {}) {
   const sourceObjects = objects && typeof objects === "object" ? objects : {};
+  // Navigation validation and the files index both repair topology during
+  // render, so on a large workspace this ran once per React commit. The result
+  // depends only on the objects map, which every commit replaces.
+  const cacheable = !preferredPath.length;
+  if (cacheable) {
+    const cached = REPAIR_CACHE.get(sourceObjects);
+    if (cached) return cached;
+  }
   const objectIds = Object.keys(sourceObjects).sort(compareText);
   const objectById = new Map(objectIds.map((id) => [id, sourceObjects[id]]));
   const usedLinkIds = new Set();
@@ -325,13 +335,15 @@ export function repairObjectTopology(objects = {}, { preferredPath = [] } = {}) 
       : EMBED_RELATIONS.ALIAS,
   }));
 
-  return {
+  const result = {
     objects: repairedObjects,
     edges: repairedEdges,
     canonicalByChild,
     changedObjectIds: [...changedObjectIds],
     report,
   };
+  if (cacheable) REPAIR_CACHE.set(sourceObjects, result);
+  return result;
 }
 
 export function repairWorkspaceTopology(workspace, options = {}) {
