@@ -10,13 +10,13 @@ import { SheetGrid } from "./SheetGrid.jsx";
 import { canonicalSheetSelection } from "./grid/selectionGeometry.js";
 
 export function SheetObject({
-  object,
+  objectHandle,
   path,
   saveState,
   selectedAddress,
   selectionRange,
   multiSelectedAddresses = [],
-  workspaceObjects,
+  workspaceObjectsHandle,
   onSelectAddress,
   onSelectRange,
   onToggleMultiSelect,
@@ -37,6 +37,7 @@ export function SheetObject({
   sheetMetrics,
   onCreateFile,
 }) {
+  const object = objectHandle.current;
   const [formulaMode, setFormulaMode] = useState(false);
   const [editingCellId, setEditingCellId] = useState(null);
   const formulaEditorRef = useRef(null);
@@ -158,7 +159,7 @@ export function SheetObject({
           address={selectedCell?.address || "A1"}
           rangeLabel={selectedRangeLabel}
           cell={selectedCell}
-          formulaSheet={object}
+          formulaSheetHandle={objectHandle}
           formulaPreviewEnabled={formulaMode}
           inputRef={formulaEditorRef}
           onChange={handleFormulaCommit}
@@ -173,8 +174,8 @@ export function SheetObject({
           onClearFilters={() => onUpdateObject({ filters: [] })}
         />
         <SheetGrid
-          object={object}
-          workspaceObjects={workspaceObjects}
+          objectHandle={objectHandle}
+          workspaceObjectsHandle={workspaceObjectsHandle}
           selectedAddress={canonicalSelectedAddress}
           selectionRange={canonicalRange}
           multiSelectedAddresses={multiSelectedAddresses}

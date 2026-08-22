@@ -11,8 +11,8 @@ import { EmbeddedCellSlot, SheetCellSlot } from "./SheetCellSlot.jsx";
 import { cellContextFor, numericRangeContains } from "./cellSlotProjection.js";
 
 export function SheetGridCanvas({
-  object,
-  workspaceObjects,
+  objectHandle,
+  workspaceObjectsHandle,
   selectedAddress,
   normalizedSelection,
   multiSelectedAddresses,
@@ -65,6 +65,8 @@ export function SheetGridCanvas({
   onToggleRowGroup,
   onToggleColumnGroup,
 }) {
+  const object = objectHandle.current;
+  const workspaceObjects = workspaceObjectsHandle.current;
   const { rowHeaderWidth, columnHeaderHeight, bodyLeftInset, bodyTopInset } = metrics;
   const conditionalRules = useMemo(
     () => compileConditionalRules(object.conditionalFormats),
