@@ -4,6 +4,34 @@ Working plan derived from the measured analysis in `perf-plans/*` (see `12-measu
 numbers, `10-single-edit-latency.md` for the per-commit breakdown, `11-formula-engine.md` for the
 primary cause).
 
+## Repository / branch status
+
+- Work lives on branch **`perf-fix`** (created from `alpha`; `alpha` and `main` are untouched).
+  Pushed as `origin/perf-fix`, commit `8b3d53b`.
+- Tracked deletions to `.progress/`, `dash.log`, `perf-dashboard/preview-4175.log` are NOT committed
+  (private/transient); regenerate fixtures via `benchmarks/generate-fixture.mjs` / the suite.
+
+## Per-plan completion (as of 2026-08-22)
+
+| Plan | Done | Status |
+|---|---|---|
+| 1 Load warm | 50% | boot/persistence passes remain |
+| 2 Import | 50% | Wave-2 store/persistence path remains |
+| 3 Typing | 85% | engine+diff+cache done; render-scan + 3-repeat p95 remain |
+| 4 Add row/column | 40% | **offset addressing not started** |
+| 5 Formula add | 90% | harness bug fixed; engine fixes cover the op |
+| 6 Nested | 60% | needs full 4 + polish |
+| 7 In/out | 60% | same |
+| 8 Scroll | 40% | per-cell memo not done |
+| 9 File sidebar | 15% | scenario + index not coded |
+| 10 Single-edit latency | 85% | differential/coalesce/cache done; normalize-cache reverted (unsafe) |
+| 11 Formula engine | 90% | index + selective recalc + deferred build; change-selective registration + chunked eval remain |
+| 12 Measurements | 100% | doc shipped with real numbers |
+
+To reach 100%: implement `04` offset addressing; finish `01`/`02` store path; `03`/`08` per-cell memo;
+`09` sidebar scenario+index; `11` registration/chunked eval; then run the suite (gated) and update
+budgets. See the two tables near the bottom for exact done/deferred inventory.
+
 ## Guiding principles
 
 1. Kill the synchronous blockers first (engine cost), then async taxes (differential, stringify),
@@ -152,6 +180,8 @@ Measured with the Node micro-benches in `12-measurements.md` (cold process; brow
 | `05` harness | `formula-add` high target moved off the collapsed/filtered row (`M9`→`M5`) | false 30 s timeout was a fixture bug; the op measures ~4 ms engine |
 | `08` gestures | Drag hit-test uses native `elementsFromPoint` first (no per-slot rect scan) | no O(mounted) layout reads per pointermove |
 | `03` typing path | Covered by engine + differential + cache fixes | commit ≈ 4 s → ≈ 0.5 s worst-fixture |
+| `05`/P4 | Shadow formula-worker mirror disabled by default (opt-in via `options.formulaWorkers`) | removed full-sheet graph serialization from the reconcile path |
+| `12` measurements | Node micro-benchmarks + calibration notes written to `12-measurements.md` | — |
 
 ### Deferred (needs a dedicated change, not safe to rush)
 
