@@ -10,14 +10,43 @@ import {
   type RevisionId,
 } from "../ids.ts";
 import type {
+  DatasetAggregateOperation,
+  DatasetAggregateRequest,
+  DatasetAggregateResult,
   DatasetDescriptor,
   DatasetStore,
   DatasetWindowRequest,
   DatasetWindowResult,
   WorkspaceCatalog,
 } from "./contracts.ts";
+import { DatasetAggregateQueue } from "./aggregateQueue.ts";
 
 const COLUMN_PREFIX = "sheet-column:";
+const SUMMARY_ROWS = 64;
+
+interface NumericSummary {
+  count: number;
+  sum: number;
+  minimum: number | null;
+  maximum: number | null;
+}
+
+function addValue(summary: NumericSummary, value: unknown): void {
+  if (value === "" || value === null || value === undefined) return;
+  const numeric = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(numeric)) return;
+  summary.count += 1;
+  summary.sum += numeric;
+  summary.minimum = summary.minimum === null ? numeric : Math.min(summary.minimum, numeric);
+  summary.maximum = summary.maximum === null ? numeric : Math.max(summary.maximum, numeric);
+}
+
+function mergeSummary(target: NumericSummary, source: NumericSummary): void {
+  target.count += source.count;
+  target.sum += source.sum;
+  if (source.minimum !== null) target.minimum = target.minimum === null ? source.minimum : Math.min(target.minimum, source.minimum);
+  if (source.maximum !== null) target.maximum = target.maximum === null ? source.maximum : Math.max(target.maximum, source.maximum);
+}
 
 export function sheetSnapshotColumnId(index: number): ColumnId {
   return asColumnId(`${COLUMN_PREFIX}${index}`);
@@ -37,6 +66,10 @@ export class SheetSnapshotDatasetStore implements DatasetStore {
 
   private readonly listeners = new Set<(revision: RevisionId) => void>();
 
+  private readonly aggregates = new DatasetAggregateQueue();
+
+  private readonly summaries = new Map<string, NumericSummary>();
+
   constructor(object: SheetObject, revision: string) {
     this.object = object;
     this.revision = asRevisionId(revision);
@@ -47,6 +80,7 @@ export class SheetSnapshotDatasetStore implements DatasetStore {
     this.object = object;
     if (nextRevision === this.revision) return;
     this.revision = nextRevision;
+    this.summaries.clear();
     this.listeners.forEach((listener) => listener(nextRevision));
   }
 
@@ -102,6 +136,52 @@ export class SheetSnapshotDatasetStore implements DatasetStore {
       totalRowCount: this.object.rows,
       revision: this.revision,
     };
+  }
+
+  aggregate(request: DatasetAggregateRequest): DatasetAggregateOperation {
+    const object = this.object;
+    const revision = this.revision;
+    return this.aggregates.create(request, async () => {
+      request.signal?.throwIfAborted();
+      if (request.datasetId !== asDatasetId(String(object.id))) throw new Error("Aggregate requested an unavailable dataset.");
+      if (request.revision && request.revision !== revision) throw new Error("Aggregate requested a stale dataset revision.");
+      const total: NumericSummary = { count: 0, sum: 0, minimum: null, maximum: null };
+      const rowStart = Math.max(0, Number(request.range.rowStart));
+      const rowEnd = Math.min(object.rows - 1, Number(request.range.rowEnd));
+      for (const columnId of request.range.columnIds) {
+        const column = columnIndex(columnId);
+        if (column === null || column >= object.columns) continue;
+        const firstFullChunk = Math.ceil(rowStart / SUMMARY_ROWS);
+        const lastFullChunk = Math.floor((rowEnd + 1) / SUMMARY_ROWS) - 1;
+        const scan = (start: number, end: number, summary: NumericSummary) => {
+          for (let row = start; row <= end; row += 1) addValue(summary, object.cells?.[`r${row + 1}c${column + 1}`]?.value);
+        };
+        const prefixEnd = Math.min(rowEnd, firstFullChunk * SUMMARY_ROWS - 1);
+        scan(rowStart, prefixEnd, total);
+        for (let chunk = firstFullChunk; chunk <= lastFullChunk; chunk += 1) {
+          const key = `${String(revision)}:${column}:${chunk}`;
+          let summary = this.summaries.get(key);
+          if (!summary) {
+            summary = { count: 0, sum: 0, minimum: null, maximum: null };
+            scan(chunk * SUMMARY_ROWS, chunk * SUMMARY_ROWS + SUMMARY_ROWS - 1, summary);
+            this.summaries.set(key, summary);
+          }
+          mergeSummary(total, summary);
+        }
+        const tailStart = Math.max(rowStart, (lastFullChunk + 1) * SUMMARY_ROWS);
+        if (tailStart > prefixEnd && tailStart <= rowEnd) scan(tailStart, rowEnd, total);
+      }
+      request.signal?.throwIfAborted();
+      const values: Record<string, number> = {};
+      request.functions.forEach((aggregate) => {
+        if (aggregate === "count") values.count = total.count;
+        if (aggregate === "sum") values.sum = total.sum;
+        if (aggregate === "average") values.average = total.count ? total.sum / total.count : 0;
+        if (aggregate === "minimum") values.minimum = total.minimum ?? 0;
+        if (aggregate === "maximum") values.maximum = total.maximum ?? 0;
+      });
+      return { datasetId: request.datasetId, values, revision } as DatasetAggregateResult;
+    });
   }
 
   subscribe(_datasetId: ReturnType<typeof asDatasetId>, listener: (revision: RevisionId) => void): () => void {

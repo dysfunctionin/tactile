@@ -155,6 +155,39 @@ test("sheet snapshot windows preserve cell records and refresh on revision chang
   await reader.close();
 });
 
+test("sheet aggregates are lazy and reuse full 64-row summaries", async () => {
+  let cellReads = 0;
+  const cells = new Proxy(Object.fromEntries(Array.from({ length: 128 }, (_, row) => [
+    `r${row + 1}c1`,
+    { id: `r${row + 1}c1`, address: `A${row + 1}`, row, column: 0, value: row + 1, formula: "" },
+  ])), {
+    get(target, key) {
+      if (typeof key === "string" && key.startsWith("r")) cellReads += 1;
+      return target[key];
+    },
+  });
+  const sheet = { id: "aggregate-sheet", type: "sheet", title: "Aggregate", rows: 128, columns: 1, cells };
+  const store = new SheetSnapshotDatasetStore(sheet, "1");
+  const descriptor = store.descriptor();
+  const request = {
+    datasetId: descriptor.id,
+    range: { rowStart: 0, rowEnd: 127, columnIds: [descriptor.columns[0].id] },
+    functions: ["count", "sum", "average", "minimum", "maximum"],
+    priority: "visible",
+  };
+  const first = store.aggregate(request);
+
+  assert.equal(first.getSnapshot().status, "deferred");
+  const firstResult = await first.resolve();
+  assert.deepEqual(firstResult.values, { count: 128, sum: 8256, average: 64.5, minimum: 1, maximum: 128 });
+  assert.equal(cellReads, 128);
+
+  const secondResult = await store.aggregate(request).resolve();
+  assert.deepEqual(secondResult.values, firstResult.values);
+  assert.equal(cellReads, 128);
+  await store.close();
+});
+
 test("aggregates remain one lazy global operation and structure invalidates chunks once", async () => {
   const { calls, store } = operationStore();
   const manager = new FixedDatasetChunkManager(store, { maxCacheBytes: 16 * 1024 * 1024 });
