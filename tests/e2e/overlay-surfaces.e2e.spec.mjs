@@ -171,10 +171,12 @@ test("row and column insertion visibly shifts sheet cells", async ({ page }) => 
 
 test("row and column insertion stays visible in a filtered grouped sheet", async ({ page }) => {
   await page.goto("/");
-  await page.locator('input[type="file"][accept*=".json"]').setInputFiles(
-    "benchmarks/.generated/tactile-250k/fixture.json",
-  );
-  await expect(page.locator('[data-object-id="perf-root-sheet"][data-cell-address="A1"]')).toBeVisible({ timeout: 120_000 });
+  await page
+    .locator('input[type="file"][accept*=".json"]')
+    .setInputFiles("benchmarks/.generated/tactile-250k/fixture.json");
+  await expect(page.locator('[data-object-id="perf-root-sheet"][data-cell-address="A1"]')).toBeVisible({
+    timeout: 120_000,
+  });
 
   const cellA1 = page.locator('[data-object-id="perf-root-sheet"][data-cell-address="A1"]');
   await cellA1.click({ button: "right" });

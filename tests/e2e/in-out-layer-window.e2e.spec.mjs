@@ -179,10 +179,14 @@ test("updates floating layer geometry when the browser viewport resizes", async 
   await expect(layer).toHaveAttribute("data-spatial-phase", "floating");
   await page.setViewportSize({ width: 1400, height: 900 });
 
-  await expect.poll(() => layer.evaluate((element) => ({
-    width: element.getBoundingClientRect().width,
-    floatingX: Math.round(Number.parseFloat(getComputedStyle(element).getPropertyValue("--floating-x"))),
-  }))).toEqual({ width: 1400, floatingX: 56 });
+  await expect
+    .poll(() =>
+      layer.evaluate((element) => ({
+        width: element.getBoundingClientRect().width,
+        floatingX: Math.round(Number.parseFloat(getComputedStyle(element).getPropertyValue("--floating-x"))),
+      })),
+    )
+    .toEqual({ width: 1400, floatingX: 56 });
 });
 
 test("renders only the active parent and child during nested In & Out navigation", async ({ page }) => {
@@ -329,9 +333,7 @@ test("does not retain listeners across 100 floating In & Out cycles", async ({ p
       });
 
     for (let cycle = 0; cycle < 100; cycle += 1) {
-      await waitFor(
-        () => document.querySelector('[data-object-id="home"][data-cell-address="A1"]'),
-      );
+      await waitFor(() => document.querySelector('[data-object-id="home"][data-cell-address="A1"]'));
       document.querySelector('[data-object-id="home"][data-cell-address="A1"]').click();
       await waitFor(
         () => document.querySelector('[data-layer-object="layer-two"]')?.dataset.spatialPhase === "floating",

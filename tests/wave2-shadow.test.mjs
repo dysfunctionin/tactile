@@ -65,11 +65,17 @@ test("targeted cell reconciliation queues persistence without a workspace diff",
   const persistence = fakePersistence();
   const shadow = createWave2Shadow(initial, { persistence });
 
-  await shadow.reconcileCellChanges(next, [{
-    objectId: "home",
-    historyKey: "cell:home:A1",
-    changes: [{ cellId: "A1", before: null, after: next.objects.home.cells.A1 }],
-  }], { normalized: true });
+  await shadow.reconcileCellChanges(
+    next,
+    [
+      {
+        objectId: "home",
+        historyKey: "cell:home:A1",
+        changes: [{ cellId: "A1", before: null, after: next.objects.home.cells.A1 }],
+      },
+    ],
+    { normalized: true },
+  );
 
   assert.equal(shadow.state.transactions, 1);
   assert.deepEqual(shadow.state.differential, { equal: true, mode: "targeted-cells" });

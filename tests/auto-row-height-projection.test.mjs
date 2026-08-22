@@ -32,9 +32,7 @@ test("live drafts update only their projected row and do not mutate committed st
   };
   const width = () => 80;
   const initial = projectAutoRowHeights(null, sheet(cells), width);
-  const drafts = new Map([
-    ["r1c1", { value: "a live draft that wraps across several visual lines" }],
-  ]);
+  const drafts = new Map([["r1c1", { value: "a live draft that wraps across several visual lines" }]]);
 
   const drafted = projectAutoRowHeights(initial.state, sheet(cells), width, drafts);
   const committed = projectAutoRowHeights(drafted.state, sheet(cells), width);
@@ -45,7 +43,13 @@ test("live drafts update only their projected row and do not mutate committed st
 
 test("structural changes remap existing height contributions", () => {
   const cells = {
-    r2c1: { id: "r2c1", row: 1, column: 0, value: "a long wrapped value that occupies more than one rendered line", style: { wrap: true } },
+    r2c1: {
+      id: "r2c1",
+      row: 1,
+      column: 0,
+      value: "a long wrapped value that occupies more than one rendered line",
+      style: { wrap: true },
+    },
   };
   const width = () => 100;
   const initial = projectAutoRowHeights(null, sheet(cells), width);
