@@ -53,9 +53,19 @@ function touch(workspace, objects, repairTopology = false) {
   return repairTopology ? repairWorkspaceTopology(next) : next;
 }
 
-function cloneHistoryWorkspace(workspace) {
-  if (typeof structuredClone === "function") return structuredClone(workspace);
-  return JSON.parse(JSON.stringify(workspace));
+function cloneHistoryWorkspace(workspace, { shareAssets = false } = {}) {
+  // Deep-cloning the entire workspace for undo is expensive on large
+  // fixtures, and asset binaries (data URLs/blobs) are the heaviest payload
+  // of all. When a commit does not touch assets, the snapshot can share the
+  // same assets object reference safely: `assets` is treated as immutable
+  // (mutations always create a new object), only sheet `cells` dicts are
+  // mutated in place. Sharing the reference keeps undo exact for cells and
+  // metadata while avoiding a hundred-megabyte clone per structural edit.
+  const cloned = typeof structuredClone === "function"
+    ? structuredClone(workspace)
+    : JSON.parse(JSON.stringify(workspace));
+  if (shareAssets) cloned.assets = workspace.assets;
+  return cloned;
 }
 
 function cloneHistoryCell(cell) {
@@ -83,6 +93,11 @@ function shiftCells(object, axis, index) {
   Object.values(object.cells || {}).forEach((cell) => {
     const row = axis === "row" && cell.row >= index ? cell.row + 1 : cell.row;
     const column = axis === "column" && cell.column >= index ? cell.column + 1 : cell.column;
+    if (row === cell.row && column === cell.column) {
+      // Unchanged cell: keep the existing record (stable id/address/formula).
+      cells[cell.id] = cell;
+      return;
+    }
     const shifted = {
       ...cell,
       id: cellId(row, column),
@@ -102,6 +117,11 @@ function removeSheetAxisCells(object, axis, index) {
     if ((axis === "row" && cell.row === index) || (axis === "column" && cell.column === index)) return;
     const row = axis === "row" && cell.row > index ? cell.row - 1 : cell.row;
     const column = axis === "column" && cell.column > index ? cell.column - 1 : cell.column;
+    if (row === cell.row && column === cell.column) {
+      // Unchanged cell: keep the existing record (stable id/address/formula).
+      cells[cell.id] = cell;
+      return;
+    }
     const shifted = {
       ...cell,
       id: cellId(row, column),
@@ -152,6 +172,11 @@ function reorderSheetAxis(object, axis, from, to) {
   Object.values(object.cells || {}).forEach((cell) => {
     const row = axis === "row" ? indexMap.get(cell.row) : cell.row;
     const column = axis === "column" ? indexMap.get(cell.column) : cell.column;
+    if (row === cell.row && column === cell.column) {
+      // Cell sits on a stationary axis position: keep the existing record.
+      cells[cell.id] = cell;
+      return;
+    }
     const shifted = {
       ...cell,
       id: cellId(row, column),
@@ -266,7 +291,10 @@ export function useLocalWorkspace() {
       const now = Date.now();
       const coalesced = history.lastKey === historyKey && now - history.lastAt < 650;
       if (!coalesced) {
-        history.past.push({ kind: "snapshot", value: cloneHistoryWorkspace(current) });
+        history.past.push({
+          kind: "snapshot",
+          value: cloneHistoryWorkspace(current, { shareAssets: current.assets === next.assets }),
+        });
         if (history.past.length > 120) history.past.shift();
       }
       history.future = [];
@@ -729,7 +757,10 @@ export function useLocalWorkspace() {
         history.lastAt = 0;
         return applyCellHistory(current, previous, "before");
       }
-      history.future.push({ kind: "snapshot", value: cloneHistoryWorkspace(current) });
+      history.future.push({
+        kind: "snapshot",
+        value: cloneHistoryWorkspace(current, { shareAssets: current.assets === previous.value.assets }),
+      });
       history.lastKey = null;
       history.lastAt = 0;
       return { ...previous.value, updatedAt: new Date().toISOString() };
@@ -747,7 +778,10 @@ export function useLocalWorkspace() {
         history.lastAt = 0;
         return applyCellHistory(current, next, "after");
       }
-      history.past.push({ kind: "snapshot", value: cloneHistoryWorkspace(current) });
+      history.past.push({
+        kind: "snapshot",
+        value: cloneHistoryWorkspace(current, { shareAssets: current.assets === next.value.assets }),
+      });
       history.lastKey = null;
       history.lastAt = 0;
       return { ...next.value, updatedAt: new Date().toISOString() };

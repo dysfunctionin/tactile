@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { cellId } from "../../../sheet/coordinates.js";
 import { fillRange } from "../../../sheet/ranges.js";
-import { autoRowHeights } from "../../../sheet/textMeasure.js";
+import { autoRowHeights, autoRowHeightsIncremental, mergeAutoRowHeights } from "../../../sheet/textMeasure.js";
+import { cellChangeVersion } from "./cellChangeJournal.js";
 import {
   getSurfaceCellDrafts,
   subscribeSurfaceCellDrafts,
@@ -106,11 +107,23 @@ export function useSheetGridProjection({
   // Grow rows live while a cell is edited inline (its value is held in the
   // surface draft store, not yet committed to the object). Without this a
   // Shift+Enter newline stays clipped until the edit commits.
-  const [draftTick, setDraftTick] = useState(0);
+  // The full stored-cell scan is journal-incremental: it re-runs only when a
+  // wrap-relevant cell changes (or the columns map changes). Keying on the
+  // stable `object.cells` reference keeps the O(stored cells) scan off every
+  // cell-edit render.
   const [surfaceDrafts, setSurfaceDrafts] = useState(null);
+  const cellsVersion = cellChangeVersion(object.cells);
+  const baseAutoRowHeightsMap = useMemo(
+    () => autoRowHeightsIncremental(object, columnWidthForIndex),
+    [columnWidthForIndex, object.cells, cellsVersion],
+  );
+  const liveDraftHeightsMap = useMemo(
+    () => (surfaceDrafts ? autoRowHeights(object, columnWidthForIndex, surfaceDrafts, true) : null),
+    [object, columnWidthForIndex, surfaceDrafts],
+  );
   const liveAutoRowHeightsMap = useMemo(
-    () => autoRowHeights(object, columnWidthForIndex, surfaceDrafts),
-    [object, columnWidthForIndex, surfaceDrafts, draftTick],
+    () => mergeAutoRowHeights(baseAutoRowHeightsMap, liveDraftHeightsMap),
+    [baseAutoRowHeightsMap, liveDraftHeightsMap],
   );
   const virtualSheet = useVirtualSheet(
     object.rows,
@@ -137,7 +150,6 @@ export function useSheetGridProjection({
     setSurfaceDrafts(getSurfaceCellDrafts(surface));
     return subscribeSurfaceCellDrafts(surface, () => {
       setSurfaceDrafts(getSurfaceCellDrafts(surface));
-      setDraftTick((tick) => tick + 1);
     });
   }, [sheetScrollRef]);
   const visibleRows = useMemo(

@@ -72,6 +72,7 @@ export function App() {
   const nativeRuntime = useMemo(() => isTauriRuntime(), []);
   const nativeInvoke = useMemo(() => resolveTauriInvoke(), []);
   const nativeSnapshotRef = useRef({ version: 0, pending: null, writing: false });
+  const nativeFlushTimerRef = useRef(null);
   const [nativeGuideOpen, setNativeGuideOpen] = useState(false);
   const nativeGuideShownRef = useRef(false);
   const shell = useShellState({
@@ -169,10 +170,16 @@ export function App() {
       const typingTarget = event.target?.closest?.("input, textarea, [contenteditable=\"true\"]");
       const isPasteProxy = event.target?.dataset?.tactilePasteProxy === "true";
       const nativeTypingTarget = typingTarget && !isPasteProxy;
-      const activeGridCell = [...document.querySelectorAll('.sheet-grid-shell .sheet-cell[aria-selected="true"]')]
-        .reverse()
-        .find((cell) => cell.getClientRects().length > 0)
-        || document.querySelector('.sheet-grid-shell .sheet-cell[aria-selected="true"]');
+      // The paint-DOM query below scans every mounted cell. While the user is
+      // typing in an input/textarea, only Ctrl/Meta shortcuts need it (grid
+      // navigation via handleKeyboard bails on typing surfaces), so skip the
+      // query entirely for plain printable keys.
+      const activeGridCell = (command || !nativeTypingTarget)
+        ? [...document.querySelectorAll('.sheet-grid-shell .sheet-cell[aria-selected="true"]')]
+          .reverse()
+          .find((cell) => cell.getClientRects().length > 0)
+          || document.querySelector('.sheet-grid-shell .sheet-cell[aria-selected="true"]')
+        : null;
       const gridSurface = event.target?.closest?.(".sheet-grid-shell") || activeGridCell;
       const inFilesPanel = Boolean(event.target?.closest?.(".files-panel"));
       const gridShortcutsAvailable = Boolean(currentShell.filesPinned && gridSurface && !inFilesPanel);
@@ -367,8 +374,20 @@ export function App() {
         if (pending.pending) void flush();
       }
     };
-    void flush();
-    return undefined;
+    // Debounce the native flush so a burst of edits (e.g. burst typing,
+    // fast formatting) produces a single portable-package rebuild and IPC
+    // snapshot instead of one full rebuild per keypress. The in-flight
+    // single-flight above remains, so writes never stack.
+    if (nativeFlushTimerRef.current != null) window.clearTimeout(nativeFlushTimerRef.current);
+    nativeFlushTimerRef.current = window.setTimeout(() => {
+      void flush();
+    }, 200);
+    return () => {
+      if (nativeFlushTimerRef.current != null) {
+        window.clearTimeout(nativeFlushTimerRef.current);
+        nativeFlushTimerRef.current = null;
+      }
+    };
   }, [hydrated, nativeInvoke, nativeRuntime, workspace, workspace.settings.nativeWorkspacePath]);
 
   const finishNativeGuide = async (selectedPath = "") => {

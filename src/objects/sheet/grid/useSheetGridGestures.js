@@ -43,6 +43,13 @@ function edgeScrollStep(coordinate, start, end) {
 
 function domCellAddressAtPoint(event, objectId) {
   if (!Number.isFinite(event?.clientX) || !Number.isFinite(event?.clientY)) return null;
+  // Prefer the native hit-test: it is cheap and layout-independent, while the
+  // slot-rect scan below forces a layout read of every mounted slot per move.
+  const elements = document.elementsFromPoint(event.clientX, event.clientY);
+  for (const element of elements) {
+    const cell = element.closest?.(".sheet-cell");
+    if (cell?.dataset.objectId === objectId) return cell.dataset.cellAddress || null;
+  }
   const slot = [...document.querySelectorAll(
     `.virtual-cell-slot[data-virtual-object-id="${CSS.escape(objectId)}"]`,
   )].find((element) => {
@@ -51,11 +58,6 @@ function domCellAddressAtPoint(event, objectId) {
       && event.clientY >= bounds.top && event.clientY < bounds.bottom;
   });
   if (slot) return slot.dataset.virtualCellAddress || null;
-  const elements = document.elementsFromPoint(event.clientX, event.clientY);
-  for (const element of elements) {
-    const cell = element.closest?.(".sheet-cell");
-    if (cell?.dataset.objectId === objectId) return cell.dataset.cellAddress || null;
-  }
   return null;
 }
 

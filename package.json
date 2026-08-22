@@ -32,6 +32,9 @@
     "test:component": "playwright test --pass-with-no-tests --config config/playwright/component.config.mjs",
     "test:e2e": "playwright test --pass-with-no-tests --config config/playwright/e2e.config.mjs",
     "bench:perf": "node tests/performance/run-browser.mjs",
+    "bench:suite": "node benchmarks/suite/run-suite.mjs",
+    "bench:suite:native": "node benchmarks/suite/run-suite.mjs --target native",
+    "bench:suite:baseline": "node benchmarks/suite/run-suite.mjs --target native --repeats 3 --label baseline",
     "verify": "npm run version:check && npm run format:check && npm run lint && npm run typecheck && npm run test:unit && npm run test:component && npm run test:e2e && npm run build && npm run test:sites"
   },
   "dependencies": {

@@ -1,4 +1,4 @@
-import { useMemo, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createFormulaEngine } from "../../../sheet/formulas.js";
 import { cellAddress, coordinatesFromCellId } from "../../../sheet/coordinates.js";
 import { cellChangeVersion, cellChangesSince } from "./cellChangeJournal.js";
@@ -31,6 +31,7 @@ function createProjectionState(object) {
   const cells = object.cells || {};
   return {
     objectId: object.id,
+    ready: true,
     cells,
     cellRefs: new Map(Object.entries(cells)),
     journalVersion: cellChangeVersion(cells),
@@ -112,16 +113,48 @@ function updateProjectionState(state, object, changes) {
 
 export function useFormulaProjection(object) {
   const stateRef = useRef(null);
-  return useMemo(() => {
-    let state = stateRef.current;
-    if (!state || state.objectId !== object.id) {
-      state = createProjectionState(object);
-      stateRef.current = state;
-      return state.values;
-    }
+  const objectRef = useRef(object);
+  objectRef.current = object;
+  const buildScheduledRef = useRef(false);
+  const [, setReadyTick] = useState(0);
 
+  useEffect(() => {
+    const ensureBuild = (target) => {
+      if (buildScheduledRef.current) return;
+      stateRef.current = { objectId: target.id, ready: false, values: new Map() };
+      buildScheduledRef.current = true;
+      const schedule = () => {
+        if (objectRef.current?.id !== target.id) return; // stale: cross-sheet effect already rebuilt
+        buildScheduledRef.current = false;
+        stateRef.current = createProjectionState(objectRef.current);
+        setReadyTick((tick) => tick + 1);
+      };
+      // Build after first paint (idle priority) so a large sheet's first render
+      // is not blocked by graph construction + full recalculation. Formula cells
+      // render blank until the engine catches up; `setReadyTick` swaps in values.
+      if (typeof window !== "undefined" && typeof window.requestIdleCallback === "function") {
+        window.requestIdleCallback(schedule, { timeout: 4000 });
+      } else if (typeof window !== "undefined") {
+        window.setTimeout(schedule, 0);
+      } else {
+        buildScheduledRef.current = false;
+      }
+    };
+    const current = stateRef.current;
+    if (current?.ready && current.objectId === object.id) return undefined;
+    if (current?.objectId !== object.id) {
+      stateRef.current = null;
+      buildScheduledRef.current = false;
+    }
+    ensureBuild(object);
+    return undefined;
+  }, [object]);
+
+  const state = stateRef.current;
+  if (state?.ready && state.objectId === object.id) {
     const changes = changesSinceLastProjection(state, object);
     updateProjectionState(state, object, changes);
     return state.values;
-  }, [object]);
+  }
+  return stateRef.current?.values || new Map();
 }
