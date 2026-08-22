@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { cellId } from "../../../sheet/coordinates.js";
 import { fillRange } from "../../../sheet/ranges.js";
-import { autoRowHeights } from "../../../sheet/textMeasure.js";
 import {
   getSurfaceCellDrafts,
   subscribeSurfaceCellDrafts,
 } from "../../../components/localEditSession.js";
+import { projectAutoRowHeights } from "./autoRowHeightProjection.js";
 import { boundedAxisEntries, canonicalSheetSelection } from "./selectionGeometry.js";
 import { useFormulaProjection } from "./useFormulaProjection.js";
 import { useVirtualSheet } from "../useVirtualSheet.js";
@@ -108,8 +108,18 @@ export function useSheetGridProjection({
   // Shift+Enter newline stays clipped until the edit commits.
   const [draftTick, setDraftTick] = useState(0);
   const [surfaceDrafts, setSurfaceDrafts] = useState(null);
+  const autoRowHeightStateRef = useRef(null);
   const liveAutoRowHeightsMap = useMemo(
-    () => autoRowHeights(object, columnWidthForIndex, surfaceDrafts),
+    () => {
+      const projection = projectAutoRowHeights(
+        autoRowHeightStateRef.current,
+        object,
+        columnWidthForIndex,
+        surfaceDrafts,
+      );
+      autoRowHeightStateRef.current = projection.state;
+      return projection.heights;
+    },
     [object, columnWidthForIndex, surfaceDrafts, draftTick],
   );
   const virtualSheet = useVirtualSheet(
