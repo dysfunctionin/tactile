@@ -37,14 +37,30 @@ test("viewport ranges snap to fixed 64 by 64 chunks", () => {
 
   assert.deepEqual(
     plan.map(({ rowChunk, columnChunk }) => [rowChunk, columnChunk]),
-    [[0, 0], [0, 1], [0, 2], [1, 0], [1, 1], [1, 2], [2, 0], [2, 1], [2, 2]],
+    [
+      [0, 0],
+      [0, 1],
+      [0, 2],
+      [1, 0],
+      [1, 1],
+      [1, 2],
+      [2, 0],
+      [2, 1],
+      [2, 2],
+    ],
   );
   assert.deepEqual(
     plan.map(({ request }) => [request.rowStart, request.rowEnd, request.columnIds.length]),
     [
-      [0, 63, 64], [0, 63, 64], [0, 63, 22],
-      [64, 127, 64], [64, 127, 64], [64, 127, 22],
-      [128, 149, 64], [128, 149, 64], [128, 149, 22],
+      [0, 63, 64],
+      [0, 63, 64],
+      [0, 63, 22],
+      [64, 127, 64],
+      [64, 127, 64],
+      [64, 127, 22],
+      [128, 149, 64],
+      [128, 149, 64],
+      [128, 149, 22],
     ],
   );
 });
@@ -71,7 +87,9 @@ test("movement within one chunk produces the same canonical request", () => {
 function operationStore() {
   const calls = { reads: 0, aggregates: 0, structures: 0 };
   const store = {
-    async openCatalog() { return { datasets: [descriptor], revision: "7" }; },
+    async openCatalog() {
+      return { datasets: [descriptor], revision: "7" };
+    },
     async readWindow(request) {
       calls.reads += 1;
       return {
@@ -92,13 +110,20 @@ function operationStore() {
     },
     aggregate() {
       calls.aggregates += 1;
-      return { getSnapshot: () => ({ status: "deferred" }), subscribe: () => () => {}, resolve: async () => ({}), cancel() {} };
+      return {
+        getSnapshot: () => ({ status: "deferred" }),
+        subscribe: () => () => {},
+        resolve: async () => ({}),
+        cancel() {},
+      };
     },
     async mutateStructure(request) {
       calls.structures += 1;
       return { datasetId: request.datasetId, rowCount: 151, columnCount: 150, revision: "8" };
     },
-    subscribe() { return () => {}; },
+    subscribe() {
+      return () => {};
+    },
     async close() {},
   };
   return { calls, store };
@@ -108,10 +133,18 @@ test("viewport reads reuse canonical chunks and merge only requested cells", asy
   const { calls, store } = operationStore();
   const manager = new FixedDatasetChunkManager(store, { maxCacheBytes: 16 * 1024 * 1024 });
   const first = await manager.read(descriptor, {
-    datasetId: "dataset", rowStart: 10, rowEnd: 20, columnStart: 10, columnEnd: 20,
+    datasetId: "dataset",
+    rowStart: 10,
+    rowEnd: 20,
+    columnStart: 10,
+    columnEnd: 20,
   });
   const second = await manager.read(descriptor, {
-    datasetId: "dataset", rowStart: 12, rowEnd: 22, columnStart: 12, columnEnd: 22,
+    datasetId: "dataset",
+    rowStart: 12,
+    rowEnd: 22,
+    columnStart: 12,
+    columnEnd: 22,
   });
 
   assert.equal(calls.reads, 1);
@@ -136,7 +169,11 @@ test("sheet snapshot windows preserve cell records and refresh on revision chang
   const reader = new FixedDatasetChunkReader(store, { maxCacheBytes: 16 * 1024 * 1024 });
   const firstDescriptor = store.descriptor();
   const first = await reader.read(firstDescriptor, {
-    datasetId: firstDescriptor.id, rowStart: 0, rowEnd: 4, columnStart: 0, columnEnd: 4,
+    datasetId: firstDescriptor.id,
+    rowStart: 0,
+    rowEnd: 4,
+    columnStart: 0,
+    columnEnd: 4,
   });
 
   assert.equal(first.rows[1].cells[2].record.style.bold, true);
@@ -147,7 +184,11 @@ test("sheet snapshot windows preserve cell records and refresh on revision chang
   store.update(nextSheet, "2");
   const secondDescriptor = store.descriptor();
   const second = await reader.read(secondDescriptor, {
-    datasetId: secondDescriptor.id, rowStart: 0, rowEnd: 4, columnStart: 0, columnEnd: 4,
+    datasetId: secondDescriptor.id,
+    rowStart: 0,
+    rowEnd: 4,
+    columnStart: 0,
+    columnEnd: 4,
   });
 
   assert.equal(second.rows[1].cells[2].record.value, "after");
@@ -157,15 +198,20 @@ test("sheet snapshot windows preserve cell records and refresh on revision chang
 
 test("sheet aggregates are lazy and reuse full 64-row summaries", async () => {
   let cellReads = 0;
-  const cells = new Proxy(Object.fromEntries(Array.from({ length: 128 }, (_, row) => [
-    `r${row + 1}c1`,
-    { id: `r${row + 1}c1`, address: `A${row + 1}`, row, column: 0, value: row + 1, formula: "" },
-  ])), {
-    get(target, key) {
-      if (typeof key === "string" && key.startsWith("r")) cellReads += 1;
-      return target[key];
+  const cells = new Proxy(
+    Object.fromEntries(
+      Array.from({ length: 128 }, (_, row) => [
+        `r${row + 1}c1`,
+        { id: `r${row + 1}c1`, address: `A${row + 1}`, row, column: 0, value: row + 1, formula: "" },
+      ]),
+    ),
+    {
+      get(target, key) {
+        if (typeof key === "string" && key.startsWith("r")) cellReads += 1;
+        return target[key];
+      },
     },
-  });
+  );
   const sheet = { id: "aggregate-sheet", type: "sheet", title: "Aggregate", rows: 128, columns: 1, cells };
   const store = new SheetSnapshotDatasetStore(sheet, "1");
   const descriptor = store.descriptor();

@@ -83,19 +83,16 @@ export class DatasetAggregateQueue {
 
   private running = false;
 
-  create(
-    request: DatasetAggregateRequest,
-    run: () => Promise<DatasetAggregateResult>,
-  ): DatasetAggregateOperation {
+  create(request: DatasetAggregateRequest, run: () => Promise<DatasetAggregateResult>): DatasetAggregateOperation {
     let queued = false;
     const operation = new QueuedAggregateOperation(() => {
       if (queued || operation.getSnapshot().status === "cancelled") return;
       queued = true;
       operation.setStatus("queued");
       this.pending.push({ request, operation, run });
-      this.pending.sort((left, right) => (
-        (left.request.priority === "visible" ? 0 : 1) - (right.request.priority === "visible" ? 0 : 1)
-      ));
+      this.pending.sort(
+        (left, right) => (left.request.priority === "visible" ? 0 : 1) - (right.request.priority === "visible" ? 0 : 1),
+      );
       queueMicrotask(() => this.drain());
     });
     return operation;

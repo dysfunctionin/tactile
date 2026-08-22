@@ -14,7 +14,12 @@ function sheet() {
       r1c1: { id: "r1c1", address: "A1", row: 0, column: 0, value: "1", formula: "" },
       r2c1: { id: "r2c1", address: "A2", row: 1, column: 0, value: "", formula: "=A1+A2" },
       r3c2: {
-        id: "r3c2", address: "B3", row: 2, column: 1, value: "", formula: "",
+        id: "r3c2",
+        address: "B3",
+        row: 2,
+        column: 1,
+        value: "",
+        formula: "",
         embed: { objectId: "child", linkId: "link" },
       },
     },
@@ -33,9 +38,14 @@ test("structure worker inserts globally and reports moved embeds", () => {
   assert.equal(result.object.rows, 257);
   assert.equal(result.object.cells.r3c1.formula, "=A1+A3");
   assert.equal(result.object.cells.r4c2.embed.objectId, "child");
-  assert.deepEqual(result.embeddedLinks, [{
-    objectId: "child", linkId: "link", sourceCellId: "r4c2", sourceAddress: "B4",
-  }]);
+  assert.deepEqual(result.embeddedLinks, [
+    {
+      objectId: "child",
+      linkId: "link",
+      sourceCellId: "r4c2",
+      sourceAddress: "B4",
+    },
+  ]);
   assert.deepEqual(result.object.rowHeights, { 2: 40 });
   assert.equal(result.object.conditionalFormats[0].range, "A1:B4");
 });

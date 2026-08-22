@@ -1,10 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import {
-  DatasetWindowCache,
-  datasetWindowCacheKey,
-} from "../src/core/dataset/windowCache.ts";
+import { DatasetWindowCache, datasetWindowCacheKey } from "../src/core/dataset/windowCache.ts";
 
 function windowResult(id, revision = "r1") {
   return {
@@ -111,7 +108,10 @@ test("revision invalidation removes matching windows even when pinned", () => {
   cache.put("r2", windowResult("new", "r2"), 20);
   cache.pin("r1");
 
-  assert.equal(cache.invalidate((value) => value.datasetId === "dataset" && value.revision !== "r2"), 1);
+  assert.equal(
+    cache.invalidate((value) => value.datasetId === "dataset" && value.revision !== "r2"),
+    1,
+  );
   assert.equal(cache.peek("r1"), undefined);
   assert.equal(cache.peek("r2")?.revision, "r2");
   assert.equal(cache.metrics().bytes, 20);

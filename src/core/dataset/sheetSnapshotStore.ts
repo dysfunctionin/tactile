@@ -44,8 +44,10 @@ function addValue(summary: NumericSummary, value: unknown): void {
 function mergeSummary(target: NumericSummary, source: NumericSummary): void {
   target.count += source.count;
   target.sum += source.sum;
-  if (source.minimum !== null) target.minimum = target.minimum === null ? source.minimum : Math.min(target.minimum, source.minimum);
-  if (source.maximum !== null) target.maximum = target.maximum === null ? source.maximum : Math.max(target.maximum, source.maximum);
+  if (source.minimum !== null)
+    target.minimum = target.minimum === null ? source.minimum : Math.min(target.minimum, source.minimum);
+  if (source.maximum !== null)
+    target.maximum = target.maximum === null ? source.maximum : Math.max(target.maximum, source.maximum);
 }
 
 export function sheetSnapshotColumnId(index: number): ColumnId {
@@ -143,8 +145,10 @@ export class SheetSnapshotDatasetStore implements DatasetStore {
     const revision = this.revision;
     return this.aggregates.create(request, async () => {
       request.signal?.throwIfAborted();
-      if (request.datasetId !== asDatasetId(String(object.id))) throw new Error("Aggregate requested an unavailable dataset.");
-      if (request.revision && request.revision !== revision) throw new Error("Aggregate requested a stale dataset revision.");
+      if (request.datasetId !== asDatasetId(String(object.id)))
+        throw new Error("Aggregate requested an unavailable dataset.");
+      if (request.revision && request.revision !== revision)
+        throw new Error("Aggregate requested a stale dataset revision.");
       const total: NumericSummary = { count: 0, sum: 0, minimum: null, maximum: null };
       const rowStart = Math.max(0, Number(request.range.rowStart));
       const rowEnd = Math.min(object.rows - 1, Number(request.range.rowEnd));
@@ -154,7 +158,8 @@ export class SheetSnapshotDatasetStore implements DatasetStore {
         const firstFullChunk = Math.ceil(rowStart / SUMMARY_ROWS);
         const lastFullChunk = Math.floor((rowEnd + 1) / SUMMARY_ROWS) - 1;
         const scan = (start: number, end: number, summary: NumericSummary) => {
-          for (let row = start; row <= end; row += 1) addValue(summary, object.cells?.[`r${row + 1}c${column + 1}`]?.value);
+          for (let row = start; row <= end; row += 1)
+            addValue(summary, object.cells?.[`r${row + 1}c${column + 1}`]?.value);
         };
         const prefixEnd = Math.min(rowEnd, firstFullChunk * SUMMARY_ROWS - 1);
         scan(rowStart, prefixEnd, total);

@@ -78,9 +78,7 @@ export function planFixedDatasetChunks(
           ...(viewport.viewId ? { viewId: viewport.viewId } : {}),
           rowStart: asRowIndex(chunkRowStart),
           rowEnd: asRowIndex(chunkRowEnd),
-          columnIds: descriptor.columns
-            .slice(chunkColumnStart, chunkColumnEnd + 1)
-            .map((column) => column.id),
+          columnIds: descriptor.columns.slice(chunkColumnStart, chunkColumnEnd + 1).map((column) => column.id),
           revision: viewport.revision || descriptor.revision,
           priority: viewport.priority || "visible",
           ...(viewport.signal ? { signal: viewport.signal } : {}),
@@ -101,10 +99,13 @@ function mergeChunks(
   const columnIds = descriptor.columns
     .slice(Number(viewport.columnStart), Number(viewport.columnEnd) + 1)
     .map((column) => column.id);
-  const rows = new Map<number, {
-    id: DatasetWindowResult["rows"][number]["id"];
-    cells: Map<string, DatasetWindowCell>;
-  }>();
+  const rows = new Map<
+    number,
+    {
+      id: DatasetWindowResult["rows"][number]["id"];
+      cells: Map<string, DatasetWindowCell>;
+    }
+  >();
   for (const chunk of chunks) {
     for (const row of chunk.rows) {
       const logicalIndex = Number(row.logicalIndex);

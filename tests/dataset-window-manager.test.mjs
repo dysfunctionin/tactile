@@ -1,10 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import {
-  DatasetWindowManager,
-  StaleDatasetWindowError,
-} from "../src/core/dataset/windowManager.ts";
+import { DatasetWindowManager, StaleDatasetWindowError } from "../src/core/dataset/windowManager.ts";
 
 const request = {
   datasetId: "dataset",
@@ -66,9 +63,12 @@ test("the manager rejects a store response at the wrong revision", async () => {
 
 test("revision notifications invalidate cached and in-flight stale windows", async () => {
   let resolveRead;
-  const store = fakeStore(() => new Promise((resolve) => {
-    resolveRead = resolve;
-  }));
+  const store = fakeStore(
+    () =>
+      new Promise((resolve) => {
+        resolveRead = resolve;
+      }),
+  );
   const manager = new DatasetWindowManager(store, { maxCacheBytes: 10_000 });
   manager.watch("dataset");
 

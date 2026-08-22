@@ -36,8 +36,14 @@ test("the eager adapter exposes existing sheets through projected async windows"
   });
 
   assert.equal(window.rows.length, 2);
-  assert.deepEqual(window.rows[0].cells.map((cell) => cell.value), ["Ada", "Lovelace"]);
-  assert.deepEqual(window.rows[1].cells.map((cell) => cell.value), ["", ""]);
+  assert.deepEqual(
+    window.rows[0].cells.map((cell) => cell.value),
+    ["Ada", "Lovelace"],
+  );
+  assert.deepEqual(
+    window.rows[1].cells.map((cell) => cell.value),
+    ["", ""],
+  );
 });
 
 test("the eager adapter forwards dataset revision subscriptions", async () => {

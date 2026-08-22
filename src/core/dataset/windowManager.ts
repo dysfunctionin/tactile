@@ -1,10 +1,6 @@
 import type { DatasetId, RevisionId } from "../ids.ts";
 import type { DatasetStore, DatasetWindowRequest, DatasetWindowResult } from "./contracts.ts";
-import {
-  DatasetWindowCache,
-  datasetWindowCacheKey,
-  estimateDatasetWindowBytes,
-} from "./windowCache.ts";
+import { DatasetWindowCache, datasetWindowCacheKey, estimateDatasetWindowBytes } from "./windowCache.ts";
 
 export interface DatasetWindowManagerOptions {
   maxCacheBytes: number;
@@ -39,8 +35,8 @@ function assertWindowMatchesRequest(request: DatasetWindowRequest, result: Datas
     throw new Error(`Dataset window returned row ${result.rowStart} for requested row ${request.rowStart}.`);
   }
   if (
-    result.columnIds.length !== request.columnIds.length
-    || result.columnIds.some((columnId, index) => columnId !== request.columnIds[index])
+    result.columnIds.length !== request.columnIds.length ||
+    result.columnIds.some((columnId, index) => columnId !== request.columnIds[index])
   ) {
     throw new Error(`Dataset window returned an unexpected column projection for ${String(request.datasetId)}.`);
   }

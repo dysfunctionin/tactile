@@ -10,12 +10,7 @@ import {
   type DatasetId,
   type RevisionId,
 } from "../ids.ts";
-import type {
-  DatasetStore,
-  DatasetWindowRequest,
-  DatasetWindowResult,
-  WorkspaceCatalog,
-} from "./contracts.ts";
+import type { DatasetStore, DatasetWindowRequest, DatasetWindowResult, WorkspaceCatalog } from "./contracts.ts";
 
 const EAGER_COLUMN_PREFIX = "eager-column:";
 
@@ -81,14 +76,15 @@ export class EagerDatasetStore implements DatasetStore {
     };
     const minimumColumn = projectedIndexes.length ? Math.min(...projectedIndexes) : 0;
     const maximumColumn = projectedIndexes.length ? Math.max(...projectedIndexes) : -1;
-    const cells = requestedRows.end < requestedRows.start || maximumColumn < minimumColumn
-      ? []
-      : this.engine.getSheetWindow(objectId, {
-          rowStart: asRowIndex(requestedRows.start),
-          rowEnd: asRowIndex(requestedRows.end),
-          columnStart: asColumnIndex(minimumColumn),
-          columnEnd: asColumnIndex(maximumColumn),
-        });
+    const cells =
+      requestedRows.end < requestedRows.start || maximumColumn < minimumColumn
+        ? []
+        : this.engine.getSheetWindow(objectId, {
+            rowStart: asRowIndex(requestedRows.start),
+            rowEnd: asRowIndex(requestedRows.end),
+            columnStart: asColumnIndex(minimumColumn),
+            columnEnd: asColumnIndex(maximumColumn),
+          });
     const selectedColumns = new Set(projectedIndexes);
     const cellsByRow = new Map<number, Map<number, (typeof cells)[number]>>();
     for (const cell of cells) {

@@ -1,13 +1,5 @@
 import type { CellRecord, CellScalar } from "../domain.ts";
-import type {
-  ColumnId,
-  DatasetId,
-  DatasetViewId,
-  ObjectId,
-  RevisionId,
-  RowId,
-  RowIndex,
-} from "../ids.ts";
+import type { ColumnId, DatasetId, DatasetViewId, ObjectId, RevisionId, RowId, RowIndex } from "../ids.ts";
 
 export type DatasetStorageMode = "eager" | "virtual";
 
