@@ -43,13 +43,6 @@ function edgeScrollStep(coordinate, start, end) {
 
 function domCellAddressAtPoint(event, objectId) {
   if (!Number.isFinite(event?.clientX) || !Number.isFinite(event?.clientY)) return null;
-  // Prefer the native hit-test: it is cheap and layout-independent, while the
-  // slot-rect scan below forces a layout read of every mounted slot per move.
-  const elements = document.elementsFromPoint(event.clientX, event.clientY);
-  for (const element of elements) {
-    const cell = element.closest?.(".sheet-cell");
-    if (cell?.dataset.objectId === objectId) return cell.dataset.cellAddress || null;
-  }
   const slot = [...document.querySelectorAll(
     `.virtual-cell-slot[data-virtual-object-id="${CSS.escape(objectId)}"]`,
   )].find((element) => {
@@ -58,6 +51,11 @@ function domCellAddressAtPoint(event, objectId) {
       && event.clientY >= bounds.top && event.clientY < bounds.bottom;
   });
   if (slot) return slot.dataset.virtualCellAddress || null;
+  const elements = document.elementsFromPoint(event.clientX, event.clientY);
+  for (const element of elements) {
+    const cell = element.closest?.(".sheet-cell");
+    if (cell?.dataset.objectId === objectId) return cell.dataset.cellAddress || null;
+  }
   return null;
 }
 
@@ -139,6 +137,8 @@ export function useSheetGridGestures({
   const focusFrameRef = useRef(null);
   const resizeFrameRef = useRef(null);
   const axisDragFrameRef = useRef(null);
+  const finishPointerGestureRef = useRef(null);
+  const moveSelectionFromPointerRef = useRef(null);
 
   selectionContextRef.current = { selectedAddress, selectionRange };
 
@@ -442,8 +442,7 @@ export function useSheetGridGestures({
     if (formulaReferenceDragRef.current) updateFormulaReference(cell.address);
   }, [updateFormulaReference]);
 
-  useEffect(() => {
-    const finishPointerGesture = (event) => {
+  finishPointerGestureRef.current = (event) => {
       const selectionDrag = selectionDragRef.current;
       const fill = fillDragRef.current;
       const formulaReference = formulaReferenceDragRef.current;
@@ -504,14 +503,17 @@ export function useSheetGridGestures({
       if (selectionDrag?.focus && selectionDrag.focus !== selectionDrag.startAddress) {
         focusSelectedGestureCell(callbacks?.object?.id, selectionDrag.focus);
       }
-    };
+  };
+
+  useEffect(() => {
+    const finishPointerGesture = (event) => finishPointerGestureRef.current?.(event);
     window.addEventListener("pointerup", finishPointerGesture, true);
     window.addEventListener("pointercancel", finishPointerGesture, true);
     return () => {
       window.removeEventListener("pointerup", finishPointerGesture, true);
       window.removeEventListener("pointercancel", finishPointerGesture, true);
     };
-  }, [cellAddressAtPoint, flushSelectionRangeUpdate, releaseSelectionViewportLock, stopSelectionAutoScroll, updateFormulaReference, updateSelectionAtPoint]);
+  }, []);
 
   useEffect(() => () => {
     stopSelectionAutoScroll();
@@ -584,8 +586,7 @@ export function useSheetGridGestures({
 
   moveSelectionGestureRef.current = moveSelectionGesture;
 
-  useEffect(() => {
-    const moveSelectionFromPointer = (event) => {
+  moveSelectionFromPointerRef.current = (event) => {
       const activeGesture = selectionDragRef.current || fillDragRef.current || formulaReferenceDragRef.current;
       if (!activeGesture) return;
       if (activeGesture.pointerId != null && event.pointerId != null && event.pointerId !== activeGesture.pointerId) return;
@@ -616,10 +617,13 @@ export function useSheetGridGestures({
           else moveSelectionGestureRef.current?.({ address });
         }
       }
-    };
+  };
+
+  useEffect(() => {
+    const moveSelectionFromPointer = (event) => moveSelectionFromPointerRef.current?.(event);
     window.addEventListener("pointermove", moveSelectionFromPointer, true);
     return () => window.removeEventListener("pointermove", moveSelectionFromPointer, true);
-  }, [cellAddressAtPoint, moveFormulaReference, scheduleSelectionAutoScroll, updateSelectionAtPoint]);
+  }, []);
 
   const startFill = useCallback((event, cell) => {
     event.preventDefault();
