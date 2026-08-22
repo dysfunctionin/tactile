@@ -225,7 +225,6 @@ export function useLocalWorkspace() {
     if (!hydrated) return undefined;
     const shadow = wave2ShadowRef.current;
     const sequence = ++saveSequenceRef.current;
-    saveWorkspaceCache(workspace);
     // The Wave 2 record adapter persists dirty cells and metadata as patches.
     // Falling back to the legacy snapshot writer here during normal edits
     // serializes the entire workspace on the input path, including large
@@ -233,6 +232,7 @@ export function useLocalWorkspace() {
     // where the record adapter is unavailable.
     window.clearTimeout(saveTimer.current);
     if (shadow?.state?.persistence === "active") return undefined;
+    saveWorkspaceCache(workspace);
     setSaveState("saving");
     saveTimer.current = window.setTimeout(async () => {
       const persisted = await saveWorkspace(workspace);

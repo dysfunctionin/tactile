@@ -73,6 +73,7 @@ test("targeted cell reconciliation queues persistence without a workspace diff",
 
   assert.equal(shadow.state.transactions, 1);
   assert.deepEqual(shadow.state.differential, { equal: true, mode: "targeted-cells" });
+  assert.equal(shadow.state.formulaWorker, "deferred");
   assert.equal(persistence.calls.filter((call) => call.type === "commit").length, 1);
   shadow.dispose();
 });

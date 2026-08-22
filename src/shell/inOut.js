@@ -233,10 +233,12 @@ function rectSnapshot(element) {
 }
 
 export function useInOut({ workspace, workspaceRootId, workspaceHydrated = true }) {
-  const initialRootId = navigationRootFromHistory(workspace, workspaceRootId);
-  const [layers, setLayers] = useState([
-    { key: "root", objectId: initialRootId, phase: "base", closing: false },
-  ]);
+  const [layers, setLayers] = useState(() => [{
+    key: "root",
+    objectId: navigationRootFromHistory(workspace, workspaceRootId),
+    phase: "base",
+    closing: false,
+  }]);
   const timers = useRef(new Set());
   const layersRef = useRef(layers);
   const workspaceRef = useRef(workspace);

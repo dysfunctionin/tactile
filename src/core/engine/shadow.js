@@ -236,13 +236,14 @@ export function createWave2Shadow(initialWorkspace, options = {}) {
   let engine = createTransactionEngine(normalizeWorkspace(initialWorkspace), { initialRevision: "0" });
   const persistence = options.persistence || createBrowserPersistence();
   const useInitialSnapshot = options.useInitialSnapshot === true;
+  const formulaWorkerEnabled = options.formulaWorker === true;
   const formulaClients = new Map();
   const state = {
     enabled: true,
     engine: "transaction",
     mode: "default",
     persistence: "initializing",
-    formulaWorker: "idle",
+    formulaWorker: formulaWorkerEnabled ? "idle" : "deferred",
     revision: "0",
     transactions: 0,
     differential: { equal: true },
@@ -278,6 +279,7 @@ export function createWave2Shadow(initialWorkspace, options = {}) {
 
   async function ensureFormulaClient(sheetId, sheet, revision) {
     if (!sheet?.cells || formulaClients.has(String(sheetId))) return formulaClients.get(String(sheetId));
+    if (!formulaWorkerEnabled) return null;
     if (typeof Worker === "undefined") {
       state.formulaWorker = "unavailable";
       return null;
