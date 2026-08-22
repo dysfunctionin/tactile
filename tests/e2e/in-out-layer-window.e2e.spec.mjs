@@ -329,7 +329,10 @@ test("does not retain listeners across 100 floating In & Out cycles", async ({ p
       });
 
     for (let cycle = 0; cycle < 100; cycle += 1) {
-      document.querySelector('[data-object-id="home"][data-cell-address="A1"]')?.click();
+      await waitFor(
+        () => document.querySelector('[data-object-id="home"][data-cell-address="A1"]'),
+      );
+      document.querySelector('[data-object-id="home"][data-cell-address="A1"]').click();
       await waitFor(
         () => document.querySelector('[data-layer-object="layer-two"]')?.dataset.spatialPhase === "floating",
       );
@@ -802,7 +805,11 @@ test("dock breadcrumbs jump directly and reveal the complete path from the ellip
 
   for (let index = 1; index <= 5; index += 1) {
     await cellLocator(page, index === 1 ? "home" : `deep-layer-${index - 1}`, "A1").click();
-    await expect(page.locator(".spatial-layer .object-header-parent")).toHaveCount(1, { timeout: 4_000 });
+    await expect(page.locator(`[data-layer-object="deep-layer-${index}"]`)).toHaveAttribute(
+      "data-spatial-phase",
+      "floating",
+      { timeout: 4_000 },
+    );
   }
 
   const compactSegment = page.locator(
