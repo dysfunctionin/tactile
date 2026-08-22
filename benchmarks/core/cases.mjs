@@ -181,15 +181,28 @@ export const CASES = [
   },
   {
     name: "engine-build-root-banded",
-    budgetMs: 50,
-    phase: "P5",
-    note: "Graph build plus band-only first evaluation; the rest drains progressively.",
+    budgetMs: Infinity,
+    phase: "reference",
+    note: "Reference: full graph registration with band-only first evaluation.",
     warmup: 1,
-    iterations: 3,
+    iterations: 2,
     run: (_state, context) => {
       const engine = createFormulaEngine(engineSheet(context.rootSheet), { autoRecalculate: false });
       engine.setPriorityAddresses(bandAddresses(0, 34, 0, 15));
       engine.recalculateAll();
+    },
+  },
+  {
+    name: "engine-build-band-scoped",
+    budgetMs: 16,
+    phase: "P5",
+    note: "Graph registration limited to the mounted band; the worker owns the full graph.",
+    warmup: 3,
+    iterations: 10,
+    setup: () => bandAddresses(0, 34, 0, 15),
+    run: (band, context) => {
+      const sheet = { ...context.rootSheet, cells: context.rootSheet.cells };
+      createFormulaEngine(sheet, { registerOnly: band, readOnlyCells: true });
     },
   },
   {

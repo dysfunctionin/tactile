@@ -19,16 +19,17 @@ function addressForCell(id, cell) {
 }
 
 function engineSheet(object) {
-  return {
-    ...object,
-    // FormulaEngine.applyChanges mutates its sheet. Keep that private from
-    // the render workspace, whose sparse cells map is shared by the editor.
-    cells: { ...(object.cells || {}) },
-  };
+  // Shallow object copy only: `rows`/`columns` are written by the engine, but
+  // the cells map is shared with the render workspace and never mutated here.
+  return { ...object, cells: object.cells || {} };
 }
 
 function createProjectionState(object, priorityAddresses) {
-  const engine = createFormulaEngine(engineSheet(object), { autoRecalculate: false });
+  const engine = createFormulaEngine(engineSheet(object), {
+    autoRecalculate: false,
+    readOnlyCells: true,
+    registerOnly: priorityAddresses,
+  });
   engine.setPriorityAddresses(priorityAddresses);
   engine.recalculateAll();
   const cells = object.cells || {};
@@ -97,6 +98,8 @@ function changesSinceLastProjection(state, object) {
 
   state.cells = cells;
   state.journalVersion = cellChangeVersion(cells);
+  // A structural op replaces the map wholesale; re-point the shared reference.
+  state.engine.sheet.cells = cells;
   return fullChangesSinceLastProjection(state, object);
 }
 
@@ -155,6 +158,7 @@ export function useFormulaProjection(object) {
     const state = stateRef.current;
     if (!state?.ready) return;
     state.engine.setPriorityAddresses(band);
+    state.engine.registerFormulasIn(band);
     if (!state.engine.invalidated.size) return;
     if (drainInto(state, BAND_SLICE_MS)) setReadyTick((tick) => tick + 1);
   }, []);

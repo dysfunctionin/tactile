@@ -914,7 +914,7 @@ function normalizeChanges(changes) {
   return Object.entries(changes).map(([address, patch]) => ({ address, patch }));
 }
 
-function applyCellChange(sheet, change) {
+function applyCellChange(sheet, change, readOnlyCells = false) {
   const address = normalizeAddress(change?.address || change?.cell?.address || "");
   const coordinates = coordinatesFromAddress(address);
   if (!coordinates) return { address: "", removed: false };
@@ -922,7 +922,7 @@ function applyCellChange(sheet, change) {
   const existing = sheet.cells?.[id];
   const shouldRemove = change?.delete === true || change?.cell === null;
   if (shouldRemove) {
-    if (existing) delete sheet.cells[id];
+    if (existing && !readOnlyCells) delete sheet.cells[id];
     return { address, removed: true };
   }
   const supplied = change?.patch || change?.cell || Object.fromEntries(
@@ -943,7 +943,7 @@ function applyCellChange(sheet, change) {
   cell.address = address;
   cell.row = coordinates.row;
   cell.column = coordinates.column;
-  sheet.cells[id] = cell;
+  if (!readOnlyCells) sheet.cells[id] = cell;
   return { address, removed: false, cell };
 }
 
@@ -983,7 +983,13 @@ export class FormulaEngine {
     };
     this._evaluationTrace = null;
     this.priorityAddresses = null;
-    this.rebuild({ recalculate: options.autoRecalculate !== false });
+    // The projection shares the live workspace cells map; the caller has
+    // already written each change before it reaches applyChanges.
+    this.readOnlyCells = options.readOnlyCells === true;
+    this.rebuild({
+      recalculate: options.autoRecalculate !== false,
+      registerOnly: options.registerOnly || null,
+    });
   }
 
   /**
@@ -1021,18 +1027,46 @@ export class FormulaEngine {
     return { values, evaluatedAddresses, remaining: this.invalidated.size };
   }
 
-  rebuild({ recalculate = true } = {}) {
+  /**
+   * `registerOnly` limits the dependency graph to a subset of formula
+   * addresses (the mounted band). Evaluation still resolves references
+   * outside that subset on demand — only invalidation tracking is scoped.
+   */
+  rebuild({ recalculate = true, registerOnly = null } = {}) {
     this.graph.clear();
     this.values.clear();
     this.invalidated.clear();
-    for (const [id, cell] of Object.entries(this.sheet.cells || {})) {
-      if (!cell?.formula) continue;
-      const address = cellAddressForCell(cell, id);
-      if (!address) continue;
-      this.graph.setFormula(address, formulaDescriptors(cell.formula, this.stats));
+    if (registerOnly) {
+      for (const address of registerOnly) {
+        const cell = this.getCell(address);
+        if (!cell?.formula) continue;
+        this.graph.setFormula(normalizeAddress(address), formulaDescriptors(cell.formula, this.stats));
+      }
+    } else {
+      for (const [id, cell] of Object.entries(this.sheet.cells || {})) {
+        if (!cell?.formula) continue;
+        const address = cellAddressForCell(cell, id);
+        if (!address) continue;
+        this.graph.setFormula(address, formulaDescriptors(cell.formula, this.stats));
+      }
     }
     if (recalculate) return this.recalculateAll({ advanceRevision: false });
     return this.lastCalculation;
+  }
+
+  /** Register formulas that just scrolled into the band. */
+  registerFormulasIn(addresses) {
+    let added = 0;
+    for (const address of addresses || []) {
+      const normalized = normalizeAddress(address);
+      if (this.graph.hasFormula(normalized)) continue;
+      const cell = this.getCell(normalized);
+      if (!cell?.formula) continue;
+      this.graph.setFormula(normalized, formulaDescriptors(cell.formula, this.stats));
+      if (!this.values.has(normalized)) this.invalidated.add(normalized);
+      added += 1;
+    }
+    return added;
   }
 
   getCell(address) {
@@ -1163,7 +1197,7 @@ export class FormulaEngine {
     const changedAddresses = [];
     const removedAddresses = [];
     for (const change of normalizedChanges) {
-      const result = applyCellChange(this.sheet, change);
+      const result = applyCellChange(this.sheet, change, this.readOnlyCells);
       if (!result.address) continue;
       changedAddresses.push(result.address);
       if (result.removed) removedAddresses.push(result.address);
