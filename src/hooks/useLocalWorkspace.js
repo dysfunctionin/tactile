@@ -16,6 +16,7 @@ import {
 } from "../model.js";
 import { normalizeIconEmoji } from "../iconEmoji.js";
 import { repairWorkspaceTopology } from "../core/topology.js";
+import { cellsForMutation, cloneHistoryWorkspace } from "../core/history/snapshot.js";
 import { reparentWorkspace } from "../core/reparenting.js";
 import { cellAddress, cellId, coordinatesFromCellId } from "../sheet/coordinates.js";
 import {
@@ -59,21 +60,6 @@ function touch(workspace, objects, repairTopology = false) {
   return repairTopology ? repairWorkspaceTopology(next) : next;
 }
 
-function cloneHistoryWorkspace(workspace, { shareAssets = false } = {}) {
-  // Deep-cloning the entire workspace for undo is expensive on large
-  // fixtures, and asset binaries (data URLs/blobs) are the heaviest payload
-  // of all. When a commit does not touch assets, the snapshot can share the
-  // same assets object reference safely: `assets` is treated as immutable
-  // (mutations always create a new object), only sheet `cells` dicts are
-  // mutated in place. Sharing the reference keeps undo exact for cells and
-  // metadata while avoiding a hundred-megabyte clone per structural edit.
-  const cloned = typeof structuredClone === "function"
-    ? structuredClone(workspace)
-    : JSON.parse(JSON.stringify(workspace));
-  if (shareAssets) cloned.assets = workspace.assets;
-  return cloned;
-}
-
 function cloneHistoryCell(cell) {
   return cell ? { ...cell } : null;
 }
@@ -81,7 +67,7 @@ function cloneHistoryCell(cell) {
 function applyCellHistory(workspace, entry, direction) {
   const object = workspace.objects[entry.objectId];
   if (object?.type !== "sheet") return workspace;
-  const cells = object.cells;
+  const cells = cellsForMutation(object.cells);
   entry.changes.forEach((change) => {
     const cell = change[direction];
     if (cell) cells[change.cellId] = { ...cell };
@@ -185,7 +171,7 @@ export function useLocalWorkspace() {
       if (!coalesced) {
         history.past.push({
           kind: "snapshot",
-          value: cloneHistoryWorkspace(current, { shareAssets: current.assets === next.assets }),
+          value: cloneHistoryWorkspace(current),
         });
         if (history.past.length > 120) history.past.shift();
       }
@@ -203,7 +189,7 @@ export function useLocalWorkspace() {
       if (object?.type !== "sheet") return current;
       const historyChanges = [];
       let changed = false;
-      const cells = object.cells;
+      const cells = cellsForMutation(object.cells);
       changes.forEach(({ cellId: targetCellId, patch }) => {
         const coordinates = coordinatesFromCellId(targetCellId);
         if (!coordinates) return;
@@ -651,7 +637,7 @@ export function useLocalWorkspace() {
       }
       history.future.push({
         kind: "snapshot",
-        value: cloneHistoryWorkspace(current, { shareAssets: current.assets === previous.value.assets }),
+        value: cloneHistoryWorkspace(current),
       });
       history.lastKey = null;
       history.lastAt = 0;
@@ -672,7 +658,7 @@ export function useLocalWorkspace() {
       }
       history.past.push({
         kind: "snapshot",
-        value: cloneHistoryWorkspace(current, { shareAssets: current.assets === next.value.assets }),
+        value: cloneHistoryWorkspace(current),
       });
       history.lastKey = null;
       history.lastAt = 0;

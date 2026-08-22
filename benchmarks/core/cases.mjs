@@ -8,6 +8,7 @@ import {
   shiftCells,
 } from "../../src/sheet/axisCells.js";
 import { autoRowHeightsIncremental } from "../../src/sheet/textMeasure.js";
+import { cloneHistoryWorkspace } from "../../src/core/history/snapshot.js";
 import { recordCellChanges } from "../../src/objects/sheet/grid/cellChangeJournal.js";
 import { buildAxisGeometry, buildVirtualRange, rangeContains } from "../../src/objects/sheet/useVirtualSheet.js";
 
@@ -249,6 +250,28 @@ export const CASES = [
     setup: (context) => buildEngine(context),
     run: (engine) => {
       engine.getDependents(ROW_FANOUT_ADDRESS);
+    },
+  },
+  {
+    name: "history-snapshot",
+    budgetMs: 16,
+    phase: "P2",
+    note: "Undo snapshot taken on every structural or object-level commit.",
+    warmup: 3,
+    iterations: 10,
+    run: (_state, context) => {
+      cloneHistoryWorkspace(context.workspace);
+    },
+  },
+  {
+    name: "history-snapshot-deep-clone",
+    budgetMs: Infinity,
+    phase: "reference",
+    note: "Unbanded reference: the structuredClone the snapshot used to perform.",
+    warmup: 1,
+    iterations: 2,
+    run: (_state, context) => {
+      structuredClone(context.workspace);
     },
   },
   {
