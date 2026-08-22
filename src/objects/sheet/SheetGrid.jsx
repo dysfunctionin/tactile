@@ -166,6 +166,7 @@ const contextMenu = useSheetGridContextMenu({
         columnGroupByStart={projection.columnGroupByStart}
         visibleRows={projection.visibleRows}
         visibleColumns={projection.visibleColumns}
+        viewportCells={projection.viewportCells}
         viewport={projection.viewport}
         canvasSize={projection.canvasSize}
         metrics={projection.metrics}

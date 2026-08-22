@@ -8,6 +8,7 @@ import {
 import { projectAutoRowHeights } from "./autoRowHeightProjection.js";
 import { boundedAxisEntries, canonicalSheetSelection } from "./selectionGeometry.js";
 import { useFormulaProjection } from "./useFormulaProjection.js";
+import { useDatasetViewport } from "./useDatasetViewport.js";
 import { useVirtualSheet } from "../useVirtualSheet.js";
 
 export function rangeValues(start, end) {
@@ -194,6 +195,7 @@ export function useSheetGridProjection({
     return [...visibleColumns, { position: selectedPosition, column: selectedCoordinates.column }]
       .sort((left, right) => left.position - right.position);
   }, [object.columns, selectedCoordinates.column, virtualSheet.columnPositionForIndex, visibleColumns]);
+  const viewportCells = useDatasetViewport(object, pinnedVisibleRows, pinnedVisibleColumns);
 
   return {
     selectedCoordinates,
@@ -210,6 +212,7 @@ export function useSheetGridProjection({
     columnGroupByStart,
     visibleRows: pinnedVisibleRows,
     visibleColumns: pinnedVisibleColumns,
+    viewportCells,
     ...virtualSheet,
   };
 }

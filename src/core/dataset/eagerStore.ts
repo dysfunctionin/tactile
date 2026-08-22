@@ -114,6 +114,7 @@ export class EagerDatasetStore implements DatasetStore {
           return {
             columnId: request.columnIds[projectionIndex],
             value: cell?.value || "",
+            ...(cell ? { record: cell } : {}),
             ...(cell?.calculatedValue === undefined ? {} : { calculatedValue: cell.calculatedValue }),
           };
         }),

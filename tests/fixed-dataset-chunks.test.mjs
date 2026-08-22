@@ -4,7 +4,9 @@ import test from "node:test";
 import {
   FIXED_DATASET_CHUNK_COLUMNS,
   FIXED_DATASET_CHUNK_ROWS,
+  FixedDatasetChunkReader,
   FixedDatasetChunkManager,
+  SheetSnapshotDatasetStore,
   planFixedDatasetChunks,
 } from "../src/core/dataset/index.ts";
 
@@ -117,6 +119,40 @@ test("viewport reads reuse canonical chunks and merge only requested cells", asy
   assert.equal(first.rows[0].cells.length, 11);
   assert.equal(second.rows[0].cells[0].value, "12:column-12");
   await manager.close();
+});
+
+test("sheet snapshot windows preserve cell records and refresh on revision changes", async () => {
+  const sheet = {
+    id: "sheet",
+    type: "sheet",
+    title: "Sheet",
+    rows: 100,
+    columns: 100,
+    cells: {
+      r2c3: { id: "r2c3", address: "C2", row: 1, column: 2, value: "before", formula: "", style: { bold: true } },
+    },
+  };
+  const store = new SheetSnapshotDatasetStore(sheet, "1");
+  const reader = new FixedDatasetChunkReader(store, { maxCacheBytes: 16 * 1024 * 1024 });
+  const firstDescriptor = store.descriptor();
+  const first = await reader.read(firstDescriptor, {
+    datasetId: firstDescriptor.id, rowStart: 0, rowEnd: 4, columnStart: 0, columnEnd: 4,
+  });
+
+  assert.equal(first.rows[1].cells[2].record.style.bold, true);
+  const nextSheet = {
+    ...sheet,
+    cells: { ...sheet.cells, r2c3: { ...sheet.cells.r2c3, value: "after" } },
+  };
+  store.update(nextSheet, "2");
+  const secondDescriptor = store.descriptor();
+  const second = await reader.read(secondDescriptor, {
+    datasetId: secondDescriptor.id, rowStart: 0, rowEnd: 4, columnStart: 0, columnEnd: 4,
+  });
+
+  assert.equal(second.rows[1].cells[2].record.value, "after");
+  assert.equal(second.revision, "2");
+  await reader.close();
 });
 
 test("aggregates remain one lazy global operation and structure invalidates chunks once", async () => {

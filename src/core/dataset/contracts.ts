@@ -1,4 +1,4 @@
-import type { CellScalar } from "../domain.ts";
+import type { CellRecord, CellScalar } from "../domain.ts";
 import type {
   ColumnId,
   DatasetId,
@@ -49,6 +49,7 @@ export interface DatasetWindowCell {
   columnId: ColumnId;
   value: CellScalar;
   calculatedValue?: CellScalar;
+  record?: CellRecord;
   state?: "ready" | "pending" | "stale" | "error";
   error?: string;
 }

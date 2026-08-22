@@ -3,6 +3,7 @@ import type {
   DatasetAggregateOperation,
   DatasetAggregateRequest,
   DatasetDescriptor,
+  DatasetStore,
   DatasetStructureRequest,
   DatasetStructureResult,
   DatasetWindowCell,
@@ -141,13 +142,10 @@ function mergeChunks(
   };
 }
 
-export class FixedDatasetChunkManager {
+export class FixedDatasetChunkReader {
   readonly windows: DatasetWindowManager;
 
-  private readonly store: OperationalDatasetStore;
-
-  constructor(store: OperationalDatasetStore, options: { maxCacheBytes: number }) {
-    this.store = store;
+  constructor(store: DatasetStore, options: { maxCacheBytes: number }) {
     this.windows = new DatasetWindowManager(store, options);
   }
 
@@ -155,6 +153,23 @@ export class FixedDatasetChunkManager {
     const plan = planFixedDatasetChunks(descriptor, viewport);
     const chunks = await Promise.all(plan.map(({ request }) => this.windows.read(request)));
     return mergeChunks(descriptor, viewport, chunks);
+  }
+
+  watch(descriptor: DatasetDescriptor): () => void {
+    return this.windows.watch(descriptor.id);
+  }
+
+  close(): Promise<void> {
+    return this.windows.close();
+  }
+}
+
+export class FixedDatasetChunkManager extends FixedDatasetChunkReader {
+  private readonly store: OperationalDatasetStore;
+
+  constructor(store: OperationalDatasetStore, options: { maxCacheBytes: number }) {
+    super(store, options);
+    this.store = store;
   }
 
   aggregate(request: DatasetAggregateRequest): DatasetAggregateOperation {
@@ -165,13 +180,5 @@ export class FixedDatasetChunkManager {
     const result = await this.store.mutateStructure(request);
     this.windows.cache.invalidate((window) => window.datasetId === request.datasetId);
     return result;
-  }
-
-  watch(descriptor: DatasetDescriptor): () => void {
-    return this.windows.watch(descriptor.id);
-  }
-
-  close(): Promise<void> {
-    return this.windows.close();
   }
 }
