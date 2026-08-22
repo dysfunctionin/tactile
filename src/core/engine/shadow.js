@@ -403,6 +403,87 @@ export function createWave2Shadow(initialWorkspace, options = {}) {
     return queue;
   }
 
+  function reconcileCellChanges(nextWorkspace, operations = [], options = {}) {
+    const normalized = options.normalized === true
+      ? nextWorkspace
+      : normalizeWorkspace(nextWorkspace);
+    const byObject = new Map();
+    operations.forEach((operation) => {
+      if (!operation?.objectId || !Array.isArray(operation.changes)) return;
+      const changes = byObject.get(String(operation.objectId)) || [];
+      changes.push(...operation.changes);
+      byObject.set(String(operation.objectId), changes);
+    });
+    if (!byObject.size) return reconcile(normalized, { normalized: true });
+
+    const nextObjects = { ...previous.objects };
+    const changedSheets = new Map();
+    const commands = [];
+    for (const [objectId, changes] of byObject) {
+      const sheet = normalized.objects?.[objectId];
+      const baseline = previous.objects?.[objectId];
+      if (sheet?.type !== "sheet" || baseline?.type !== "sheet") {
+        return reconcile(normalized, { normalized: true });
+      }
+      const cells = baseline.cells || {};
+      const formulaChanges = [];
+      const commandChanges = [];
+      for (const change of changes) {
+        if (!change?.cellId) continue;
+        if (change.after) cells[change.cellId] = { ...change.after };
+        else delete cells[change.cellId];
+        commandChanges.push({ cellId: change.cellId, patch: cellPatch(change.after) });
+        formulaChanges.push({
+          address: change.after?.address || change.before?.address || change.cellId,
+          ...(change.after ? { patch: cellPatch(change.after) } : { delete: true }),
+        });
+      }
+      if (!commandChanges.length) continue;
+      nextObjects[objectId] = { ...sheet, cells };
+      changedSheets.set(objectId, formulaChanges);
+      const envelope = commandEnvelope(commandSequence++);
+      commands.push(commandChanges.length === 1
+        ? { ...envelope, type: "set-cell", objectId, ...commandChanges[0] }
+        : { ...envelope, type: "set-range", objectId, changes: commandChanges });
+    }
+    if (!commands.length) return Promise.resolve();
+
+    previous = {
+      ...previous,
+      ...workspaceMeta(normalized),
+      objects: nextObjects,
+      updatedAt: normalized.updatedAt,
+    };
+    const next = previous;
+    queue = queue.then(async () => {
+      if (disposed) return;
+      await ready;
+      const transaction = await engine.dispatchBatch(commands, {
+        historyKey: operations.length === 1
+          ? operations[0].historyKey
+          : `wave2:${state.transactions + 1}`,
+      });
+      state.revision = String(transaction.revision);
+      state.transactions += 1;
+      if (state.persistence === "active") {
+        try {
+          await persistence.commit({ revision: transaction.revision, transaction });
+        } catch (error) {
+          state.persistence = "error";
+          state.lastError = error?.message || String(error);
+        }
+      }
+      await refreshFormulaClients(next, next, changedSheets, Number(transaction.revision) || state.transactions);
+      engine.store.replaceWorkspaceMeta(workspaceMeta(next));
+      state.differential = { equal: true, mode: "targeted-cells" };
+      exposeState(state);
+    }).catch((error) => {
+      state.lastError = error?.message || String(error);
+      exposeState(state);
+    });
+    return queue;
+  }
+
   function dispose() {
     disposed = true;
     disposeFormulaClients(formulaClients);
@@ -422,6 +503,7 @@ export function createWave2Shadow(initialWorkspace, options = {}) {
     engine: () => engine,
     ready,
     reconcile,
+    reconcileCellChanges,
     dispose,
   };
 }

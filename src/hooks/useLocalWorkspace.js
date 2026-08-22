@@ -185,6 +185,7 @@ export function useLocalWorkspace() {
   const saveSequenceRef = useRef(0);
   const historyRef = useRef({ past: [], future: [], lastKey: null, lastAt: 0 });
   const wave2ShadowRef = useRef(null);
+  const pendingCellReconcileRef = useRef(null);
   const workspaceMutationRef = useRef(false);
 
   useEffect(() => {
@@ -246,7 +247,12 @@ export function useLocalWorkspace() {
     if (!hydrated || !shadow) return undefined;
     let current = true;
     setSaveState("saving");
-    Promise.resolve(shadow.reconcile(workspace, { normalized: true })).then(
+    const pendingCells = pendingCellReconcileRef.current;
+    const reconciliation = pendingCells?.workspace === workspace
+      ? shadow.reconcileCellChanges(workspace, pendingCells.operations, { normalized: true })
+      : shadow.reconcile(workspace, { normalized: true });
+    if (pendingCells?.workspace === workspace) pendingCellReconcileRef.current = null;
+    Promise.resolve(reconciliation).then(
       () => {
         if (!current) return;
         setSaveState(shadow.state.persistence === "active" ? "saved" : "saved in local cache");
@@ -328,10 +334,19 @@ export function useLocalWorkspace() {
       history.future = [];
       history.lastKey = historyKey;
       history.lastAt = now;
-      return touch({
+      const next = touch({
         ...current,
         objects: { ...current.objects, [objectId]: { ...object, cells } },
       }, { ...current.objects, [objectId]: { ...object, cells } }, changes.some(({ patch }) => Object.prototype.hasOwnProperty.call(patch || {}, "embed")));
+      const pending = pendingCellReconcileRef.current;
+      pendingCellReconcileRef.current = {
+        workspace: next,
+        operations: [
+          ...(pending?.workspace === current ? pending.operations : []),
+          { objectId, historyKey, changes: historyChanges },
+        ],
+      };
+      return next;
     });
   }, []);
 

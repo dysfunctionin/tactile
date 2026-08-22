@@ -159,6 +159,7 @@ export function SheetObject({
           rangeLabel={selectedRangeLabel}
           cell={selectedCell}
           formulaSheet={object}
+          formulaPreviewEnabled={formulaMode}
           inputRef={formulaEditorRef}
           onChange={handleFormulaCommit}
           onFormulaModeChange={setFormulaMode}

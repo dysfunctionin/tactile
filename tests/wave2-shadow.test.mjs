@@ -59,6 +59,24 @@ test("shadow transition maps a cell edit to one normalized transaction and patch
   shadow.dispose();
 });
 
+test("targeted cell reconciliation queues persistence without a workspace diff", async () => {
+  const initial = createBlankWorkspace({ id: "workspace-wave2-targeted" });
+  const next = workspaceWithCell(initial, "A1", { value: "fast" });
+  const persistence = fakePersistence();
+  const shadow = createWave2Shadow(initial, { persistence });
+
+  await shadow.reconcileCellChanges(next, [{
+    objectId: "home",
+    historyKey: "cell:home:A1",
+    changes: [{ cellId: "A1", before: null, after: next.objects.home.cells.A1 }],
+  }], { normalized: true });
+
+  assert.equal(shadow.state.transactions, 1);
+  assert.deepEqual(shadow.state.differential, { equal: true, mode: "targeted-cells" });
+  assert.equal(persistence.calls.filter((call) => call.type === "commit").length, 1);
+  shadow.dispose();
+});
+
 test("the normalized transaction engine is the only runtime mode", () => {
   const initial = createBlankWorkspace({ id: "workspace-wave3-default" });
   const defaultEngine = createWave2Shadow(initial, { persistence: fakePersistence() });
