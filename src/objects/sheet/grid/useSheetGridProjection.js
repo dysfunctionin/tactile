@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { cellId } from "../../../sheet/coordinates.js";
+import { cellAddress, cellId } from "../../../sheet/coordinates.js";
 import { fillRange } from "../../../sheet/ranges.js";
 import { autoRowHeights, autoRowHeightsIncremental, mergeAutoRowHeights } from "../../../sheet/textMeasure.js";
 import { cellChangeVersion } from "./cellChangeJournal.js";
@@ -52,7 +52,8 @@ export function useSheetGridProjection({
       : null,
     [fillTarget, normalizedSelection],
   );
-  const formulaValues = useFormulaProjection(object);
+  const formulaProjection = useFormulaProjection(object);
+  const formulaValues = formulaProjection.values;
   const rowGroups = Array.isArray(object.rowGroups) ? object.rowGroups : [];
   const columnGroups = Array.isArray(object.columnGroups) ? object.columnGroups : [];
   const filters = Array.isArray(object.filters) ? object.filters : [];
@@ -197,6 +198,19 @@ export function useSheetGridProjection({
       .sort((left, right) => left.position - right.position);
   }, [object.columns, selectedCoordinates.column, virtualSheet.columnPositionForIndex, visibleColumns]);
 
+  const mountedBand = useMemo(() => {
+    const addresses = new Set();
+    for (const { row } of pinnedVisibleRows) {
+      for (const { column } of pinnedVisibleColumns) addresses.add(cellAddress(row, column));
+    }
+    return addresses;
+  }, [pinnedVisibleColumns, pinnedVisibleRows]);
+
+  const { setPriorityBand } = formulaProjection;
+  useEffect(() => {
+    setPriorityBand(mountedBand);
+  }, [mountedBand, setPriorityBand]);
+
   return {
     selectedCoordinates,
     selectedAddress: canonicalSelectedAddress,
@@ -205,6 +219,7 @@ export function useSheetGridProjection({
     showActiveColumnContext,
     fillPreviewRange,
     formulaValues,
+    pendingCalculations: formulaProjection.pending,
     rowGroups,
     columnGroups,
     filters,

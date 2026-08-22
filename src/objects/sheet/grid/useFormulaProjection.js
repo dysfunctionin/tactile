@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createFormulaEngine } from "../../../sheet/formulas.js";
 import { cellAddress, coordinatesFromCellId } from "../../../sheet/coordinates.js";
 import { cellChangeVersion, cellChangesSince } from "./cellChangeJournal.js";
+import { clearCalculationStatus, reportCalculationStatus } from "./calculationStatus.js";
 
 function formulaRelevant(cell) {
   return Boolean(cell?.formula || cell?.value);
@@ -26,8 +27,10 @@ function engineSheet(object) {
   };
 }
 
-function createProjectionState(object) {
-  const engine = createFormulaEngine(engineSheet(object));
+function createProjectionState(object, priorityAddresses) {
+  const engine = createFormulaEngine(engineSheet(object), { autoRecalculate: false });
+  engine.setPriorityAddresses(priorityAddresses);
+  engine.recalculateAll();
   const cells = object.cells || {};
   return {
     objectId: object.id,
@@ -111,12 +114,50 @@ function updateProjectionState(state, object, changes) {
   }
 }
 
+const DRAIN_SLICE_MS = 6;
+const BAND_SLICE_MS = 8;
+const EMPTY_VALUES = new Map();
+
+function scheduleIdle(callback) {
+  if (typeof window === "undefined") return null;
+  if (typeof window.requestIdleCallback === "function") {
+    return { kind: "idle", id: window.requestIdleCallback(callback, { timeout: 250 }) };
+  }
+  return { kind: "timeout", id: window.setTimeout(callback, 0) };
+}
+
+function cancelIdle(handle) {
+  if (!handle || typeof window === "undefined") return;
+  if (handle.kind === "idle") window.cancelIdleCallback?.(handle.id);
+  else window.clearTimeout(handle.id);
+}
+
+function drainInto(state, budgetMs) {
+  const slice = state.engine.drainInvalidated({ budgetMs });
+  if (!slice.evaluatedAddresses.length) return false;
+  // Values map is mutated in place; the ready tick is what re-renders the grid.
+  for (const [address, value] of slice.values) state.values.set(address, value);
+  return true;
+}
+
 export function useFormulaProjection(object) {
   const stateRef = useRef(null);
   const objectRef = useRef(object);
   objectRef.current = object;
+  const bandRef = useRef(null);
   const buildScheduledRef = useRef(false);
   const [, setReadyTick] = useState(0);
+
+  // Imperative rather than a prop: the mounted band is derived from the virtual
+  // window, which itself depends on formula values through column filters.
+  const setPriorityBand = useCallback((band) => {
+    bandRef.current = band;
+    const state = stateRef.current;
+    if (!state?.ready) return;
+    state.engine.setPriorityAddresses(band);
+    if (!state.engine.invalidated.size) return;
+    if (drainInto(state, BAND_SLICE_MS)) setReadyTick((tick) => tick + 1);
+  }, []);
 
   useEffect(() => {
     const ensureBuild = (target) => {
@@ -126,7 +167,7 @@ export function useFormulaProjection(object) {
       const schedule = () => {
         if (objectRef.current?.id !== target.id) return; // stale: cross-sheet effect already rebuilt
         buildScheduledRef.current = false;
-        stateRef.current = createProjectionState(objectRef.current);
+        stateRef.current = createProjectionState(objectRef.current, bandRef.current);
         setReadyTick((tick) => tick + 1);
       };
       // Build after first paint (idle priority) so a large sheet's first render
@@ -150,11 +191,43 @@ export function useFormulaProjection(object) {
     return undefined;
   }, [object]);
 
+  // Off-band dependents settle over idle slices so a single edit never blocks
+  // a frame on the full dependent set.
+  useEffect(() => {
+    const state = stateRef.current;
+    if (!state?.ready || !state.engine.invalidated.size) return undefined;
+    let cancelled = false;
+    let handle = null;
+    const step = () => {
+      if (cancelled) return;
+      const current = stateRef.current;
+      if (!current?.ready) return;
+      if (drainInto(current, DRAIN_SLICE_MS)) setReadyTick((tick) => tick + 1);
+      else if (current.engine.invalidated.size) handle = scheduleIdle(step);
+    };
+    handle = scheduleIdle(step);
+    return () => {
+      cancelled = true;
+      cancelIdle(handle);
+    };
+  });
+
   const state = stateRef.current;
+  const pending = state?.ready && state.objectId === object.id ? state.engine.invalidated.size : 0;
+  useEffect(() => {
+    reportCalculationStatus(object.id, pending);
+  }, [object.id, pending]);
+  useEffect(() => () => clearCalculationStatus(object.id), [object.id]);
+
   if (state?.ready && state.objectId === object.id) {
     const changes = changesSinceLastProjection(state, object);
     updateProjectionState(state, object, changes);
-    return state.values;
+    return { values: state.values, pending: state.engine.invalidated.size, setPriorityBand };
   }
-  return stateRef.current?.values || new Map();
+  return {
+    values: stateRef.current?.values || EMPTY_VALUES,
+    pending: 0,
+    setPriorityBand,
+  };
 }
+

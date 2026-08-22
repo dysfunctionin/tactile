@@ -10,6 +10,7 @@ const ERROR = {
 
 const COMPARISON_OPERATORS = ["=", "<>", "<", ">", "<=", ">="];
 const MAX_MATERIALIZED_DEPENDENCIES = 100_000;
+const TRANSITIVE_CACHE_LIMIT = 4_096;
 // The parse tree cache is shared by every engine and worker realm. Bound it so
 // intermediate keystroke formulas and typos (which are cached too) cannot grow
 // the heap without limit over a long session. FIFO eviction keeps the hot,
@@ -732,6 +733,9 @@ export class FormulaDependencyGraph {
     this.dependencies = new Map();
     this.reverseDependencies = new Map();
     this.rangeCoverageByColumn = new Map();
+    // Reachability from an address is stable until the graph shape changes,
+    // and typing re-edits the same address over and over.
+    this.transitiveCache = new Map();
   }
 
   clear() {
@@ -739,11 +743,13 @@ export class FormulaDependencyGraph {
     this.dependencies.clear();
     this.reverseDependencies.clear();
     this.rangeCoverageByColumn.clear();
+    this.transitiveCache.clear();
   }
 
   setFormula(address, descriptors) {
     const formulaAddress = normalizeAddress(address);
     this.removeFormula(formulaAddress);
+    this.transitiveCache.clear();
     const cells = new Set();
     const ranges = [];
     for (const cell of descriptors?.cells || []) {
@@ -780,6 +786,7 @@ export class FormulaDependencyGraph {
     const formulaAddress = normalizeAddress(address);
     const entry = this.entries.get(formulaAddress);
     if (!entry) return;
+    this.transitiveCache.clear();
     for (const cell of entry.cells) deleteSetValue(this.reverseDependencies, cell, formulaAddress);
     for (const range of entry.ranges) {
       for (let column = range.startColumn; column <= range.endColumn; column += 1) {
@@ -828,19 +835,34 @@ export class FormulaDependencyGraph {
   }
 
   transitiveDependentsOf(addresses) {
-    const seen = new Set();
-    const queue = [...(Array.isArray(addresses) || addresses instanceof Set ? addresses : [addresses])]
+    const list = [...(Array.isArray(addresses) || addresses instanceof Set ? addresses : [addresses])]
       .map(normalizeAddress);
+    if (list.length === 1) return this._transitiveFrom(list[0]);
+    const dependents = new Set();
+    for (const address of list) {
+      for (const dependent of this._transitiveFrom(address)) dependents.add(dependent);
+    }
+    return dependents;
+  }
+
+  _transitiveFrom(address) {
+    const cached = this.transitiveCache.get(address);
+    if (cached) return cached;
+    const seen = new Set();
+    const queue = [address];
     // Head-index BFS: Array.shift() is O(n) per dequeue, which made dense
     // dependency trees O(n²). Advancing an index keeps the whole walk O(n).
     for (let head = 0; head < queue.length; head += 1) {
-      const address = queue[head];
-      for (const dependent of this.dependentsOf(address)) {
+      for (const dependent of this.dependentsOf(queue[head])) {
         if (seen.has(dependent)) continue;
         seen.add(dependent);
         queue.push(dependent);
       }
     }
+    if (this.transitiveCache.size >= TRANSITIVE_CACHE_LIMIT) {
+      this.transitiveCache.delete(this.transitiveCache.keys().next().value);
+    }
+    this.transitiveCache.set(address, seen);
     return seen;
   }
 
@@ -960,7 +982,43 @@ export class FormulaEngine {
       formulaCount: 0,
     };
     this._evaluationTrace = null;
+    this.priorityAddresses = null;
     this.rebuild({ recalculate: options.autoRecalculate !== false });
+  }
+
+  /**
+   * Restrict synchronous recalculation to a set of addresses (the mounted
+   * band). Everything else stays invalidated and is evaluated by
+   * `drainInvalidated`, or on demand when a priority formula reads it.
+   */
+  setPriorityAddresses(addresses) {
+    this.priorityAddresses = addresses instanceof Set ? addresses : addresses ? new Set(addresses) : null;
+  }
+
+  drainInvalidated({ budgetMs = 8, maxAddresses = Infinity } = {}) {
+    const start = now();
+    const priority = this.priorityAddresses;
+    const pending = [];
+    if (priority) {
+      for (const address of this.invalidated) if (priority.has(address)) pending.push(address);
+      for (const address of this.invalidated) if (!priority.has(address)) pending.push(address);
+    } else {
+      pending.push(...this.invalidated);
+    }
+    const values = new Map();
+    const evaluatedAddresses = [];
+    const runStack = new Set();
+    for (const address of pending) {
+      if (!this.graph.hasFormula(address)) {
+        this.invalidated.delete(address);
+        continue;
+      }
+      values.set(address, this.evaluateAddress(address, runStack));
+      evaluatedAddresses.push(address);
+      if (evaluatedAddresses.length >= maxAddresses) break;
+      if (now() - start >= budgetMs) break;
+    }
+    return { values, evaluatedAddresses, remaining: this.invalidated.size };
   }
 
   rebuild({ recalculate = true } = {}) {
@@ -1073,9 +1131,13 @@ export class FormulaEngine {
   recalculateAll({ advanceRevision = false } = {}) {
     this.values.clear();
     this.invalidated.clear();
-    return this._runRecalculation(this.graph.formulaAddresses(), {
+    const addresses = this.graph.formulaAddresses();
+    for (const address of addresses) this.invalidated.add(address);
+    const priority = this.priorityAddresses;
+    const targets = priority ? addresses.filter((address) => priority.has(address)) : addresses;
+    return this._runRecalculation(targets, {
       mode: "full",
-      affectedAddresses: this.graph.formulaAddresses(),
+      affectedAddresses: addresses,
       advanceRevision,
     });
   }
@@ -1122,10 +1184,13 @@ export class FormulaEngine {
     for (const address of affected) this.invalidated.add(address);
     if (Number.isInteger(revision)) this.revision = revision;
     else this.revision += 1;
-    const result = this._runRecalculation([...affected], {
+    const priority = this.priorityAddresses;
+    const targets = priority ? [...affected].filter((address) => priority.has(address)) : [...affected];
+    const result = this._runRecalculation(targets, {
       mode: "incremental",
       affectedAddresses: [...affected],
     });
+    result.deferredCount = priority ? affected.size - targets.length : 0;
     result.changedAddresses = changedAddresses;
     result.removedAddresses = removedAddresses;
     return result;

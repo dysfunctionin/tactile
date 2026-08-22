@@ -8,6 +8,7 @@ import { cellAddress, cellId, coordinatesFromAddress, moveAddress } from "../../
 import { cellIdsInRange, rangeLabel, rangeSize } from "../../sheet/ranges.js";
 import { SheetGrid } from "./SheetGrid.jsx";
 import { canonicalSheetSelection } from "./grid/selectionGeometry.js";
+import { useCalculationStatus } from "./grid/calculationStatus.js";
 
 export function SheetObject({
   object,
@@ -54,6 +55,7 @@ export function SheetObject({
   const selectedCell = materializeCell(object, selectedCoordinates.row, selectedCoordinates.column);
   const selectedRangeLabel = rangeLabel(canonicalRange);
   const selectedRangeSize = rangeSize(canonicalRange);
+  const calculation = useCalculationStatus(object.id);
   const hasConditionalFormat = (object.conditionalFormats || []).some((rule) => rule.range === selectedRangeLabel);
   const additiveSelectionAddresses = [...new Set(
     multiSelectedAddresses
@@ -201,6 +203,11 @@ export function SheetObject({
 
       <footer className="object-statusbar">
         <span className="status-spacer" />
+        {calculation.busy ? (
+          <span className="status-item calculation-status" role="status">
+            Calculating {calculation.pending.toLocaleString()} cell{calculation.pending === 1 ? "" : "s"}…
+          </span>
+        ) : null}
         <span className="status-item active-cell-status">
           <span className="status-caption">{selectedRangeSize > 1 ? "Range" : "Active"}</span>
           <code>{selectedRangeSize > 1 ? selectedRangeLabel : selectedCell?.address || "A1"}</code>

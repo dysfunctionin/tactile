@@ -1446,6 +1446,23 @@ input:focus-visible,
   color: var(--accent);
 }
 
+.calculation-status {
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+  animation: calculation-status-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes calculation-status-pulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .calculation-status {
+    animation: none;
+  }
+}
+
 kbd {
   min-width: 18px;
   display: inline-grid;
