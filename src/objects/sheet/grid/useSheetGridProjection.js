@@ -1,13 +1,14 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { cellId } from "../../../sheet/coordinates.js";
 import { fillRange } from "../../../sheet/ranges.js";
-import { autoRowHeights } from "../../../sheet/textMeasure.js";
 import {
   getSurfaceCellDrafts,
   subscribeSurfaceCellDrafts,
 } from "../../../components/localEditSession.js";
+import { projectAutoRowHeights } from "./autoRowHeightProjection.js";
 import { boundedAxisEntries, canonicalSheetSelection } from "./selectionGeometry.js";
 import { useFormulaProjection } from "./useFormulaProjection.js";
+import { useDatasetViewport } from "./useDatasetViewport.js";
 import { useVirtualSheet } from "../useVirtualSheet.js";
 
 export function rangeValues(start, end) {
@@ -71,7 +72,7 @@ export function useSheetGridProjection({
     const groupStarts = new Set(rowGroups.map((group) => group.start));
     const rows = Array.from({ length: object.rows }, (_, row) => row).filter((row) => {
       if (hidden.has(row)) return false;
-      if (!filters.length || groupStarts.has(row)) return true;
+      if (row === selectedCoordinates.row || !filters.length || groupStarts.has(row)) return true;
       return filters.every((filter) => {
         const cell = object.cells?.[cellId(row, filter.column)];
         const value = cell?.formula ? formulaValues.get(cell.address) : cell?.value;
@@ -79,7 +80,7 @@ export function useSheetGridProjection({
       });
     });
     return rows.length ? rows : [0];
-  }, [filters, formulaValues, object.cells, object.rows, rowGroups]);
+  }, [filters, formulaValues, object.cells, object.rows, rowGroups, selectedCoordinates.row]);
   const visibleColumnIndexMap = useMemo(() => {
     const hidden = new Set();
     columnGroups.filter((group) => group.collapsed).forEach((group) => {
@@ -108,8 +109,18 @@ export function useSheetGridProjection({
   // Shift+Enter newline stays clipped until the edit commits.
   const [draftTick, setDraftTick] = useState(0);
   const [surfaceDrafts, setSurfaceDrafts] = useState(null);
+  const autoRowHeightStateRef = useRef(null);
   const liveAutoRowHeightsMap = useMemo(
-    () => autoRowHeights(object, columnWidthForIndex, surfaceDrafts),
+    () => {
+      const projection = projectAutoRowHeights(
+        autoRowHeightStateRef.current,
+        object,
+        columnWidthForIndex,
+        surfaceDrafts,
+      );
+      autoRowHeightStateRef.current = projection.state;
+      return projection.heights;
+    },
     [object, columnWidthForIndex, surfaceDrafts, draftTick],
   );
   const virtualSheet = useVirtualSheet(
@@ -184,6 +195,7 @@ export function useSheetGridProjection({
     return [...visibleColumns, { position: selectedPosition, column: selectedCoordinates.column }]
       .sort((left, right) => left.position - right.position);
   }, [object.columns, selectedCoordinates.column, virtualSheet.columnPositionForIndex, visibleColumns]);
+  const viewportCells = useDatasetViewport(object, pinnedVisibleRows, pinnedVisibleColumns);
 
   return {
     selectedCoordinates,
@@ -200,6 +212,7 @@ export function useSheetGridProjection({
     columnGroupByStart,
     visibleRows: pinnedVisibleRows,
     visibleColumns: pinnedVisibleColumns,
+    viewportCells,
     ...virtualSheet,
   };
 }

@@ -11,8 +11,8 @@ import { EmbeddedCellSlot, SheetCellSlot } from "./SheetCellSlot.jsx";
 import { cellContextFor, numericRangeContains } from "./cellSlotProjection.js";
 
 export function SheetGridCanvas({
-  object,
-  workspaceObjects,
+  objectHandle,
+  workspaceObjectsHandle,
   selectedAddress,
   normalizedSelection,
   multiSelectedAddresses,
@@ -24,6 +24,7 @@ export function SheetGridCanvas({
   columnGroupByStart,
   visibleRows,
   visibleColumns,
+  viewportCells,
   viewport,
   canvasSize,
   metrics,
@@ -64,6 +65,8 @@ export function SheetGridCanvas({
   onToggleRowGroup,
   onToggleColumnGroup,
 }) {
+  const object = objectHandle.current;
+  const workspaceObjects = workspaceObjectsHandle.current;
   const { rowHeaderWidth, columnHeaderHeight, bodyLeftInset, bodyTopInset } = metrics;
   const conditionalRules = useMemo(
     () => compileConditionalRules(object.conditionalFormats),
@@ -100,11 +103,11 @@ export function SheetGridCanvas({
 
   const embeddedTypes = useMemo(
     () => [...new Set(
-      Object.values(object.cells || {})
+      [...viewportCells.values()]
         .map((cell) => cell?.embed?.type)
         .filter(Boolean),
     )],
-    [object.cells],
+    [viewportCells],
   );
 
   useEffect(() => {
@@ -121,6 +124,7 @@ export function SheetGridCanvas({
         className="virtual-sheet-canvas"
         role="grid"
         aria-label={`${object.title} Tiles`}
+        data-dataset-window="fixed-chunks"
         aria-rowcount={object.rows}
         aria-colcount={object.columns}
         style={{
@@ -353,7 +357,7 @@ export function SheetGridCanvas({
         {visibleRows.flatMap(({ row, position }) => visibleColumns.map(({ column, position: columnPosition }) => {
           const id = cellId(row, column);
           const address = cellAddress(row, column);
-          const cell = object.cells?.[id];
+          const cell = viewportCells.get(id);
           const rawValue = cell?.value ?? "";
           const formula = cell?.formula ?? "";
           const embed = cell?.embed;

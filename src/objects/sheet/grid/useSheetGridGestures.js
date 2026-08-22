@@ -137,6 +137,8 @@ export function useSheetGridGestures({
   const focusFrameRef = useRef(null);
   const resizeFrameRef = useRef(null);
   const axisDragFrameRef = useRef(null);
+  const finishPointerGestureRef = useRef(null);
+  const moveSelectionFromPointerRef = useRef(null);
 
   selectionContextRef.current = { selectedAddress, selectionRange };
 
@@ -440,8 +442,7 @@ export function useSheetGridGestures({
     if (formulaReferenceDragRef.current) updateFormulaReference(cell.address);
   }, [updateFormulaReference]);
 
-  useEffect(() => {
-    const finishPointerGesture = (event) => {
+  finishPointerGestureRef.current = (event) => {
       const selectionDrag = selectionDragRef.current;
       const fill = fillDragRef.current;
       const formulaReference = formulaReferenceDragRef.current;
@@ -502,14 +503,17 @@ export function useSheetGridGestures({
       if (selectionDrag?.focus && selectionDrag.focus !== selectionDrag.startAddress) {
         focusSelectedGestureCell(callbacks?.object?.id, selectionDrag.focus);
       }
-    };
+  };
+
+  useEffect(() => {
+    const finishPointerGesture = (event) => finishPointerGestureRef.current?.(event);
     window.addEventListener("pointerup", finishPointerGesture, true);
     window.addEventListener("pointercancel", finishPointerGesture, true);
     return () => {
       window.removeEventListener("pointerup", finishPointerGesture, true);
       window.removeEventListener("pointercancel", finishPointerGesture, true);
     };
-  }, [cellAddressAtPoint, flushSelectionRangeUpdate, releaseSelectionViewportLock, stopSelectionAutoScroll, updateFormulaReference, updateSelectionAtPoint]);
+  }, []);
 
   useEffect(() => () => {
     stopSelectionAutoScroll();
@@ -582,8 +586,7 @@ export function useSheetGridGestures({
 
   moveSelectionGestureRef.current = moveSelectionGesture;
 
-  useEffect(() => {
-    const moveSelectionFromPointer = (event) => {
+  moveSelectionFromPointerRef.current = (event) => {
       const activeGesture = selectionDragRef.current || fillDragRef.current || formulaReferenceDragRef.current;
       if (!activeGesture) return;
       if (activeGesture.pointerId != null && event.pointerId != null && event.pointerId !== activeGesture.pointerId) return;
@@ -614,10 +617,13 @@ export function useSheetGridGestures({
           else moveSelectionGestureRef.current?.({ address });
         }
       }
-    };
+  };
+
+  useEffect(() => {
+    const moveSelectionFromPointer = (event) => moveSelectionFromPointerRef.current?.(event);
     window.addEventListener("pointermove", moveSelectionFromPointer, true);
     return () => window.removeEventListener("pointermove", moveSelectionFromPointer, true);
-  }, [cellAddressAtPoint, moveFormulaReference, scheduleSelectionAutoScroll, updateSelectionAtPoint]);
+  }, []);
 
   const startFill = useCallback((event, cell) => {
     event.preventDefault();

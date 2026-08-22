@@ -67,6 +67,9 @@ export function App() {
     canUndo,
     canRedo,
   } = workspaceState;
+  const workspaceObjectsHandleRef = useRef({ current: workspace.objects });
+  const objectHandlesRef = useRef(new Map());
+  workspaceObjectsHandleRef.current.current = workspace.objects;
   const workspaceRootId = workspace.homeObjectId;
   const inOut = useInOut({ workspace, workspaceRootId, workspaceHydrated: hydrated });
   const nativeRuntime = useMemo(() => isTauriRuntime(), []);
@@ -543,20 +546,27 @@ export function App() {
   const renderObject = (layer, index) => {
     const object = workspace.objects[layer.objectId];
     if (!object) return null;
+    let objectHandle = objectHandlesRef.current.get(object.id);
+    if (!objectHandle) {
+      objectHandle = { current: object };
+      objectHandlesRef.current.set(object.id, objectHandle);
+    } else {
+      objectHandle.current = object;
+    }
     const isTopLayer = index > 0 && index === inOut.layers.length - 1;
     const isVisibleParentLayer = parentContextVisible && index === inOut.layers.length - 2;
     const selectedAddress = selection.selectedByObject[object.id] || "A1";
     const selectionRange = selection.rangeByObject[object.id] || { anchor: selectedAddress, focus: selectedAddress };
     const multiSelectedAddresses = selection.multiSelectedByObject[object.id] || [];
     const sharedProps = {
-      object,
+      objectHandle,
       spatialPhase: layer.phase,
       path: objectPaths[index],
       saveState,
       selectedAddress,
       selectionRange,
       multiSelectedAddresses,
-      workspaceObjects: workspace.objects,
+      workspaceObjectsHandle: workspaceObjectsHandleRef.current,
       onSelectAddress: (address) => selection.selectAddress(object.id, address),
       onSelectRange: (anchor, focus, active) => selection.selectRange(object.id, anchor, focus, active),
       onToggleMultiSelect: (address) => selection.toggleMultiSelect(object.id, address),
@@ -655,6 +665,7 @@ export function App() {
             layer={layer}
             depth={childIndex + 1}
             viewportInsetLeft={filesSidebarWidth}
+            liveViewport={viewport}
             key={childIndex}
             onExpand={inOut.expandLayer}
             onClose={inOut.closeTopLayer}

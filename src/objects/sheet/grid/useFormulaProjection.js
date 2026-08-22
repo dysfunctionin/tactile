@@ -1,7 +1,20 @@
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createFormulaEngine } from "../../../sheet/formulas.js";
 import { cellAddress, coordinatesFromCellId } from "../../../sheet/coordinates.js";
+import { createFormulaWorker } from "../../../workers/formula/index.js";
 import { cellChangeVersion, cellChangesSince } from "./cellChangeJournal.js";
+
+const FORMULA_WORKER_CELL_THRESHOLD = 10_000;
+const populatedCellCounts = new WeakMap();
+
+function populatedCellCount(cells) {
+  if (!cells || typeof cells !== "object") return 0;
+  const cached = populatedCellCounts.get(cells);
+  if (cached !== undefined) return cached;
+  const count = Object.keys(cells).length;
+  populatedCellCounts.set(cells, count);
+  return count;
+}
 
 function formulaRelevant(cell) {
   return Boolean(cell?.formula || cell?.value);
@@ -110,9 +123,90 @@ function updateProjectionState(state, object, changes) {
   }
 }
 
+function workerChanges(cells, ids) {
+  return ids.map((id) => {
+    const cell = cells[id];
+    const address = addressForCell(id, cell);
+    if (!address) return null;
+    return cell ? { address, cell } : { address, delete: true };
+  }).filter(Boolean);
+}
+
+function applyWorkerResult(previous, result) {
+  const values = result.operation === "init"
+    ? new Map()
+    : new Map(previous);
+  Object.entries(result.values || {}).forEach(([address, value]) => values.set(address, value));
+  (result.removedAddresses || []).forEach((address) => values.delete(address));
+  return values;
+}
+
+function useWorkerFormulaProjection(object, enabled) {
+  const stateRef = useRef(null);
+  const [projection, setProjection] = useState({ objectId: null, values: new Map() });
+
+  useEffect(() => {
+    if (!enabled) return;
+    const cells = object.cells || {};
+    let state = stateRef.current;
+    if (!state || state.objectId !== object.id || state.cells !== cells) {
+      state?.client.dispose?.();
+      const client = createFormulaWorker();
+      state = {
+        objectId: object.id,
+        cells,
+        journalVersion: cellChangeVersion(cells),
+        revision: 0,
+        client,
+        queue: Promise.resolve(),
+      };
+      stateRef.current = state;
+      setProjection({ objectId: object.id, values: new Map() });
+      state.queue = client.initialize(object, { revision: 0 }).then((result) => {
+        if (stateRef.current !== state) return;
+        setProjection((current) => ({
+          objectId: object.id,
+          values: applyWorkerResult(current.objectId === object.id ? current.values : new Map(), result),
+        }));
+      }).catch(() => {});
+      return;
+    }
+
+    const journal = cellChangesSince(cells, state.journalVersion);
+    if (!journal) {
+      stateRef.current = null;
+      setProjection({ objectId: null, values: new Map() });
+      return;
+    }
+    state.journalVersion = journal.version;
+    const changes = workerChanges(cells, journal.ids);
+    if (!changes.length) return;
+    const revision = state.revision + 1;
+    state.revision = revision;
+    state.queue = state.queue.then(() => state.client.update(changes, { revision })).then((result) => {
+      if (stateRef.current !== state) return;
+      setProjection((current) => ({
+        objectId: object.id,
+        values: applyWorkerResult(current.objectId === object.id ? current.values : new Map(), result),
+      }));
+    }).catch(() => {});
+  }, [enabled, object]);
+
+  useEffect(() => () => {
+    stateRef.current?.client.dispose?.();
+    stateRef.current = null;
+  }, []);
+
+  return projection.objectId === object.id ? projection.values : new Map();
+}
+
 export function useFormulaProjection(object) {
   const stateRef = useRef(null);
-  return useMemo(() => {
+  const workerBacked = typeof Worker !== "undefined"
+    && populatedCellCount(object.cells) > FORMULA_WORKER_CELL_THRESHOLD;
+  const workerValues = useWorkerFormulaProjection(object, workerBacked);
+  const synchronousValues = useMemo(() => {
+    if (workerBacked) return new Map();
     let state = stateRef.current;
     if (!state || state.objectId !== object.id) {
       state = createProjectionState(object);
@@ -123,5 +217,6 @@ export function useFormulaProjection(object) {
     const changes = changesSinceLastProjection(state, object);
     updateProjectionState(state, object, changes);
     return state.values;
-  }, [object]);
+  }, [object, workerBacked]);
+  return workerBacked ? workerValues : synchronousValues;
 }

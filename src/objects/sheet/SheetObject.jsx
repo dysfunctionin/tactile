@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { IconBrackets, IconTable } from "@tabler/icons-react";
 import { FormulaBar } from "../../components/FormulaBar.jsx";
 import { ObjectHeader } from "../../components/ObjectHeader.jsx";
@@ -10,13 +10,13 @@ import { SheetGrid } from "./SheetGrid.jsx";
 import { canonicalSheetSelection } from "./grid/selectionGeometry.js";
 
 export function SheetObject({
-  object,
+  objectHandle,
   path,
   saveState,
   selectedAddress,
   selectionRange,
   multiSelectedAddresses = [],
-  workspaceObjects,
+  workspaceObjectsHandle,
   onSelectAddress,
   onSelectRange,
   onToggleMultiSelect,
@@ -37,6 +37,15 @@ export function SheetObject({
   sheetMetrics,
   onCreateFile,
 }) {
+  const object = objectHandle.current;
+  const headerObject = useMemo(() => ({
+    id: object.id,
+    type: object.type,
+    title: object.title,
+    parent: object.parent,
+    iconEmoji: object.iconEmoji,
+    iconColor: object.iconColor,
+  }), [object.iconColor, object.iconEmoji, object.id, object.parent, object.title, object.type]);
   const [formulaMode, setFormulaMode] = useState(false);
   const [editingCellId, setEditingCellId] = useState(null);
   const formulaEditorRef = useRef(null);
@@ -143,7 +152,7 @@ export function SheetObject({
   return (
     <article className="object-surface sheet-object" data-object-type="sheet">
       <ObjectHeader
-        object={object}
+        object={headerObject}
         path={path}
         saveState={saveState}
         onChange={onUpdateObject}
@@ -158,7 +167,8 @@ export function SheetObject({
           address={selectedCell?.address || "A1"}
           rangeLabel={selectedRangeLabel}
           cell={selectedCell}
-          formulaSheet={object}
+          formulaSheetHandle={objectHandle}
+          formulaPreviewEnabled={formulaMode}
           inputRef={formulaEditorRef}
           onChange={handleFormulaCommit}
           onFormulaModeChange={setFormulaMode}
@@ -172,8 +182,8 @@ export function SheetObject({
           onClearFilters={() => onUpdateObject({ filters: [] })}
         />
         <SheetGrid
-          object={object}
-          workspaceObjects={workspaceObjects}
+          objectHandle={objectHandle}
+          workspaceObjectsHandle={workspaceObjectsHandle}
           selectedAddress={canonicalSelectedAddress}
           selectionRange={canonicalRange}
           multiSelectedAddresses={multiSelectedAddresses}

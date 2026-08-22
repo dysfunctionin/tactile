@@ -5,6 +5,7 @@ const DATABASE_VERSION = 3;
 const STORE_NAME = "workspaces";
 const CURRENT_WORKSPACE_KEY = "current-v3";
 const CACHE_KEY = "tactile.workspace.v3";
+const BOOT_STATE_KEY = "tactile.workspace.boot-state.v1";
 const NATIVE_WORKSPACE_PATH_KEY = "tactile.native.workspace.path";
 
 export function loadNativeWorkspacePath() {
@@ -91,6 +92,32 @@ export function saveWorkspaceCache(workspace) {
       })),
     };
     window.localStorage.setItem(CACHE_KEY, JSON.stringify(cache));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function loadWorkspaceBootState() {
+  if (typeof window === "undefined") return null;
+  try {
+    const saved = window.localStorage.getItem(BOOT_STATE_KEY);
+    return saved ? JSON.parse(saved) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveWorkspaceBootState(workspace) {
+  if (typeof window === "undefined" || !workspace?.id) return false;
+  try {
+    window.localStorage.setItem(BOOT_STATE_KEY, JSON.stringify({
+      workspaceId: workspace.id,
+      homeObjectId: workspace.homeObjectId,
+      homePath: workspace.homePath,
+      activeThemeId: workspace.activeThemeId,
+      settings: workspace.settings,
+    }));
     return true;
   } catch {
     return false;

@@ -108,7 +108,7 @@ function previewSheetForCell(sheet, cell, address) {
   };
 }
 
-function useFormulaWorkerPreview({ value, address, cell, formulaSheet }) {
+function useFormulaWorkerPreview({ value, address, cell, formulaSheet, enabled }) {
   const [preview, setPreview] = useState("");
   const workerRef = useRef(null);
   const initializeRef = useRef(null);
@@ -126,7 +126,7 @@ function useFormulaWorkerPreview({ value, address, cell, formulaSheet }) {
   useEffect(() => () => workerRef.current?.dispose?.(), []);
 
   useEffect(() => {
-    if (!value.startsWith("=")) {
+    if (!enabled || !value.startsWith("=")) {
       setPreview("");
       return undefined;
     }
@@ -163,12 +163,13 @@ function useFormulaWorkerPreview({ value, address, cell, formulaSheet }) {
     };
     run();
     return () => { cancelled = true; };
-  }, [address, cell, formulaSheet, value]);
+  }, [address, cell, enabled, formulaSheet, value]);
 
   return preview;
 }
 
-function FormulaEditor({ value, address, cellId, cell, formulaSheet, inputRef, onChange, onFormulaModeChange, onCommit, onEditEnd }) {
+function FormulaEditor({ value, address, cellId, cell, formulaSheetHandle, formulaPreviewEnabled, inputRef, onChange, onFormulaModeChange, onCommit, onEditEnd }) {
+  const formulaSheet = formulaSheetHandle.current;
   const localInputRef = useRef(null);
   const editorRef = inputRef || localInputRef;
   const editorCellIdRef = useRef(cellId);
@@ -206,6 +207,7 @@ function FormulaEditor({ value, address, cellId, cell, formulaSheet, inputRef, o
     address,
     cell,
     formulaSheet,
+    enabled: formulaPreviewEnabled,
   });
   const suggestions = useMemo(() => {
     if (!query?.prefix) return [];
@@ -436,7 +438,7 @@ function FormulaEditor({ value, address, cellId, cell, formulaSheet, inputRef, o
   );
 }
 
-export function FormulaBar({ address, rangeLabel, cell, formulaSheet, inputRef, onChange, onFormulaModeChange, onCommit, onEditEnd, onAddressChange, onFormat, onConditionalFormat, hasConditionalFormat, filterCount, onClearFilters }) {
+export function FormulaBar({ address, rangeLabel, cell, formulaSheetHandle, formulaPreviewEnabled = false, inputRef, onChange, onFormulaModeChange, onCommit, onEditEnd, onAddressChange, onFormat, onConditionalFormat, hasConditionalFormat, filterCount, onClearFilters }) {
   const formulaValue = cell?.formula || cell?.value || "";
 
   return (
@@ -463,7 +465,8 @@ export function FormulaBar({ address, rangeLabel, cell, formulaSheet, inputRef, 
           address={address}
           cellId={cell?.id}
           cell={cell}
-          formulaSheet={formulaSheet}
+          formulaSheetHandle={formulaSheetHandle}
+          formulaPreviewEnabled={formulaPreviewEnabled}
           inputRef={inputRef}
           onChange={(value) => onChange(value)}
           onFormulaModeChange={onFormulaModeChange}
