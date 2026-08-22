@@ -127,20 +127,24 @@ export function repairObjectTopology(objects = {}, { preferredPath = [] } = {}) 
   objectIds.forEach((sourceObjectId) => {
     const sourceObject = objectById.get(sourceObjectId);
     if (sourceObject?.type !== "sheet") return;
-    Object.entries(sourceObject.cells || {})
-      .sort(([leftId, left], [rightId, right]) => (
-        (coordinatesForCell(left, leftId)?.row ?? Number.MAX_SAFE_INTEGER)
-          - (coordinatesForCell(right, rightId)?.row ?? Number.MAX_SAFE_INTEGER)
-        || (coordinatesForCell(left, leftId)?.column ?? Number.MAX_SAFE_INTEGER)
-          - (coordinatesForCell(right, rightId)?.column ?? Number.MAX_SAFE_INTEGER)
-        || compareText(leftId, rightId)
+    // Only embedded cells carry topology. Filtering before the sort keeps this
+    // O(embeds log embeds) instead of sorting every cell on the sheet.
+    const embedded = [];
+    for (const [fallbackCellId, cell] of Object.entries(sourceObject.cells || {})) {
+      if (!cell?.embed?.objectId) continue;
+      const coordinates = coordinatesForCell(cell, fallbackCellId);
+      if (!coordinates) continue;
+      embedded.push({ fallbackCellId, cell, coordinates });
+    }
+    embedded
+      .sort((left, right) => (
+        left.coordinates.row - right.coordinates.row
+        || left.coordinates.column - right.coordinates.column
+        || compareText(left.fallbackCellId, right.fallbackCellId)
       ))
-      .forEach(([fallbackCellId, cell]) => {
-        const embed = cell?.embed;
-        if (!embed?.objectId) return;
+      .forEach(({ cell, coordinates }) => {
+        const embed = cell.embed;
         const childObjectId = String(embed.objectId);
-        const coordinates = coordinatesForCell(cell, fallbackCellId);
-        if (!coordinates) return;
         const sourceCellId = cellId(coordinates.row, coordinates.column);
         const sourceAddress = cellAddress(coordinates.row, coordinates.column);
         if (!objectById.has(childObjectId)) {

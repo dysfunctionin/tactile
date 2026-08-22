@@ -9,6 +9,7 @@ import {
 } from "../../src/sheet/axisCells.js";
 import { autoRowHeightsIncremental } from "../../src/sheet/textMeasure.js";
 import { cloneHistoryWorkspace } from "../../src/core/history/snapshot.js";
+import { repairWorkspaceTopology } from "../../src/core/topology.js";
 import { recordCellChanges } from "../../src/objects/sheet/grid/cellChangeJournal.js";
 import { buildAxisGeometry, buildVirtualRange, rangeContains } from "../../src/objects/sheet/useVirtualSheet.js";
 
@@ -272,6 +273,17 @@ export const CASES = [
     iterations: 2,
     run: (_state, context) => {
       structuredClone(context.workspace);
+    },
+  },
+  {
+    name: "repair-topology",
+    budgetMs: 16,
+    phase: "P2",
+    note: "Runs on every structural or embed-touching commit.",
+    warmup: 2,
+    iterations: 8,
+    run: (_state, context) => {
+      repairWorkspaceTopology(context.workspace);
     },
   },
   {

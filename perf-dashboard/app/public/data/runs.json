@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "latestRunId": "2026-08-22T15-19-46-568Z-band-first",
+  "latestRunId": "2026-08-22T15-41-11-447Z-band-first",
   "runs": [
     {
       "runId": "2026-08-22T10-06-00-320Z-baseline",
@@ -48,6 +48,17 @@
         "high"
       ],
       "file": "runs/2026-08-22T15-19-46-568Z-band-first.json"
+    },
+    {
+      "runId": "2026-08-22T15-41-11-447Z-band-first",
+      "label": "band-first",
+      "generatedAt": "2026-08-22T15:41:11.447Z",
+      "appVersion": "1.2.0-alpha.5",
+      "gitCommit": "39b78b697",
+      "profiles": [
+        "high"
+      ],
+      "file": "runs/2026-08-22T15-41-11-447Z-band-first.json"
     }
   ]
 }

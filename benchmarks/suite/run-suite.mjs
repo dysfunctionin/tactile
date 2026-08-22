@@ -89,7 +89,9 @@ async function exists(filePath) {
 async function startServer(args, log) {
   const distIndex = path.join(ROOT, "dist", "client", "index.html");
   let mode = args.server;
-  if (mode === "auto") mode = (await exists(distIndex)) ? "preview" : "dev";
+  // `--build` implies preview: a dev server serves unbundled modules, which is
+  // far too slow to import the high fixture and makes the numbers meaningless.
+  if (mode === "auto") mode = (args.build || (await exists(distIndex))) ? "preview" : "dev";
 
   if (mode === "preview" && (!(await exists(distIndex)) || args.build)) {
     log("suite: building production bundle (npm run build)…");
