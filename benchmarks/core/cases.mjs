@@ -206,6 +206,28 @@ export const CASES = [
     },
   },
   {
+    name: "scroll-into-formula-band",
+    budgetMs: 16,
+    phase: "P5",
+    note: "Scrolling onto ~560 never-evaluated chain/fan-out formulas: register plus evaluate.",
+    warmup: 3,
+    iterations: 10,
+    setup: (context) => ({
+      sheet: { ...context.rootSheet, cells: context.rootSheet.cells },
+      home: bandAddresses(0, 34, 0, 15),
+      formulaBand: bandAddresses(0, 34, 150, 165),
+    }),
+    prepare: (state) => ({
+      ...state,
+      engine: createFormulaEngine(state.sheet, { registerOnly: state.home, readOnlyCells: true }),
+    }),
+    run: (state) => {
+      state.engine.setPriorityAddresses(state.formulaBand);
+      state.engine.registerFormulasIn(state.formulaBand);
+      state.engine.drainInvalidated({ budgetMs: Infinity });
+    },
+  },
+  {
     name: "formula-add",
     budgetMs: 10,
     phase: "done",
