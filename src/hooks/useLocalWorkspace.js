@@ -17,6 +17,7 @@ import {
 import { normalizeIconEmoji } from "../iconEmoji.js";
 import { repairWorkspaceTopology } from "../core/topology.js";
 import { cellsForMutation, cloneHistoryWorkspace } from "../core/history/snapshot.js";
+import { measureStage, measureStageAsync } from "../core/perf/stageTimer.js";
 import { reparentWorkspace } from "../core/reparenting.js";
 import { cellAddress, cellId, coordinatesFromCellId } from "../sheet/coordinates.js";
 import {
@@ -57,7 +58,7 @@ function touch(workspace, objects, repairTopology = false) {
     updatedAt: new Date().toISOString(),
     objects,
   };
-  return repairTopology ? repairWorkspaceTopology(next) : next;
+  return repairTopology ? measureStage("topology", () => repairWorkspaceTopology(next)) : next;
 }
 
 function cloneHistoryCell(cell) {
@@ -137,7 +138,7 @@ export function useLocalWorkspace() {
     if (shadow?.state?.persistence === "active") return undefined;
     setSaveState("saving");
     saveTimer.current = window.setTimeout(async () => {
-      const persisted = await saveWorkspace(workspace);
+      const persisted = await measureStageAsync("persist-snapshot", () => saveWorkspace(workspace));
       if (sequence !== saveSequenceRef.current) return;
       setSaveState(persisted ? "saved" : "saved in local cache");
     }, 120);
@@ -149,7 +150,7 @@ export function useLocalWorkspace() {
     if (!hydrated || !shadow) return undefined;
     let current = true;
     setSaveState("saving");
-    Promise.resolve(shadow.reconcile(workspace, { normalized: true })).then(
+    Promise.resolve(measureStageAsync("shadow-reconcile", () => shadow.reconcile(workspace, { normalized: true }))).then(
       () => {
         if (!current) return;
         setSaveState(shadow.state.persistence === "active" ? "saved" : "saved in local cache");
@@ -171,7 +172,7 @@ export function useLocalWorkspace() {
       if (!coalesced) {
         history.past.push({
           kind: "snapshot",
-          value: cloneHistoryWorkspace(current),
+          value: measureStage("history-snapshot", () => cloneHistoryWorkspace(current)),
         });
         if (history.past.length > 120) history.past.shift();
       }
@@ -509,7 +510,7 @@ export function useLocalWorkspace() {
           ...object,
           rows,
           columns,
-          cells: shiftCells(object, axis, index),
+          cells: measureStage("shift-cells", () => shiftCells(object, axis, index)),
           rowHeights: axis === "row" ? shiftAxisSizes(object.rowHeights, index, "insert") : object.rowHeights,
           columnWidths: axis === "column" ? shiftAxisSizes(object.columnWidths, index, "insert") : object.columnWidths,
           rowGroups: axis === "row" ? adjustAxisGroups(object.rowGroups, index, "insert") : object.rowGroups,
@@ -533,7 +534,7 @@ export function useLocalWorkspace() {
           ...object,
           rows,
           columns,
-          cells: removeSheetAxisCells(object, axis, index),
+          cells: measureStage("remove-axis-cells", () => removeSheetAxisCells(object, axis, index)),
           rowHeights: axis === "row" ? shiftAxisSizes(object.rowHeights, index, "delete") : object.rowHeights,
           columnWidths: axis === "column" ? shiftAxisSizes(object.columnWidths, index, "delete") : object.columnWidths,
           rowGroups: axis === "row" ? adjustAxisGroups(object.rowGroups, index, "delete") : object.rowGroups,

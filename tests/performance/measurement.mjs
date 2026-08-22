@@ -34,9 +34,20 @@ export function summarizeInstrumentation(raw = {}) {
   const frameTimes = Array.isArray(raw.frameTimes) ? raw.frameTimes : [];
   const longTaskDurations = Array.isArray(raw.longTaskDurations) ? raw.longTaskDurations : [];
   const inputLatencies = Array.isArray(raw.inputLatencies) ? raw.inputLatencies : [];
+  const stages = {};
+  for (const [stage, durations] of Object.entries(raw.stageDurations || {})) {
+    if (!Array.isArray(durations) || !durations.length) continue;
+    stages[stage] = {
+      count: durations.length,
+      totalMs: durations.reduce((total, value) => total + value, 0),
+      p95Ms: percentile(durations),
+      maxMs: maxValue(durations),
+    };
+  }
   return {
     label: raw.label || "unknown",
     durationMs: Number.isFinite(raw.durationMs) ? raw.durationMs : null,
+    stages,
     frameTimeMs: {
       samples: frameTimes.length,
       average: average(frameTimes),
@@ -452,6 +463,7 @@ function instrumentationSource() {
       reactCommitCount: current.reactCommitStart == null ? null : state.reactCommitCount - current.reactCommitStart,
       reactCommitCountObservable: state.reactCommitCountObservable,
       domMutationBatches: current.domMutationBatches,
+      stageDurations: current.stageDurations,
       maxMountedCells: current.maxMountedCells,
       maxMountedSheetCells: current.maxMountedSheetCells,
       maxDomNodes: current.maxDomNodes,
@@ -523,6 +535,7 @@ function instrumentationSource() {
         inputLatencies: [],
         inputLatencyObservable: false,
         domMutationBatches: 0,
+        stageDurations: {},
         maxMountedCells: 0,
         maxMountedSheetCells: 0,
         maxDomNodes: 0,
@@ -584,6 +597,21 @@ function instrumentationSource() {
           current.inputLatencyObservable = true;
         } catch {
           // Event Timing is not exposed in every browser.
+        }
+        try {
+          current.stageObserver = withInternal(
+            () =>
+              new PerformanceObserver((list) => {
+                list.getEntries().forEach((entry) => {
+                  if (!entry.name.startsWith("tactile:stage:")) return;
+                  const stage = entry.name.slice("tactile:stage:".length);
+                  (current.stageDurations[stage] ||= []).push(entry.duration);
+                });
+              }),
+          );
+          current.stageObserver.observe({ type: "measure", buffered: false });
+        } catch {
+          // User Timing observation is best-effort.
         }
       }
 

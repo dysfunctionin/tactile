@@ -48,6 +48,7 @@ function parseArgs(argv) {
     build: false,
     headless: true,
     target: "browser",
+    scenarios: null,
     cdpPort: 9223,
   };
   for (let index = 0; index < argv.length; index += 1) {
@@ -61,6 +62,7 @@ function parseArgs(argv) {
     else if (argument === "--build") args.build = true;
     else if (argument === "--headed") args.headless = false;
     else if (argument === "--target") args.target = argv[++index];
+    else if (argument === "--scenarios") args.scenarios = argv[++index].split(",").map((name) => name.trim()).filter(Boolean);
     else if (argument === "--cdp-port") args.cdpPort = Number(argv[++index]);
     else if (argument === "--help") args.help = true;
   }
@@ -153,6 +155,14 @@ const SCENARIO_ORDER = [
   ["add-column", (page, profile) => addColumnsAction(page, profile, 1)],
 ];
 
+function selectedScenarios(args) {
+  if (!args.scenarios?.length) return SCENARIO_ORDER;
+  const wanted = new Set(args.scenarios);
+  const unknown = args.scenarios.filter((name) => !SCENARIO_ORDER.some(([label]) => label === name));
+  if (unknown.length) throw new Error(`Unknown scenario(s): ${unknown.join(", ")}`);
+  return SCENARIO_ORDER.filter(([label]) => wanted.has(label));
+}
+
 async function measureScenario(page, sampleSystem, label, action, settleMs = 250) {
   const sysBefore = {
     freeMemMB: freeMemMB(),
@@ -236,6 +246,20 @@ export function aggregateRepeats(repeats) {
     droppedFrames: metric(["frameTimeMs", "droppedFrameSamples"]),
     longTasksOver50: metric(["longTasks", "over50Ms"]),
     inputLatencyP95Ms: metric(["inputLatencyMs", "p95"]),
+    stages: (() => {
+      const names = [...new Set(repeats.flatMap((repeat) => Object.keys(repeat?.stages || {})))];
+      if (!names.length) return null;
+      return Object.fromEntries(names.map((name) => {
+        const totals = repeats.map((repeat) => repeat?.stages?.[name]?.totalMs).filter(Number.isFinite);
+        const maxes = repeats.map((repeat) => repeat?.stages?.[name]?.maxMs).filter(Number.isFinite);
+        const counts = repeats.map((repeat) => repeat?.stages?.[name]?.count).filter(Number.isFinite);
+        return [name, {
+          calls: counts.length ? percentile(counts, 0.5) : null,
+          totalMs: totals.length ? percentile(totals, 0.5) : null,
+          maxMs: maxes.length ? Math.max(...maxes) : null,
+        }];
+      }));
+    })(),
     reactCommits: metric(["react", "commitCount"]),
     domMutationBatches: metric(["domMutationBatches"]),
     mountedCellsMax: metric(["mounted", "cellsMax"]),
@@ -280,18 +304,27 @@ async function runBrowserPass(playwright, { baseUrl, profile, fixture, args, log
     );
     await page.evaluate(() => window.__tactilePerf?.markBaseline?.("post-import"));
 
-    for (const [label, action] of SCENARIO_ORDER) {
-      await ensureBase(page).catch(() => {});
+    for (const [label, action] of selectedScenarios(args)) {
+      await ensureBase(page, profile).catch(() => {});
       scenarios[label] = await measureScenario(page, sampleSystem, label, () => action(page, profile));
       log(`  ${profile}/${label}: ${scenarios[label].durationMs ?? "?"}ms`);
+      for (const actionError of scenarios[label].actionError ? [scenarios[label].actionError] : []) {
+        log(`  ${profile}/${label} ERROR: ${actionError}`);
+      }
     }
 
     let loadWarm = null;
-    try {
-      loadWarm = await measureLoadWarm(page, baseUrl, profile);
-    } catch (error) {
-      log(`  ${profile}/load-warm failed: ${error.message}`);
-      loadWarm = { wallClockMs: null, error: error.message, navigation: null };
+    if (args.scenarios?.length) {
+      // An explicit scenario list is an iteration loop; load-warm costs a fixed
+      // 120s timeout and would dominate it.
+      log("  load-warm skipped (explicit --scenarios)");
+    } else {
+      try {
+        loadWarm = await measureLoadWarm(page, baseUrl, profile);
+      } catch (error) {
+        log(`  ${profile}/load-warm failed: ${error.message}`);
+        loadWarm = { wallClockMs: null, error: error.message, navigation: null };
+      }
     }
     const teardown = await page.evaluate(() => window.__tactilePerf?.snapshot?.() ?? null);
     await context.close();
@@ -347,8 +380,8 @@ async function runNativePass(playwright, { profile, fixture, args, log }) {
     );
     await page.evaluate(() => window.__tactilePerf?.markBaseline?.("post-import"));
 
-    for (const [label, action] of SCENARIO_ORDER) {
-      await ensureBase(page).catch(() => {});
+    for (const [label, action] of selectedScenarios(args)) {
+      await ensureBase(page, profile).catch(() => {});
       scenarios[label] = await measureScenario(page, sampleSystem, label, () => action(page, profile));
       log(`  ${profile}/${label}: ${scenarios[label].durationMs ?? "?"}ms`);
     }

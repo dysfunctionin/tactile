@@ -3,6 +3,7 @@ import { createFormulaEngine } from "../../../sheet/formulas.js";
 import { cellAddress, coordinatesFromCellId } from "../../../sheet/coordinates.js";
 import { cellChangeVersion, cellChangesSince } from "./cellChangeJournal.js";
 import { clearCalculationStatus, reportCalculationStatus } from "./calculationStatus.js";
+import { measureStage } from "../../../core/perf/stageTimer.js";
 
 function formulaRelevant(cell) {
   return Boolean(cell?.formula || cell?.value);
@@ -37,7 +38,9 @@ function createProjectionState(object, priorityAddresses) {
     objectId: object.id,
     ready: true,
     cells,
-    cellRefs: new Map(Object.entries(cells)),
+    // Populated lazily by the journal diff; seeding it from every cell would
+    // make a rebuild O(cells) again.
+    cellRefs: new Map(),
     journalVersion: cellChangeVersion(cells),
     engine,
     values: engine.getFormulaValues(),
@@ -61,53 +64,24 @@ function changesForCellIds(state, cells, ids) {
   return ids.map((id) => changeForCell(state, cells, id)).filter(Boolean);
 }
 
-function fullChangesSinceLastProjection(state, object) {
-  const cells = object.cells || {};
-  const changes = [];
-
-  for (const [id, cell] of Object.entries(cells)) {
-    const previous = state.cellRefs.get(id);
-    if (previous === cell) continue;
-    state.cellRefs.set(id, cell);
-    if (!formulaRelevant(previous) && !formulaRelevant(cell)) continue;
-    if (!formulaInputChanged(previous, cell)) continue;
-    const address = addressForCell(id, cell || previous);
-    if (address) changes.push({ address, cell: cell || null });
-  }
-
-  for (const [id, previous] of state.cellRefs) {
-    if (Object.prototype.hasOwnProperty.call(cells, id)) continue;
-    state.cellRefs.delete(id);
-    if (!formulaRelevant(previous)) continue;
-    const address = addressForCell(id, previous);
-    if (address) changes.push({ address, delete: true });
-  }
-
-  return changes;
-}
-
+// Returns null when the journal cannot describe the delta (the cells map was
+// replaced wholesale), which the caller answers with a band-scoped rebuild.
 function changesSinceLastProjection(state, object) {
-  const cells = object.cells || {};
-  if (state.cells === cells) {
+  return measureStage("projection-diff", () => {
+    const cells = object.cells || {};
+    if (state.cells !== cells) return null;
     const journal = cellChangesSince(cells, state.journalVersion);
-    if (journal) {
-      state.journalVersion = journal.version;
-      return changesForCellIds(state, cells, journal.ids);
-    }
-  }
-
-  state.cells = cells;
-  state.journalVersion = cellChangeVersion(cells);
-  // A structural op replaces the map wholesale; re-point the shared reference.
-  state.engine.sheet.cells = cells;
-  return fullChangesSinceLastProjection(state, object);
+    if (!journal) return null;
+    state.journalVersion = journal.version;
+    return changesForCellIds(state, cells, journal.ids);
+  });
 }
 
 function updateProjectionState(state, object, changes) {
   if (!changes.length) return;
   state.engine.sheet.rows = object.rows;
   state.engine.sheet.columns = object.columns;
-  const calculation = state.engine.applyChanges(changes);
+  const calculation = measureStage("engine-apply", () => state.engine.applyChanges(changes));
   for (const address of calculation.evaluatedAddresses || []) {
     if (calculation.values.has(address)) state.values.set(address, calculation.values.get(address));
   }
@@ -171,7 +145,7 @@ export function useFormulaProjection(object) {
       const schedule = () => {
         if (objectRef.current?.id !== target.id) return; // stale: cross-sheet effect already rebuilt
         buildScheduledRef.current = false;
-        stateRef.current = createProjectionState(objectRef.current, bandRef.current);
+        stateRef.current = measureStage("engine-build", () => createProjectionState(objectRef.current, bandRef.current));
         setReadyTick((tick) => tick + 1);
       };
       // Build after first paint (idle priority) so a large sheet's first render
@@ -217,20 +191,29 @@ export function useFormulaProjection(object) {
   });
 
   const state = stateRef.current;
-  const pending = state?.ready && state.objectId === object.id ? state.engine.invalidated.size : 0;
+  let active = state;
+  if (state?.ready && state.objectId === object.id) {
+    const changes = changesSinceLastProjection(state, object);
+    if (changes) {
+      updateProjectionState(state, object, changes);
+    } else {
+      // Structural ops replace the cells map wholesale. Diffing 100k cells and
+      // replaying the result costs orders of magnitude more than rebuilding the
+      // band-scoped engine.
+      active = measureStage("engine-rebuild", () => createProjectionState(object, bandRef.current));
+      stateRef.current = active;
+    }
+  }
+
+  const pending = active?.ready && active.objectId === object.id ? active.engine.invalidated.size : 0;
   useEffect(() => {
     reportCalculationStatus(object.id, pending);
   }, [object.id, pending]);
   useEffect(() => () => clearCalculationStatus(object.id), [object.id]);
 
-  if (state?.ready && state.objectId === object.id) {
-    const changes = changesSinceLastProjection(state, object);
-    updateProjectionState(state, object, changes);
-    return { values: state.values, pending: state.engine.invalidated.size, setPriorityBand };
-  }
   return {
-    values: stateRef.current?.values || EMPTY_VALUES,
-    pending: 0,
+    values: active?.ready && active.objectId === object.id ? active.values : (active?.values || EMPTY_VALUES),
+    pending,
     setPriorityBand,
   };
 }

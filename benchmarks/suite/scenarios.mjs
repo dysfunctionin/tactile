@@ -21,7 +21,7 @@ export async function importFixture(page, fixturePath, profile) {
   await waitForImported(page, profile);
 }
 
-export async function ensureBase(page) {
+export async function ensureBase(page, profile) {
   for (let attempt = 0; attempt < 6; attempt += 1) {
     if ((await page.locator(".spatial-layer").count()) === 0) break;
     await page.keyboard.press("[");
@@ -33,6 +33,13 @@ export async function ensureBase(page) {
     if (scroller) { scroller.scrollTop = 0; scroller.scrollLeft = 0; }
   }).catch(() => {});
   await page.waitForTimeout(180);
+  if (!profile) return;
+  // A scenario anchored on a base-sheet cell measures nothing if the previous
+  // scenario left a different object open.
+  await page
+    .locator(`[data-object-id="${rootObjectId(profile)}"][data-cell-address="A1"]`)
+    .waitFor({ state: "attached", timeout: 30_000 })
+    .catch(() => {});
 }
 
 async function scrollCellIntoView(page, rootId, address) {
@@ -172,22 +179,73 @@ export async function formulaAddAction(page, profile) {
   return { formula, address, final };
 }
 
+async function describeMountedState(page, rootId) {
+  const state = await page.evaluate((objectId) => {
+    const rowOf = (address) => Number(/^[A-Z]+(\d+)$/.exec(address || "")?.[1] ?? NaN);
+    const addresses = [...document.querySelectorAll(`[data-object-id="${objectId}"][data-cell-address]`)]
+      .map((node) => node.getAttribute("data-cell-address"));
+    const rows = [...new Set(addresses.map(rowOf).filter(Number.isFinite))].sort((a, b) => a - b);
+    const columns = [...new Set(addresses.map((a) => /^([A-Z]+)/.exec(a || "")?.[1]).filter(Boolean))];
+    const scroller = document.querySelector("[data-sheet-scroll]");
+    return {
+      mountedCells: addresses.length,
+      rowNumbers: rows.slice(0, 40),
+      columnLabels: columns.slice(0, 20),
+      rowHeaders: [...document.querySelectorAll("[data-row-index]")]
+        .map((node) => Number(node.getAttribute("data-row-index"))).sort((a, b) => a - b).slice(0, 40),
+      spatialLayers: document.querySelectorAll(".spatial-layer").length,
+      scroll: scroller ? { top: scroller.scrollTop, left: scroller.scrollLeft } : null,
+    };
+  }, rootId).catch(() => null);
+  return JSON.stringify(state);
+}
+
+// The high fixture filters its root sheet to `column 4 === "active"`, which
+// only matches even rows, and a row insert flips that parity. So the anchor is
+// discovered from what is actually mounted, and the post-check uses the grid's
+// own row/column count rather than neighbouring cell values.
+async function firstMountedAddressInColumn(page, rootId, columnLabel, minRowNumber) {
+  return page.evaluate(({ objectId, column, minRow }) => {
+    const pattern = new RegExp(`^${column}(\\d+)$`);
+    return [...document.querySelectorAll(`[data-object-id="${objectId}"][data-cell-address]`)]
+      .map((node) => node.getAttribute("data-cell-address"))
+      .map((address) => ({ address, row: Number(pattern.exec(address || "")?.[1]) }))
+      .filter(({ row }) => Number.isFinite(row) && row >= minRow)
+      .sort((left, right) => left.row - right.row)[0]?.address || null;
+  }, { objectId: rootId, column: columnLabel, minRow: minRowNumber });
+}
+
+function axisCountAttribute(axis) {
+  return axis === "row" ? "aria-rowcount" : "aria-colcount";
+}
+
+async function readAxisCount(page, rootId, axis) {
+  return page.evaluate(({ objectId, attribute }) => {
+    const canvas = [...document.querySelectorAll(".virtual-sheet-canvas")]
+      .find((node) => node.querySelector(`[data-object-id="${objectId}"]`));
+    return Number(canvas?.getAttribute(attribute) ?? NaN);
+  }, { objectId: rootId, attribute: axisCountAttribute(axis) });
+}
+
 async function insertAxisViaMenu(page, profile, axis) {
   const rootId = rootObjectId(profile);
-  const addr = axis === "row" ? "B4" : "C1";
-  await scrollCellIntoView(page, rootId, addr);
+  const addr = axis === "row"
+    ? await firstMountedAddressInColumn(page, rootId, "B", 2)
+    : await firstMountedAddressInColumn(page, rootId, "C", 1);
+  if (!addr) {
+    throw new Error(`${axis} insert found no mounted anchor: ${await describeMountedState(page, rootId)}`);
+  }
   const anchor = `[data-object-id="${rootId}"][data-cell-address="${addr}"]`;
   const label = axis === "row" ? "Insert row above" : "Insert column left";
-  // Capture values for strict post-check
-  const beforeVals = await page.evaluate(({ objectId, a }) => {
-    const v = (addr) => (document.querySelector(`[data-object-id="${objectId}"][data-cell-address="${addr}"] .cell-value`)?.textContent || "").trim();
-    if (a === "B4") return { pivot: v("B4"), next: v("B5") };
-    return { pivot: v("C1"), next: v("D1") };
-  }, { objectId: rootId, a: addr });
+  const countBefore = await readAxisCount(page, rootId, axis);
   const before = await page.evaluate(() => document.querySelectorAll(".virtual-cell-slot").length);
   const opStart = Date.now();
   const loc = page.locator(anchor);
-  await loc.waitFor({ state: "attached", timeout: 15_000 });
+  try {
+    await loc.waitFor({ state: "attached", timeout: 15_000 });
+  } catch (error) {
+    throw new Error(`${axis} insert anchor ${addr} never mounted: ${await describeMountedState(page, rootId)}`, { cause: error });
+  }
   await loc.click({ button: "right" });
   const menu = page.locator(".cell-context-menu");
   await menu.waitFor({ state: "visible", timeout: 10_000 });
@@ -200,31 +258,21 @@ async function insertAxisViaMenu(page, profile, axis) {
   await item.waitFor({ state: "visible", timeout: 15_000 });
   await item.click();
   await menu.waitFor({ state: "detached", timeout: 10_000 }).catch(() => {});
-  await page.waitForTimeout(220);
-  // Strict validation: new pivot should be empty, next should now hold old pivot
-  await page.waitForFunction(({ objectId, a, beforePivot }) => {
-    const v = (addr) => (document.querySelector(`[data-object-id="${objectId}"][data-cell-address="${addr}"] .cell-value`)?.textContent || "").trim();
-    if (a === "B4") {
-      const pivot = v("B4"), next = v("B5");
-      return pivot === "" && next === beforePivot;
-    } else {
-      const pivot = v("C1"), next = v("D1");
-      return pivot === "" && next === beforePivot;
-    }
-  }, { objectId: rootId, a: addr, beforePivot: beforeVals.pivot }, { timeout: 15_000 });
-  const afterVals = await page.evaluate(({ objectId, a }) => {
-    const v = (addr) => (document.querySelector(`[data-object-id="${objectId}"][data-cell-address="${addr}"] .cell-value`)?.textContent || "").trim();
-    if (a === "B4") return { pivot: v("B4"), next: v("B5") };
-    return { pivot: v("C1"), next: v("D1") };
-  }, { objectId: rootId, a: addr });
-  if (afterVals.pivot !== "" || afterVals.next !== beforeVals.pivot) {
-    throw new Error(`${axis} insert validation failed: before pivot "${beforeVals.pivot}" → after pivot "${afterVals.pivot}" next "${afterVals.next}"`);
+  await page.waitForFunction(({ objectId, attribute, expected }) => {
+    const canvas = [...document.querySelectorAll(".virtual-sheet-canvas")]
+      .find((node) => node.querySelector(`[data-object-id="${objectId}"]`));
+    return Number(canvas?.getAttribute(attribute) ?? NaN) === expected;
+  }, { objectId: rootId, attribute: axisCountAttribute(axis), expected: countBefore + 1 }, { timeout: 30_000 });
+  const ms = Date.now() - opStart;
+  const countAfter = await readAxisCount(page, rootId, axis);
+  if (countAfter !== countBefore + 1) {
+    throw new Error(`${axis} insert validation failed: ${countBefore} → ${countAfter}`);
   }
-  return { ms: Date.now() - opStart, mountedCellsBefore: before, beforeVals, afterVals };
+  return { ms, anchor: addr, mountedCellsBefore: before, countBefore, countAfter };
 }
 
 export async function addRowsAction(page, profile, times = 8) {
-  await ensureBase(page);
+  await ensureBase(page, profile);
   const ops = [];
   for (let index = 0; index < times; index += 1) {
     ops.push(await insertAxisViaMenu(page, profile, "row"));
@@ -234,7 +282,7 @@ export async function addRowsAction(page, profile, times = 8) {
 }
 
 export async function addColumnsAction(page, profile, times = 8) {
-  await ensureBase(page);
+  await ensureBase(page, profile);
   const ops = [];
   for (let index = 0; index < times; index += 1) {
     ops.push(await insertAxisViaMenu(page, profile, "column"));
