@@ -98,22 +98,30 @@ export function SheetGridCanvas({
     onRestoreSelectionScroll?.();
   }, [normalizedSelection?.anchor, object.columns, object.rows, onRestoreSelectionScroll, onSelectRange, onToggleAxisSelection, selectedCoordinates]);
 
-  const embeddedTypes = useMemo(
-    () => [...new Set(
-      Object.values(object.cells || {})
-        .map((cell) => cell?.embed?.type)
-        .filter(Boolean),
-    )],
-    [object.cells],
-  );
-
   useEffect(() => {
     // An embedded cell is intentionally cheap to paint, but opening it can
     // cross the registry's lazy renderer boundary. Warm each type referenced
     // by this sheet ahead of the click so a tile never opens to a transient
     // empty Suspense surface while its renderer chunk is still loading.
-    embeddedTypes.forEach((embedType) => preloadObjectRenderer(embedType));
-  }, [embeddedTypes]);
+    // The scan is O(stored cells), so it waits for idle rather than blocking
+    // the open of a large sheet.
+    const cells = object.cells;
+    const warm = () => {
+      const types = new Set();
+      for (const cell of Object.values(cells || {})) {
+        const embedType = cell?.embed?.type;
+        if (embedType) types.add(embedType);
+      }
+      types.forEach((embedType) => preloadObjectRenderer(embedType));
+    };
+    if (typeof window === "undefined") return undefined;
+    if (typeof window.requestIdleCallback === "function") {
+      const handle = window.requestIdleCallback(warm, { timeout: 2000 });
+      return () => window.cancelIdleCallback?.(handle);
+    }
+    const handle = window.setTimeout(warm, 0);
+    return () => window.clearTimeout(handle);
+  }, [object.cells]);
 
   return (
     <div className="sheet-scroll" data-sheet-scroll ref={scrollRef}>

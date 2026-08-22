@@ -255,12 +255,31 @@ export function mergeAutoRowHeights(base, drafts) {
  */
 const AUTO_HEIGHT_CACHE = new WeakMap();
 
-function collectWrapRelevant(cells) {
+/**
+ * One pass over the stored cells producing both the auto-height map and the
+ * set of wrap-relevant ids. These were two separate O(stored cells) scans, and
+ * every sheet open pays them on a fresh cells map.
+ */
+function scanAutoRowHeights(object, columnWidthForIndex) {
+  const heights = {};
   const wrapIds = new Set();
-  Object.entries(cells || {}).forEach(([id, cell]) => {
-    if (cell && (cell?.style?.wrap || String(cell?.value ?? "").includes("\n"))) wrapIds.add(id);
+  Object.entries(object?.cells || {}).forEach(([id, cell]) => {
+    if (!cell) return;
+    const value = cell.value;
+    const wrap = Boolean(cell.style?.wrap);
+    const text = String(value ?? "");
+    if (!wrap && !text.includes("\n")) return;
+    wrapIds.add(id);
+    const coordinates = coordinatesFromCellId(id);
+    if (!coordinates) return;
+    const fontSize = Number(cell.style?.fontSize) || DEFAULT_CELL_FONT;
+    const columnWidth = columnWidthForIndex?.(coordinates.column) || 0;
+    const lines = wrappedLineCount(text, columnWidth, fontSize, Boolean(cell.style?.bold));
+    if (lines <= 1) return;
+    const height = Math.ceil(lines * fontSize * CELL_LINE_HEIGHT + CELL_V_PADDING);
+    if (height > (heights[coordinates.row] || 0)) heights[coordinates.row] = height;
   });
-  return wrapIds;
+  return { heights, wrapIds };
 }
 
 export function autoRowHeightsIncremental(object, columnWidthForIndex) {
@@ -285,12 +304,12 @@ export function autoRowHeightsIncremental(object, columnWidthForIndex) {
       }
     }
   }
-  const heights = autoRowHeights(object, columnWidthForIndex);
+  const { heights, wrapIds } = scanAutoRowHeights(object, columnWidthForIndex);
   AUTO_HEIGHT_CACHE.set(cells, {
     version,
     widthsFor: columnWidthForIndex,
     heights,
-    wrap: collectWrapRelevant(cells),
+    wrap: wrapIds,
   });
   return heights;
 }

@@ -7,7 +7,18 @@ import { access } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
 import { writeProfileFixture } from "./profiles.mjs";
-import { addColumnsAction, addRowsAction, ensureBase, importFixture, typingBurstAction } from "./scenarios.mjs";
+import {
+  addColumnsAction,
+  addRowsAction,
+  ensureBase,
+  formulaAddAction,
+  importFixture,
+  inOutAction,
+  nestedAction,
+  scrollDiagonalAction,
+  scrollVerticalAction,
+  typingBurstAction,
+} from "./scenarios.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
@@ -15,6 +26,11 @@ const ACTIONS = {
   "add-row": (page, profile) => addRowsAction(page, profile, 1),
   "add-column": (page, profile) => addColumnsAction(page, profile, 1),
   "typing-burst": (page, profile) => typingBurstAction(page, profile),
+  "formula-add": (page, profile) => formulaAddAction(page, profile),
+  "in-out": (page, profile) => inOutAction(page, profile),
+  nested: (page, profile) => nestedAction(page, profile),
+  "scroll-vertical": (page, profile) => scrollVerticalAction(page, profile),
+  "scroll-diagonal": (page) => scrollDiagonalAction(page),
 };
 
 function parseArgs(argv) {
