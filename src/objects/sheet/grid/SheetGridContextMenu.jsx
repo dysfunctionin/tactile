@@ -7,8 +7,8 @@ export function SheetGridContextMenu({
   menu,
   setMenu,
   normalizedSelection,
-  object,
-  workspaceObjects,
+  objectHandle,
+  workspaceObjectsHandle,
   formulaValues,
   rowGroups,
   columnGroups,
@@ -27,6 +27,8 @@ export function SheetGridContextMenu({
   canCopy,
   canPaste,
 }) {
+  const object = objectHandle.current;
+  const workspaceObjects = workspaceObjectsHandle.current;
   return (
     <CellContextMenu
       menu={menu}

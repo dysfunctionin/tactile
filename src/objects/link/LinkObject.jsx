@@ -1,8 +1,9 @@
 import { useMemo, useState } from "react";
-import { IconBrackets, IconExternalLink, IconWorld } from "@tabler/icons-react";
+import { IconBrackets, IconExternalLink, IconReload } from "@tabler/icons-react";
 import { ObjectHeader } from "../../components/ObjectHeader.jsx";
 import { ObjectGlyph } from "../../components/ObjectGlyph.jsx";
 import { useLocalDraft } from "../../components/localEditSession.js";
+import { useSitePreview } from "../../components/useSitePreview.js";
 import { bareUrlTitle, isBareUrlValue } from "../../model.js";
 
 export function LinkObject({
@@ -31,6 +32,8 @@ export function LinkObject({
     else urlDraft.cancelDraft();
   };
 
+  const { src, loading, error, reload } = useSitePreview({ url });
+
   return (
     <article className="object-surface link-object" data-object-type="link" data-spatial-phase={spatialPhase}>
       <ObjectHeader
@@ -46,7 +49,15 @@ export function LinkObject({
 
       <main className="link-workspace">
         <div className="link-toolbar" aria-label="Link controls">
-          <span className="link-glyph"><IconWorld size={13} stroke={1.6} aria-hidden="true" /></span>
+          <button
+            type="button"
+            className="link-tool-button"
+            onClick={reload}
+            disabled={!url || loading}
+            data-tooltip="Reload page"
+          >
+            <IconReload size={13} stroke={1.6} /> Reload
+          </button>
           <label className="link-url-field">
             <span className="visually-hidden">Link address</span>
             <input
@@ -68,11 +79,11 @@ export function LinkObject({
               spellCheck="false"
             />
           </label>
-          <span className="link-toolbar-spacer" />
           <button
             type="button"
-            className="link-open-external"
+            className="link-tool-button"
             onClick={() => onOpenExternal?.(url)}
+            disabled={!url}
             data-tooltip="Open in your system browser"
           >
             <IconExternalLink size={13} stroke={1.6} /> Open in browser
@@ -80,22 +91,34 @@ export function LinkObject({
         </div>
         <div className="link-stage">
           {url ? (
-            <>
-              {!loaded ? <div className="link-loading" aria-hidden="true" /> : null}
-              <iframe
-                key={url}
-                title={object.title}
-                src={url}
-                referrerPolicy="no-referrer-when-downgrade"
-                allow="autoplay; clipboard-write; encrypted-media; fullscreen; geolocation; microphone; camera"
-                onLoad={() => setLoaded(true)}
-              />
-            </>
+            src ? (
+              <>
+                {loading && !loaded ? <div className="link-loading" aria-hidden="true" /> : null}
+                <iframe
+                  key={src}
+                  title={object.title}
+                  src={src}
+                  referrerPolicy="no-referrer"
+                  allow="autoplay; clipboard-write; encrypted-media; fullscreen; geolocation; microphone; camera"
+                  onLoad={() => setLoaded(true)}
+                />
+              </>
+            ) : (
+              <div className="link-empty-state">
+                <ObjectGlyph item={object} size={29} stroke={1.3} />
+                <h2>{loading ? "Loading…" : error ? "Unable to open this address" : "No address yet"}</h2>
+                <p>
+                  {error
+                    ? error
+                    : "Enter an http or https address above to open it inside Tactile."}
+                </p>
+              </div>
+            )
           ) : (
             <div className="link-empty-state">
               <ObjectGlyph item={object} size={29} stroke={1.3} />
               <h2>No address yet</h2>
-              <p>Enter an http or https address above to preview the page inside Tactile.</p>
+              <p>Enter an http or https address above to open it inside Tactile.</p>
             </div>
           )}
         </div>

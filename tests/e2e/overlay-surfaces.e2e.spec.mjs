@@ -21,6 +21,14 @@ async function surfaceGeometry(locator) {
   });
 }
 
+async function selectRowColumnCommand(menu, command) {
+  await menu.getByRole("menuitem", { name: "Rows & columns", exact: true }).click();
+  const submenu = menu.locator(".cell-menu-submenu");
+  await expect(submenu).toBeVisible();
+  await submenu.getByRole("menuitem", { name: command, exact: true }).click();
+  await expect(menu).toHaveCount(0);
+}
+
 test("Paper formatting, context, and tooltip surfaces stay opaque and above clipping", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator(".cell-size-trigger")).toBeVisible();
@@ -62,6 +70,7 @@ test("Paper formatting, context, and tooltip surfaces stay opaque and above clip
   });
 
   await page.keyboard.press("Escape");
+  await expect(submenu).toHaveCount(0);
   await page.keyboard.press("Escape");
   await expect(cellMenu).toHaveCount(0);
 
@@ -145,14 +154,69 @@ test("cell menus stay close to lower cells and keep submenus inside the viewport
   expect(submenuBox.bottom).toBeLessThanOrEqual(await page.evaluate(() => innerHeight));
 });
 
+test("row and column insertion visibly shifts sheet cells", async ({ page }) => {
+  await page.goto("/");
+
+  const cellA1 = page.locator('[role="gridcell"][data-cell-address="A1"]');
+  await cellA1.dblclick();
+  await cellA1.locator(".cell-inline-editor").fill("anchor");
+  await page.keyboard.press("Enter");
+
+  await cellA1.click({ button: "right" });
+  let menu = page.getByRole("menu", { name: "Commands for A1" });
+  await selectRowColumnCommand(menu, "Insert row above");
+  await expect(page.locator('[role="gridcell"][data-cell-address="A2"]')).toContainText("anchor");
+  await expect(page.locator(".object-statusbar")).toContainText("257 × 64");
+
+  await cellA1.click({ button: "right" });
+  menu = page.getByRole("menu", { name: "Commands for A1" });
+  await selectRowColumnCommand(menu, "Insert column left");
+  await expect(page.locator('[role="gridcell"][data-cell-address="B2"]')).toContainText("anchor");
+  await expect(page.locator(".object-statusbar")).toContainText("257 × 65");
+});
+
+test("row and column insertion stays visible in a filtered grouped sheet", async ({ page }) => {
+  await page.goto("/");
+  await page
+    .locator('input[type="file"][accept*=".json"]')
+    .setInputFiles("benchmarks/.generated/tactile-250k/fixture.json");
+  await expect(page.locator('[data-object-id="perf-root-sheet"][data-cell-address="A1"]')).toBeVisible({
+    timeout: 120_000,
+  });
+
+  const cellA1 = page.locator('[data-object-id="perf-root-sheet"][data-cell-address="A1"]');
+  await cellA1.click({ button: "right" });
+  let menu = page.getByRole("menu", { name: "Commands for A1" });
+  await selectRowColumnCommand(menu, "Insert row above");
+  await expect(page.locator(".object-statusbar")).toContainText("501 × 200", { timeout: 120_000 });
+  await expect(page.locator('[data-object-id="perf-root-sheet"][data-cell-address="A1"]')).toBeEmpty();
+
+  await page.locator('[data-object-id="perf-root-sheet"][data-cell-address="A1"]').click({ button: "right" });
+  menu = page.getByRole("menu", { name: "Commands for A1" });
+  await selectRowColumnCommand(menu, "Insert column left");
+  await expect(page.locator(".object-statusbar")).toContainText("501 × 201", { timeout: 120_000 });
+  await expect(page.locator('[data-object-id="perf-root-sheet"][data-cell-address="A1"]')).toBeEmpty();
+
+  await page.locator('[data-object-id="perf-root-sheet"][data-cell-address="A1"]').click({ button: "right" });
+  menu = page.getByRole("menu", { name: "Commands for A1" });
+  await selectRowColumnCommand(menu, "Delete row");
+  await expect(page.locator(".object-statusbar")).toContainText("500 × 201", { timeout: 120_000 });
+
+  await page.locator('[data-object-id="perf-root-sheet"][data-cell-address="A1"]').click({ button: "right" });
+  menu = page.getByRole("menu", { name: "Commands for A1" });
+  await selectRowColumnCommand(menu, "Delete column");
+  await expect(page.locator(".object-statusbar")).toContainText("500 × 200", { timeout: 120_000 });
+  await expect(page.locator('[data-object-id="perf-root-sheet"][data-cell-address="A1"]')).toContainText("Layer one");
+});
+
 test("Settings keeps the workspace sharp behind its panel", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Settings" }).click();
   await expect(page.getByRole("dialog", { name: "Settings" })).toBeVisible();
   await expect(page.locator(".settings-scrim")).toHaveCSS("backdrop-filter", "none");
   const dock = page.locator(".app-bottom-bar");
-  await expect(dock).toHaveAttribute("inert", "");
-  await expect(dock).toHaveAttribute("data-interaction-blocked", "true");
+  await expect(dock).not.toHaveAttribute("inert");
+  await expect(dock).not.toHaveAttribute("data-interaction-blocked");
   await expect(dock).toHaveCSS("pointer-events", "none");
   await expect(page.locator('[role="tooltip"]')).toHaveCount(0);
 });

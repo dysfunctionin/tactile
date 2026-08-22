@@ -11,6 +11,7 @@ export default tseslint.config(
     ignores: [
       "dist/**",
       "marketplace/dist/**",
+      "perf-dashboard/**/dist/**",
       "node_modules/**",
       "tmp/**",
       "coverage/**",
@@ -23,7 +24,13 @@ export default tseslint.config(
   },
   eslint.configs.recommended,
   {
-    files: ["src/**/*.js", "src/**/*.jsx", "worker/**/*.js"],
+    files: [
+      "src/**/*.js",
+      "src/**/*.jsx",
+      "worker/**/*.js",
+      "perf-dashboard/app/src/**/*.js",
+      "perf-dashboard/app/src/**/*.jsx",
+    ],
     languageOptions: {
       globals: {
         ...globals.browser,

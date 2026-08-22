@@ -15,6 +15,8 @@ export const EMBED_RELATIONS = Object.freeze({
 // need to rebuild the containment graph.
 export const TOPOLOGY_REVISION = Symbol.for("tactile.topologyRevision");
 
+const REPAIR_CACHE = new WeakMap();
+
 export const ROUTE_VERSION = 1;
 
 function compareText(left, right) {
@@ -110,6 +112,14 @@ function sameParent(left, right) {
  */
 export function repairObjectTopology(objects = {}, { preferredPath = [] } = {}) {
   const sourceObjects = objects && typeof objects === "object" ? objects : {};
+  // Navigation validation and the files index both repair topology during
+  // render, so on a large workspace this ran once per React commit. The result
+  // depends only on the objects map, which every commit replaces.
+  const cacheable = !preferredPath.length;
+  if (cacheable) {
+    const cached = REPAIR_CACHE.get(sourceObjects);
+    if (cached) return cached;
+  }
   const objectIds = Object.keys(sourceObjects).sort(compareText);
   const objectById = new Map(objectIds.map((id) => [id, sourceObjects[id]]));
   const usedLinkIds = new Set();
@@ -127,20 +137,24 @@ export function repairObjectTopology(objects = {}, { preferredPath = [] } = {}) 
   objectIds.forEach((sourceObjectId) => {
     const sourceObject = objectById.get(sourceObjectId);
     if (sourceObject?.type !== "sheet") return;
-    Object.entries(sourceObject.cells || {})
-      .sort(([leftId, left], [rightId, right]) => (
-        (coordinatesForCell(left, leftId)?.row ?? Number.MAX_SAFE_INTEGER)
-          - (coordinatesForCell(right, rightId)?.row ?? Number.MAX_SAFE_INTEGER)
-        || (coordinatesForCell(left, leftId)?.column ?? Number.MAX_SAFE_INTEGER)
-          - (coordinatesForCell(right, rightId)?.column ?? Number.MAX_SAFE_INTEGER)
-        || compareText(leftId, rightId)
+    // Only embedded cells carry topology. Filtering before the sort keeps this
+    // O(embeds log embeds) instead of sorting every cell on the sheet.
+    const embedded = [];
+    for (const [fallbackCellId, cell] of Object.entries(sourceObject.cells || {})) {
+      if (!cell?.embed?.objectId) continue;
+      const coordinates = coordinatesForCell(cell, fallbackCellId);
+      if (!coordinates) continue;
+      embedded.push({ fallbackCellId, cell, coordinates });
+    }
+    embedded
+      .sort((left, right) => (
+        left.coordinates.row - right.coordinates.row
+        || left.coordinates.column - right.coordinates.column
+        || compareText(left.fallbackCellId, right.fallbackCellId)
       ))
-      .forEach(([fallbackCellId, cell]) => {
-        const embed = cell?.embed;
-        if (!embed?.objectId) return;
+      .forEach(({ cell, coordinates }) => {
+        const embed = cell.embed;
         const childObjectId = String(embed.objectId);
-        const coordinates = coordinatesForCell(cell, fallbackCellId);
-        if (!coordinates) return;
         const sourceCellId = cellId(coordinates.row, coordinates.column);
         const sourceAddress = cellAddress(coordinates.row, coordinates.column);
         if (!objectById.has(childObjectId)) {
@@ -321,13 +335,15 @@ export function repairObjectTopology(objects = {}, { preferredPath = [] } = {}) 
       : EMBED_RELATIONS.ALIAS,
   }));
 
-  return {
+  const result = {
     objects: repairedObjects,
     edges: repairedEdges,
     canonicalByChild,
     changedObjectIds: [...changedObjectIds],
     report,
   };
+  if (cacheable) REPAIR_CACHE.set(sourceObjects, result);
+  return result;
 }
 
 export function repairWorkspaceTopology(workspace, options = {}) {

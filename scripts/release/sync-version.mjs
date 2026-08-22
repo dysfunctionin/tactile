@@ -1,6 +1,8 @@
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import { format, resolveConfig } from "prettier";
+
 const VERSION_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
 
 function fail(message) {
@@ -11,8 +13,8 @@ async function readJson(filePath) {
   return JSON.parse(await readFile(filePath, "utf8"));
 }
 
-function formatJson(value) {
-  return `${JSON.stringify(value, null, 2)}\n`;
+async function formatJson(value, filePath) {
+  return format(JSON.stringify(value), { ...(await resolveConfig(filePath)), filepath: filePath });
 }
 
 function replacePackageVersion(contents, version, filePath) {
@@ -34,8 +36,21 @@ async function versionTargets(version) {
 
   const tauriConfigPath = path.join("src-tauri", "tauri.conf.json");
   const tauriConfig = await readJson(tauriConfigPath);
-  const tauriConfigSynchronized = tauriConfig.version === version;
+  // Allow side-by-side installs: stable and prerelease (alpha/rc) use
+  // different product names and bundle identifiers so the OS treats them as
+  // distinct apps. The channel is inferred from the SemVer prerelease tag.
+  const isPrerelease = String(version).includes("-");
+  const expectedProductName = isPrerelease ? "Tactile Alpha" : "Tactile";
+  const expectedIdentifier = isPrerelease
+    ? "com.tactile.workspace.alpha"
+    : "com.tactile.workspace";
+  const tauriConfigSynchronized =
+    tauriConfig.version === version &&
+    tauriConfig.productName === expectedProductName &&
+    tauriConfig.identifier === expectedIdentifier;
   tauriConfig.version = version;
+  tauriConfig.productName = expectedProductName;
+  tauriConfig.identifier = expectedIdentifier;
 
   const cargoTomlPath = path.join("src-tauri", "Cargo.toml");
   const cargoLockPath = path.join("src-tauri", "Cargo.lock");
@@ -45,9 +60,21 @@ async function versionTargets(version) {
   const expectedCargoLock = replacePackageVersion(cargoLock, version, cargoLockPath);
 
   return [
-    { filePath: "package.json", synchronized: packageJsonSynchronized, expected: formatJson(packageJson) },
-    { filePath: "package-lock.json", synchronized: packageLockSynchronized, expected: formatJson(packageLock) },
-    { filePath: tauriConfigPath, synchronized: tauriConfigSynchronized, expected: formatJson(tauriConfig) },
+    {
+      filePath: "package.json",
+      synchronized: packageJsonSynchronized,
+      expected: await formatJson(packageJson, "package.json"),
+    },
+    {
+      filePath: "package-lock.json",
+      synchronized: packageLockSynchronized,
+      expected: await formatJson(packageLock, "package-lock.json"),
+    },
+    {
+      filePath: tauriConfigPath,
+      synchronized: tauriConfigSynchronized,
+      expected: await formatJson(tauriConfig, tauriConfigPath),
+    },
     { filePath: cargoTomlPath, synchronized: cargoToml === expectedCargoToml, expected: expectedCargoToml },
     { filePath: cargoLockPath, synchronized: cargoLock === expectedCargoLock, expected: expectedCargoLock },
   ];

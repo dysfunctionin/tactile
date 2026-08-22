@@ -33,7 +33,8 @@ export function registerObjectRenderer(type, renderer) {
   OBJECT_RENDERERS[type] = renderer;
 }
 
-export function ObjectRenderer({ object, ...props }) {
+export function ObjectRenderer({ objectHandle, workspaceObjectsHandle, ...props }) {
+  const object = objectHandle.current;
   const version = useSyncExternalStore(
     subscribeObjectTypeDefinitions,
     objectTypeRegistryVersion,
@@ -42,13 +43,17 @@ export function ObjectRenderer({ object, ...props }) {
   const definition = getObjectTypeDefinition(object.type);
   const key = `${definition.type}:${version}`;
   const LoadedRenderer = loadedRenderers.get(key);
-  if (LoadedRenderer) return <LoadedRenderer object={object} {...props} />;
+  if (LoadedRenderer) return definition.type === "sheet"
+    ? <LoadedRenderer objectHandle={objectHandle} workspaceObjectsHandle={workspaceObjectsHandle} {...props} />
+    : <LoadedRenderer object={object} workspaceObjects={workspaceObjectsHandle.current} {...props} />;
   const Renderer = version === 0
     ? OBJECT_RENDERERS[definition.type] || lazyObjectRenderer(definition.type, version)
     : lazyObjectRenderer(definition.type, version);
   return (
     <Suspense fallback={null}>
-      <Renderer object={object} {...props} />
+      {definition.type === "sheet"
+        ? <Renderer objectHandle={objectHandle} workspaceObjectsHandle={workspaceObjectsHandle} {...props} />
+        : <Renderer object={object} workspaceObjects={workspaceObjectsHandle.current} {...props} />}
     </Suspense>
   );
 }

@@ -4,6 +4,7 @@ import { SheetGridContextMenu } from "./grid/SheetGridContextMenu.jsx";
 import { useSheetGridContextMenu } from "./grid/useSheetGridContextMenu.js";
 import { useSheetGridGestures } from "./grid/useSheetGridGestures.js";
 import { useSheetGridProjection } from "./grid/useSheetGridProjection.js";
+import { cellDisplayText } from "./cellDisplay.js";
 import { cellIdsInRange } from "../../sheet/ranges.js";
 import {
   isObjectDragEvent,
@@ -17,8 +18,8 @@ function useLatestCallback(callback) {
 }
 
 export function SheetGrid({
-  object,
-  workspaceObjects,
+  objectHandle,
+  workspaceObjectsHandle,
   selectedAddress,
   selectionRange,
   multiSelectedAddresses = [],
@@ -42,6 +43,7 @@ export function SheetGrid({
   sheetMetrics,
   onCreateFile,
 }) {
+  const object = objectHandle.current;
   const [fillTarget, setFillTarget] = useState(null);
   const [dropTargetAddress, setDropTargetAddress] = useState("");
   const [resizePreview, setResizePreview] = useState(null);
@@ -86,6 +88,10 @@ export function SheetGrid({
     sheetMetrics,
     resizePreview,
   });
+  const displayForCell = useCallback(
+    (cell, row, column) => cellDisplayText(cell, { row, column }, projection.formulaValues, object, workspaceObjectsHandle.current),
+    [object, projection.formulaValues, workspaceObjectsHandle],
+  );
   const gestures = useSheetGridGestures({
     object,
     selectedAddress: projection.selectedAddress,
@@ -98,6 +104,7 @@ export function SheetGrid({
     rowIndexMap: projection.rowIndexMap,
     columnIndexMap: projection.columnIndexMap,
     formulaValues: projection.formulaValues,
+    displayForCell,
     columnPositionForIndex: projection.columnPositionForIndex,
     columnOffsetForPosition: projection.columnOffsetForPosition,
     columnSizeForPosition: projection.columnSizeForPosition,
@@ -147,8 +154,8 @@ const contextMenu = useSheetGridContextMenu({
         onChange={contextMenu.handleFileChange}
       />
       <SheetGridCanvas
-        object={object}
-        workspaceObjects={workspaceObjects}
+        objectHandle={objectHandle}
+        workspaceObjectsHandle={workspaceObjectsHandle}
         selectedAddress={projection.selectedAddress}
         normalizedSelection={projection.normalizedSelection}
         multiSelectedAddresses={multiSelectedAddressSet}
@@ -160,6 +167,7 @@ const contextMenu = useSheetGridContextMenu({
         columnGroupByStart={projection.columnGroupByStart}
         visibleRows={projection.visibleRows}
         visibleColumns={projection.visibleColumns}
+        viewportCells={projection.viewportCells}
         viewport={projection.viewport}
         canvasSize={projection.canvasSize}
         metrics={projection.metrics}
@@ -205,8 +213,8 @@ const contextMenu = useSheetGridContextMenu({
         menu={contextMenu.menu}
         setMenu={contextMenu.setMenu}
         normalizedSelection={projection.normalizedSelection}
-        object={object}
-        workspaceObjects={workspaceObjects}
+        objectHandle={objectHandle}
+        workspaceObjectsHandle={workspaceObjectsHandle}
         formulaValues={projection.formulaValues}
         rowGroups={projection.rowGroups}
         columnGroups={projection.columnGroups}

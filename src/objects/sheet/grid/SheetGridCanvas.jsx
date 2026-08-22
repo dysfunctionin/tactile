@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useMemo } from "react";
 import { IconChevronDown, IconChevronRight } from "@tabler/icons-react";
 import { preloadObjectRenderer } from "../../registry/ObjectRenderer.jsx";
-import { projectObjectCell } from "../../registry/index.js";
+import { cellDisplayText } from "../cellDisplay.js";
 import { formatFormulaResult } from "../../../sheet/formulas.js";
-import { formatCellValue } from "../../../sheet/formatting.js";
 import { cellAddress, cellId, columnLabel, coordinatesFromAddress } from "../../../sheet/coordinates.js";
 import { isBareUrlValue } from "../../../model.js";
 import { normalizeRange } from "../../../sheet/ranges.js";
@@ -60,7 +59,6 @@ export function SheetGridCanvas({
   onStartCornerSelection,
   onStartResize,
   onResizeAxisWithKeyboard,
-  onResetAxisSize,
   onAutoFitAxisSize,
   onRestoreSelectionScroll,
   onToggleRowGroup,
@@ -100,22 +98,30 @@ export function SheetGridCanvas({
     onRestoreSelectionScroll?.();
   }, [normalizedSelection?.anchor, object.columns, object.rows, onRestoreSelectionScroll, onSelectRange, onToggleAxisSelection, selectedCoordinates]);
 
-  const embeddedTypes = useMemo(
-    () => [...new Set(
-      Object.values(object.cells || {})
-        .map((cell) => cell?.embed?.type)
-        .filter(Boolean),
-    )],
-    [object.cells],
-  );
-
   useEffect(() => {
     // An embedded cell is intentionally cheap to paint, but opening it can
     // cross the registry's lazy renderer boundary. Warm each type referenced
     // by this sheet ahead of the click so a tile never opens to a transient
     // empty Suspense surface while its renderer chunk is still loading.
-    embeddedTypes.forEach((embedType) => preloadObjectRenderer(embedType));
-  }, [embeddedTypes]);
+    // The scan is O(stored cells), so it waits for idle rather than blocking
+    // the open of a large sheet.
+    const cells = object.cells;
+    const warm = () => {
+      const types = new Set();
+      for (const cell of Object.values(cells || {})) {
+        const embedType = cell?.embed?.type;
+        if (embedType) types.add(embedType);
+      }
+      types.forEach((embedType) => preloadObjectRenderer(embedType));
+    };
+    if (typeof window === "undefined") return undefined;
+    if (typeof window.requestIdleCallback === "function") {
+      const handle = window.requestIdleCallback(warm, { timeout: 2000 });
+      return () => window.cancelIdleCallback?.(handle);
+    }
+    const handle = window.setTimeout(warm, 0);
+    return () => window.clearTimeout(handle);
+  }, [object.cells]);
 
   return (
     <div className="sheet-scroll" data-sheet-scroll ref={scrollRef}>
@@ -243,7 +249,7 @@ export function SheetGridCanvas({
               <span className="column-resize-handle" role="separator" tabIndex={0} aria-label={`Resize column ${columnLabel(column)}`} onPointerDown={(event) => onStartResize(event, "column", column)} onClick={(event) => event.stopPropagation()} onDoubleClick={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
-                onResetAxisSize?.("column", column);
+                onAutoFitAxisSize?.("column", column);
               }} onKeyDown={(event) => {
                 if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
                   event.preventDefault();
@@ -340,7 +346,7 @@ export function SheetGridCanvas({
               <span className="row-resize-handle" role="separator" tabIndex={0} aria-label={`Resize row ${row + 1}`} onPointerDown={(event) => onStartResize(event, "row", row)} onClick={(event) => event.stopPropagation()} onDoubleClick={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
-                onResetAxisSize?.("row", row);
+                onAutoFitAxisSize?.("row", row);
               }} onKeyDown={(event) => {
                 if (event.key === "ArrowUp" || event.key === "ArrowDown") {
                   event.preventDefault();
@@ -359,20 +365,10 @@ export function SheetGridCanvas({
           const rawValue = cell?.value ?? "";
           const formula = cell?.formula ?? "";
           const embed = cell?.embed;
-          const calculatedValue = formula ? formatFormulaResult(formulaValues.get(address)) : rawValue;
+          const displayValue = cellDisplayText(cell, { row, column }, formulaValues, object, workspaceObjects);
           const embeddedObject = embed ? workspaceObjects?.[embed.objectId] : null;
-          const embeddedProjection = embed ? projectObjectCell(embed.type, {
-            object: embeddedObject,
-            cell,
-            sheet: object,
-            fallbackValue: rawValue,
-          }) : null;
+          const calculatedValue = formula ? formatFormulaResult(formulaValues.get(address)) : rawValue;
           const linkUrl = !embed && !formula && isBareUrlValue(rawValue) ? rawValue : "";
-          const displayValue = embed
-            ? embeddedProjection?.displayValue || embeddedObject?.title || rawValue || "Embedded object"
-            : linkUrl
-              ? rawValue
-              : formatCellValue(calculatedValue, cell?.style);
           const fontSize = Number(cell?.style?.fontSize);
           const Slot = embed || linkUrl ? EmbeddedCellSlot : SheetCellSlot;
           return (

@@ -135,34 +135,43 @@ function useFormulaWorkerPreview({ value, address, cell, formulaSheet }) {
     let cancelled = false;
     const requestSerial = ++requestRef.current;
     const sheet = previewSheetForCell(formulaSheet, cell, address);
-    const run = async () => {
-      try {
-        if (!workerRef.current) {
-          workerRef.current = createFormulaWorker();
-          initializeRef.current = workerRef.current.initialize(sheet, { revision: 0 });
-          await initializeRef.current;
-        } else if (initializeRef.current) {
-          await initializeRef.current;
+    // Coalesce fast typing into the latest draft: firing a worker round trip
+    // per keystroke generates many doomed requests (revision-guarded) that
+    // still cost the worker a parsing/evaluation pass. A short debounce keeps
+    // the preview snappy while collapsing a burst into one update.
+    const timer = window.setTimeout(() => {
+      const run = async () => {
+        try {
+          if (!workerRef.current) {
+            workerRef.current = createFormulaWorker();
+            initializeRef.current = workerRef.current.initialize(sheet, { revision: 0 });
+            await initializeRef.current;
+          } else if (initializeRef.current) {
+            await initializeRef.current;
+          }
+          if (cancelled || requestSerial !== requestRef.current || !workerRef.current) return;
+          const revision = revisionRef.current + 1;
+          revisionRef.current = revision;
+          const result = await workerRef.current.update([{
+            address: address || cell?.address || "A1",
+            patch: { value: "", formula: value },
+          }], { revision });
+          if (cancelled || requestSerial !== requestRef.current) return;
+          const resultAddress = address || cell?.address || "A1";
+          const values = result.values || {};
+          setPreview(Object.prototype.hasOwnProperty.call(values, resultAddress)
+            ? formatFormulaResult(values[resultAddress])
+            : "");
+        } catch {
+          if (!cancelled && requestSerial === requestRef.current) setPreview("");
         }
-        if (cancelled || requestSerial !== requestRef.current || !workerRef.current) return;
-        const revision = revisionRef.current + 1;
-        revisionRef.current = revision;
-        const result = await workerRef.current.update([{
-          address: address || cell?.address || "A1",
-          patch: { value: "", formula: value },
-        }], { revision });
-        if (cancelled || requestSerial !== requestRef.current) return;
-        const resultAddress = address || cell?.address || "A1";
-        const values = result.values || {};
-        setPreview(Object.prototype.hasOwnProperty.call(values, resultAddress)
-          ? formatFormulaResult(values[resultAddress])
-          : "");
-      } catch {
-        if (!cancelled && requestSerial === requestRef.current) setPreview("");
-      }
+      };
+      run();
+    }, 80);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
     };
-    run();
-    return () => { cancelled = true; };
   }, [address, cell, formulaSheet, value]);
 
   return preview;

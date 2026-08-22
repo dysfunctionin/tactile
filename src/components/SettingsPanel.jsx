@@ -170,6 +170,8 @@ export function SettingsPanel({
   onExportWorkspace,
 onChangeWorkspaceFolder,
   onOpenWorkspaceFolder,
+  onGetUpdateChannel,
+  onSetUpdateChannel,
   onCheckForUpdate,
   onDownloadAndInstallUpdate,
   onOpenGuide,
@@ -182,6 +184,8 @@ onChangeWorkspaceFolder,
   const [authoringPromptCopied, setAuthoringPromptCopied] = useState(false);
   const [updateState, setUpdateState] = useState("idle");
   const [updateInfo, setUpdateInfo] = useState(null);
+  const [updateChannel, setUpdateChannel] = useState(null);
+  const [channelChanging, setChannelChanging] = useState(false);
   const themeInputRef = useRef(null);
   const panelRef = useRef(null);
   const closeRef = useRef(null);
@@ -251,23 +255,61 @@ onChangeWorkspaceFolder,
     if (tab.startsWith("plugin:") && !activePluginSettings) setTab("plugins");
   }, [activePluginSettings, tab]);
 
+  useEffect(() => {
+    if (tab !== "updates" || !onGetUpdateChannel) return undefined;
+    let active = true;
+    onGetUpdateChannel()
+      .then((channel) => {
+        if (active) setUpdateChannel(channel);
+      })
+      .catch(() => {
+        if (active) setUpdateState("error");
+      });
+    return () => {
+      active = false;
+    };
+  }, [onGetUpdateChannel, tab]);
+
   const runUpdateCheck = async () => {
     if (!onCheckForUpdate) return;
     setUpdateState("checking");
-    const result = await onCheckForUpdate();
-    if (!result) {
-      setUpdateState("unavailable");
-    } else {
-      setUpdateInfo(result);
-      setUpdateState("available");
+    try {
+      const result = await onCheckForUpdate();
+      if (!result) {
+        setUpdateInfo(null);
+        setUpdateState("current");
+      } else {
+        setUpdateInfo(result);
+        setUpdateState("available");
+      }
+    } catch {
+      setUpdateState("error");
     }
   };
 
   const runUpdateInstall = async () => {
     if (!onDownloadAndInstallUpdate) return;
     setUpdateState("installing");
-    const installed = await onDownloadAndInstallUpdate();
-    if (!installed) setUpdateState("error");
+    try {
+      await onDownloadAndInstallUpdate();
+    } catch {
+      setUpdateState("error");
+    }
+  };
+
+  const changeUpdateChannel = async (channel) => {
+    if (!onSetUpdateChannel || channel === updateChannel) return;
+    setChannelChanging(true);
+    setUpdateInfo(null);
+    try {
+      const selected = await onSetUpdateChannel(channel);
+      setUpdateChannel(selected);
+      await runUpdateCheck();
+    } catch {
+      setUpdateState("error");
+    } finally {
+      setChannelChanging(false);
+    }
   };
 
   return (
@@ -507,11 +549,31 @@ onChangeWorkspaceFolder,
                   </small>
                 </div>
               </div>
+              <div className="updates-channel" aria-labelledby="updates-channel-label">
+                <div>
+                  <strong id="updates-channel-label">Update channel</strong>
+                  <small>Nightly includes alpha and release-candidate builds and may be less reliable.</small>
+                </div>
+                <div className="updates-channel-options" role="group" aria-label="Update channel">
+                  {["stable", "nightly"].map((channel) => (
+                    <button
+                      className={updateChannel === channel ? "is-selected" : ""}
+                      type="button"
+                      aria-pressed={updateChannel === channel}
+                      disabled={!updateChannel || channelChanging || updateState === "checking" || updateState === "installing"}
+                      onClick={() => changeUpdateChannel(channel)}
+                      key={channel}
+                    >
+                      {channel === "stable" ? "Stable" : "Nightly"}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <div className="updates-status" role="status">
                 {updateState === "idle" || updateState === "checking"
-                  ? <em>{updateState === "checking" ? "Checking for updates…" : "Not checked yet."}</em>
-                  : updateState === "unavailable"
-                    ? <em>You are on the latest version.</em>
+                  ? <em>{updateState === "checking" ? "Checking for updates…" : updateChannel ? "Not checked yet." : "Loading update channel…"}</em>
+                  : updateState === "current"
+                    ? <em>{updateChannel === "nightly" ? "No newer alpha or RC build is available." : "No newer stable version is available."}</em>
                     : updateState === "error"
                       ? <em className="is-error">Update failed. Try again.</em>
                       : updateState === "installing"
@@ -548,6 +610,7 @@ onChangeWorkspaceFolder,
                     const Icon = definition.icon || IconPlugConnected;
                     const packageId = definition.package?.id;
                     const installedRecord = packageId ? plugins.installed[packageId] : null;
+                    const isBuiltIn = definition.source === "built-in" && !packageId;
                     const enabled = installedRecord
                       ? installedRecord.enabled !== false
                       : plugins.isEnabled(definition.type);
@@ -559,14 +622,28 @@ onChangeWorkspaceFolder,
                           <small>{definition.description || `${definition.type} cell object`}</small>
                         </span>
                         <span className="plugin-source">{definition.source === "built-in" ? "Offline" : definition.package?.version || "Installed"}</span>
-                        <Switch
-                          label={`${enabled ? "Disable" : "Enable"} ${definition.label}`}
-                          checked={enabled}
-                          onChange={(checked) => {
-                            if (installedRecord) void plugins.setInstalledEnabled(packageId, checked);
-                            else plugins.setEnabled(definition.type, checked);
-                          }}
-                        />
+                        <span className="plugin-installed-actions">
+                          <Switch
+                            label={`${enabled ? "Disable" : "Enable"} ${definition.label}`}
+                            checked={enabled}
+                            disabled={isBuiltIn}
+                            onChange={(checked) => {
+                              if (installedRecord) void plugins.setInstalledEnabled(packageId, checked);
+                              else plugins.setEnabled(definition.type, checked);
+                            }}
+                          />
+                          {installedRecord ? (
+                            <button
+                              className="settings-close plugin-uninstall"
+                              type="button"
+                              aria-label={`Uninstall ${definition.label}`}
+                              data-tooltip={`Uninstall ${definition.label}`}
+                              onClick={() => void plugins.uninstallMarketplacePlugin(packageId)}
+                            >
+                              <IconTrash size={14} />
+                            </button>
+                          ) : null}
+                        </span>
                       </div>
                     );
                   })}
@@ -580,7 +657,7 @@ onChangeWorkspaceFolder,
                     <h3 id="marketplace-title">Marketplace</h3>
                     <p>Optional first-party cell objects are downloaded, verified, and cached locally.</p>
                   </div>
-                  <button type="button" onClick={() => void plugins.refreshCatalog()} data-tooltip="Refresh marketplace"><IconRefresh size={14} /></button>
+                  <button className="plugins-refresh" type="button" onClick={() => void plugins.refreshCatalog()} data-tooltip="Refresh marketplace"><IconRefresh size={14} /></button>
                 </div>
                 {plugins.marketplaceError ? <p className="is-error" role="alert">{plugins.marketplaceError}</p> : null}
                 <div className="plugin-list">

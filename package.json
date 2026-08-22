@@ -1,6 +1,6 @@
 {
   "name": "tactile",
-  "version": "1.1.1",
+  "version": "1.2.0-alpha.6",
   "private": true,
   "type": "module",
   "engines": {
@@ -13,6 +13,7 @@
     "postcss": "8.5.26"
   },
   "scripts": {
+    "git:install": "node scripts/release/install-git-build.mjs",
     "version:sync": "node scripts/release/sync-version.mjs",
     "version:check": "node scripts/release/sync-version.mjs --check",
     "predev": "npm run version:sync && npm run version:check",
@@ -31,6 +32,11 @@
     "test:component": "playwright test --pass-with-no-tests --config config/playwright/component.config.mjs",
     "test:e2e": "playwright test --pass-with-no-tests --config config/playwright/e2e.config.mjs",
     "bench:perf": "node tests/performance/run-browser.mjs",
+    "bench:core": "node benchmarks/core/run-core.mjs",
+    "bench:core:gate": "node benchmarks/core/run-core.mjs --gate",
+    "bench:suite": "node benchmarks/suite/run-suite.mjs",
+    "bench:suite:native": "node benchmarks/suite/run-suite.mjs --target native",
+    "bench:suite:baseline": "node benchmarks/suite/run-suite.mjs --target native --repeats 3 --label baseline",
     "verify": "npm run version:check && npm run format:check && npm run lint && npm run typecheck && npm run test:unit && npm run test:component && npm run test:e2e && npm run build && npm run test:sites"
   },
   "dependencies": {

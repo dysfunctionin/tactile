@@ -365,6 +365,11 @@ function normalizeObject(object, fallbackId) {
   });
 }
 
+// Identity short-circuit for normalizeWorkspace is intentionally NOT used:
+// the live workspace and tests mutate normalized outputs in place (sparse cell
+// maps), so a cached result would go stale. Callers pass `{ normalized: true }`
+// to the shadow when the snapshot is already normalized.
+
 export function normalizeWorkspace(input) {
   if (!input || typeof input !== "object" || !input.objects) return createBlankWorkspace();
   const objects = {};

@@ -7,6 +7,7 @@ import { layerHistoryEntry, MAX_VISIBLE_LAYERS, useInOut } from "./shell/inOut.j
 import { useSelectionCommands } from "./shell/selectionCommands.js";
 import { useShellState } from "./shell/useShellState.js";
 import { buildFilesIndex } from "./shell/filesIndex.js";
+import { measureStage } from "./core/perf/stageTimer.js";
 import { useWorkspaceCommands } from "./shell/workspaceCommands.js";
 import { reparentReasonMessage } from "./core/reparenting.js";
 import { buildPortablePackage } from "./export.js";
@@ -67,11 +68,15 @@ export function App() {
     canUndo,
     canRedo,
   } = workspaceState;
+  const workspaceObjectsHandleRef = useRef({ current: workspace.objects });
+  const objectHandlesRef = useRef(new Map());
+  workspaceObjectsHandleRef.current.current = workspace.objects;
   const workspaceRootId = workspace.homeObjectId;
   const inOut = useInOut({ workspace, workspaceRootId, workspaceHydrated: hydrated });
   const nativeRuntime = useMemo(() => isTauriRuntime(), []);
   const nativeInvoke = useMemo(() => resolveTauriInvoke(), []);
   const nativeSnapshotRef = useRef({ version: 0, pending: null, writing: false });
+  const nativeFlushTimerRef = useRef(null);
   const [nativeGuideOpen, setNativeGuideOpen] = useState(false);
   const nativeGuideShownRef = useRef(false);
   const shell = useShellState({
@@ -95,7 +100,7 @@ export function App() {
   const filesIndexRef = useRef(null);
   const resetSelectionRef = useRef(null);
   const filesIndex = useMemo(() => {
-    const next = buildFilesIndex(workspace, filesIndexRef.current);
+    const next = measureStage("files-index", () => buildFilesIndex(workspace, filesIndexRef.current));
     filesIndexRef.current = next;
     return next;
   }, [workspace]);
@@ -169,10 +174,16 @@ export function App() {
       const typingTarget = event.target?.closest?.("input, textarea, [contenteditable=\"true\"]");
       const isPasteProxy = event.target?.dataset?.tactilePasteProxy === "true";
       const nativeTypingTarget = typingTarget && !isPasteProxy;
-      const activeGridCell = [...document.querySelectorAll('.sheet-grid-shell .sheet-cell[aria-selected="true"]')]
-        .reverse()
-        .find((cell) => cell.getClientRects().length > 0)
-        || document.querySelector('.sheet-grid-shell .sheet-cell[aria-selected="true"]');
+      // The paint-DOM query below scans every mounted cell. While the user is
+      // typing in an input/textarea, only Ctrl/Meta shortcuts need it (grid
+      // navigation via handleKeyboard bails on typing surfaces), so skip the
+      // query entirely for plain printable keys.
+      const activeGridCell = (command || !nativeTypingTarget)
+        ? [...document.querySelectorAll('.sheet-grid-shell .sheet-cell[aria-selected="true"]')]
+          .reverse()
+          .find((cell) => cell.getClientRects().length > 0)
+          || document.querySelector('.sheet-grid-shell .sheet-cell[aria-selected="true"]')
+        : null;
       const gridSurface = event.target?.closest?.(".sheet-grid-shell") || activeGridCell;
       const inFilesPanel = Boolean(event.target?.closest?.(".files-panel"));
       const gridShortcutsAvailable = Boolean(currentShell.filesPinned && gridSurface && !inFilesPanel);
@@ -367,16 +378,68 @@ export function App() {
         if (pending.pending) void flush();
       }
     };
-    void flush();
-    return undefined;
+    // Debounce the native flush so a burst of edits (e.g. burst typing,
+    // fast formatting) produces a single portable-package rebuild and IPC
+    // snapshot instead of one full rebuild per keypress. The in-flight
+    // single-flight above remains, so writes never stack.
+    if (nativeFlushTimerRef.current != null) window.clearTimeout(nativeFlushTimerRef.current);
+    nativeFlushTimerRef.current = window.setTimeout(() => {
+      void flush();
+    }, 200);
+    return () => {
+      if (nativeFlushTimerRef.current != null) {
+        window.clearTimeout(nativeFlushTimerRef.current);
+        nativeFlushTimerRef.current = null;
+      }
+    };
   }, [hydrated, nativeInvoke, nativeRuntime, workspace, workspace.settings.nativeWorkspacePath]);
 
   const finishNativeGuide = async (selectedPath = "") => {
     const path = selectedPath || workspace.settings.nativeWorkspacePath;
-    if (path && nativeInvoke && path !== workspace.settings.nativeWorkspacePath) {
-      await nativeInvoke("workspace_prepare_directory", { path });
+    if (!path) {
+      updateSettings({
+        onboardingComplete: true,
+        onboardingThemeId: workspace.settings.onboardingThemeId || "one-dark",
+      });
+      setNativeGuideOpen(false);
+      return;
     }
-    if (path) {
+    // If the chosen folder already contains a workspace, reuse it — only
+    // create a blank workspace when the folder is truly empty.
+    let nextWorkspace = null;
+    if (nativeInvoke) {
+      try {
+        const result = await nativeInvoke("workspace_read_snapshot", { path });
+        const raw = typeof result === "string" ? result : result?.contents;
+        if (raw) {
+          try {
+            const parsed = normalizeWorkspace(JSON.parse(raw));
+            nextWorkspace = normalizeWorkspace({
+              ...parsed,
+              settings: {
+                ...parsed.settings,
+                nativeWorkspacePath: path,
+                onboardingComplete: true,
+                onboardingThemeId:
+                  parsed.settings.onboardingThemeId ||
+                  workspace.settings.onboardingThemeId ||
+                  "one-dark",
+              },
+            });
+          } catch {
+            shell.showNotice("That folder has an unreadable workspace file");
+            return;
+          }
+        }
+      } catch {
+        // Treat read errors as empty — fall through to blank creation.
+      }
+      // Ensure the directory structure exists without overwriting workspace.json.
+      try {
+        await nativeInvoke("workspace_prepare_directory", { path });
+      } catch {
+        void 0;
+      }
       saveNativeWorkspacePath(path);
       try {
         await nativeInvoke?.("workspace_set_last_path", { path });
@@ -384,12 +447,19 @@ export function App() {
         // Keep the browser marker as a compatibility fallback while an older
         // native build is still running during an update.
       }
+    } else {
+      saveNativeWorkspacePath(path);
     }
-    updateSettings({
-      onboardingComplete: true,
-      onboardingThemeId: workspace.settings.onboardingThemeId || "one-dark",
-      ...(path ? { nativeWorkspacePath: path } : {}),
-    });
+    if (nextWorkspace) {
+      replaceWorkspace(nextWorkspace);
+      shell.showNotice("Workspace loaded from selected folder");
+    } else {
+      updateSettings({
+        onboardingComplete: true,
+        onboardingThemeId: workspace.settings.onboardingThemeId || "one-dark",
+        nativeWorkspacePath: path,
+      });
+    }
     setNativeGuideOpen(false);
   };
 
@@ -486,7 +556,7 @@ export function App() {
   const floatingLayerActive = topLayer?.phase === "floating";
   // The worksheet and ancestor layers become inert under a floating child,
   // but the global dock remains available for direct breadcrumb navigation.
-  const dockBlocked = shell.settingsOpen;
+  const dockBlocked = false;
   const parentLayerSuspended = visibleLayers.length > 1;
   const parentContextVisible = parentLayerSuspended && topLayer?.phase !== "full";
   const filesSidebarWidth = shell.filesPinned && shell.filesOpen && viewport.width > 620
@@ -496,20 +566,27 @@ export function App() {
   const renderObject = (layer, index) => {
     const object = workspace.objects[layer.objectId];
     if (!object) return null;
+    let objectHandle = objectHandlesRef.current.get(object.id);
+    if (!objectHandle) {
+      objectHandle = { current: object };
+      objectHandlesRef.current.set(object.id, objectHandle);
+    } else {
+      objectHandle.current = object;
+    }
     const isTopLayer = index > 0 && index === inOut.layers.length - 1;
     const isVisibleParentLayer = parentContextVisible && index === inOut.layers.length - 2;
     const selectedAddress = selection.selectedByObject[object.id] || "A1";
     const selectionRange = selection.rangeByObject[object.id] || { anchor: selectedAddress, focus: selectedAddress };
     const multiSelectedAddresses = selection.multiSelectedByObject[object.id] || [];
     const sharedProps = {
-      object,
+      objectHandle,
       spatialPhase: layer.phase,
       path: objectPaths[index],
       saveState,
       selectedAddress,
       selectionRange,
       multiSelectedAddresses,
-      workspaceObjects: workspace.objects,
+      workspaceObjectsHandle: workspaceObjectsHandleRef.current,
       onSelectAddress: (address) => selection.selectAddress(object.id, address),
       onSelectRange: (anchor, focus, active) => selection.selectRange(object.id, anchor, focus, active),
       onToggleMultiSelect: (address) => selection.toggleMultiSelect(object.id, address),
@@ -608,6 +685,7 @@ export function App() {
             layer={layer}
             depth={childIndex + 1}
             viewportInsetLeft={filesSidebarWidth}
+            liveViewport={viewport}
             key={childIndex}
             onExpand={inOut.expandLayer}
             onClose={inOut.closeTopLayer}
@@ -684,6 +762,8 @@ export function App() {
             onExportWorkspace={commands.exportWorkspace}
             onChangeWorkspaceFolder={nativeRuntime ? changeNativeWorkspaceFolder : undefined}
             onOpenWorkspaceFolder={nativeRuntime ? openNativeWorkspaceFolder : undefined}
+            onGetUpdateChannel={nativeRuntime ? () => import("./platform/tauri/updater.js").then((m) => m.getUpdateChannel()) : undefined}
+            onSetUpdateChannel={nativeRuntime ? (channel) => import("./platform/tauri/updater.js").then((m) => m.setUpdateChannel(channel)) : undefined}
             onCheckForUpdate={nativeRuntime ? () => import("./platform/tauri/updater.js").then((m) => m.checkForUpdate()) : undefined}
             onDownloadAndInstallUpdate={nativeRuntime ? () => import("./platform/tauri/updater.js").then((m) => m.downloadAndInstallUpdate()) : undefined}
             onOpenGuide={nativeRuntime ? () => setNativeGuideOpen(true) : undefined}

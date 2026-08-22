@@ -1,6 +1,17 @@
 import { expect, test } from "@playwright/test";
 
-test("previews column resizing before the pointer is released", async ({ page }) => {
+async function setCellValue(page, address, value) {
+  const cell = page.locator(`.sheet-cell[data-cell-address="${address}"]`).first();
+  await cell.click();
+  await cell.dblclick();
+  const inlineEditor = cell.locator(".cell-inline-editor");
+  await expect(inlineEditor).toBeFocused();
+  await inlineEditor.fill(value);
+  await inlineEditor.press("Enter");
+  await expect(cell).toContainText(String(value).split("\n")[0]);
+}
+
+test("previews column resizing before the pointer is released and auto-fits on double-click", async ({ page }) => {
   await page.goto("/");
 
   const sheet = page.locator("[data-sheet-scroll]").last();
@@ -22,23 +33,33 @@ test("previews column resizing before the pointer is released", async ({ page })
   await expect.poll(async () => (await columnCell.boundingBox())?.width || 0).toBeGreaterThan(columnBefore.width + 20);
   await page.mouse.up();
 
-  const resizedColumn = await columnCell.boundingBox();
+  const draggedWidth = (await columnCell.boundingBox())?.width || 0;
   const resetColumnHandle = await columnHandle.boundingBox();
-  if (!resizedColumn || !resetColumnHandle) throw new Error("Resized column fixture is not measurable.");
+  if (!resetColumnHandle) throw new Error("Resized column fixture is not measurable.");
   await page.mouse.dblclick(
     resetColumnHandle.x + resetColumnHandle.width / 2,
     resetColumnHandle.y + resetColumnHandle.height / 2,
   );
+
+  // Double-click auto-fits to content: an empty column narrows to its header
+  // width, well below both the default column and the manually dragged width.
   await expect
     .poll(async () => Math.round((await columnCell.boundingBox())?.width || 0))
-    .toBe(Math.round(columnBefore.width));
+    .toBeLessThan(columnBefore.width - 20);
+  await expect
+    .poll(async () => Math.round((await columnCell.boundingBox())?.width || 0))
+    .toBeLessThan(draggedWidth - 20);
 });
 
-test("previews row resizing before the pointer is released", async ({ page }) => {
+test("previews row resizing before the pointer is released and auto-fits on double-click", async ({ page }) => {
   await page.goto("/");
 
   const sheet = page.locator("[data-sheet-scroll]").last();
   await expect(sheet).toBeVisible();
+
+  // An explicitly multi-line value so the row's content height is clearly
+  // taller than the default single-line row.
+  await setCellValue(page, "A1", "line one\nline two");
 
   const rowCell = sheet.locator('.sheet-cell[data-cell-address="A1"]').first();
   const rowBefore = await rowCell.boundingBox();
@@ -54,10 +75,20 @@ test("previews row resizing before the pointer is released", async ({ page }) =>
   await expect.poll(async () => (await rowCell.boundingBox())?.height || 0).toBeGreaterThan(rowBefore.height + 10);
   await page.mouse.up();
 
+  const draggedHeight = (await rowCell.boundingBox())?.height || 0;
   const resetRowHandle = await rowHandle.boundingBox();
   if (!resetRowHandle) throw new Error("Resized row fixture is not measurable.");
   await page.mouse.dblclick(resetRowHandle.x + resetRowHandle.width / 2, resetRowHandle.y + resetRowHandle.height / 2);
+
+  // Double-click auto-fits to the two-line content height, returning the row
+  // to its live auto-grown height and undoing the manual drag.
   await expect
     .poll(async () => Math.round((await rowCell.boundingBox())?.height || 0))
-    .toBe(Math.round(rowBefore.height));
+    .toBeLessThan(draggedHeight - 10);
+  await expect
+    .poll(async () => Math.round((await rowCell.boundingBox())?.height || 0))
+    .toBeGreaterThanOrEqual(Math.round(rowBefore.height) - 2);
+  await expect
+    .poll(async () => Math.round((await rowCell.boundingBox())?.height || 0))
+    .toBeLessThanOrEqual(Math.round(rowBefore.height) + 2);
 });

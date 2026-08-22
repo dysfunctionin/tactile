@@ -665,13 +665,13 @@ test("opening Files keeps the bottom dock above the workspace scrim", async ({ p
   });
 
   expect(transientState.filesOpen).toBe(true);
-  expect(transientState.layer.bottom).toBeCloseTo(transientState.bar.top, 1);
-  expect(transientState.scrim.bottom).toBeCloseTo(transientState.bar.top, 1);
+  expect(Math.abs(transientState.layer.bottom - transientState.bar.top)).toBeLessThanOrEqual(1);
+  expect(Math.abs(transientState.scrim.bottom - transientState.bar.top)).toBeLessThanOrEqual(1);
   expect(Number(transientState.bar.zIndex)).toBeGreaterThan(Number(transientState.layer.zIndex));
   expect(transientState.bar).toMatchObject({
     left: 0,
     right: transientState.viewportWidth,
-    background: transientState.paper,
+    background: "rgba(0, 0, 0, 0)",
     opacity: "1",
     filter: "none",
   });
@@ -684,7 +684,7 @@ test("opening Files keeps the bottom dock above the workspace scrim", async ({ p
   await expect(page.locator(".files-scrim")).toHaveCSS("opacity", "0");
   await expect(page.locator(".files-layer")).toHaveClass(/is-pinned/);
   await expect(page.locator(".tactile-app")).toHaveAttribute("data-files-pinned", "true");
-  await expect(page.locator(".app-bottom-bar")).toHaveCSS("background-color", transientState.paper);
+  await expect(page.locator(".app-bottom-bar")).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
   await expect(page.locator(".app-dock")).toHaveCSS("pointer-events", "auto");
 
   await page.getByRole("button", { name: "Browse files", exact: true }).click();

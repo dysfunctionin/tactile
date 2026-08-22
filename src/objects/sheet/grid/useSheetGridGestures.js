@@ -2,7 +2,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { cellAddress } from "../../../sheet/coordinates.js";
 import { fillChanges, fillRange } from "../../../sheet/ranges.js";
 import { rangeLabel } from "../../../sheet/ranges.js";
-import { naturalColumnWidth, naturalRowHeight } from "../../../sheet/textMeasure.js";
+import {
+  AUTO_FIT_COLUMN_MAX,
+  AUTO_FIT_ROW_MAX,
+  columnFitWidth,
+  measureColumnWidths,
+  measureRowHeights,
+  rowFitHeight,
+} from "../../../sheet/textMeasure.js";
 import {
   CELL_EDIT_SEED_EVENT,
   dispatchCellEditCommitAny,
@@ -87,10 +94,11 @@ export function useSheetGridGestures({
   normalizedSelection,
   scrollRef,
   metrics,
-  rowIndexMap,
-  columnIndexMap,
-  formulaValues,
-  columnPositionForIndex,
+    rowIndexMap,
+    columnIndexMap,
+    formulaValues,
+    displayForCell,
+    columnPositionForIndex,
   columnOffsetForPosition,
   columnSizeForPosition,
   columnSizeForIndex,
@@ -129,6 +137,8 @@ export function useSheetGridGestures({
   const focusFrameRef = useRef(null);
   const resizeFrameRef = useRef(null);
   const axisDragFrameRef = useRef(null);
+  const finishPointerGestureRef = useRef(null);
+  const moveSelectionFromPointerRef = useRef(null);
 
   selectionContextRef.current = { selectedAddress, selectionRange };
 
@@ -432,8 +442,7 @@ export function useSheetGridGestures({
     if (formulaReferenceDragRef.current) updateFormulaReference(cell.address);
   }, [updateFormulaReference]);
 
-  useEffect(() => {
-    const finishPointerGesture = (event) => {
+  finishPointerGestureRef.current = (event) => {
       const selectionDrag = selectionDragRef.current;
       const fill = fillDragRef.current;
       const formulaReference = formulaReferenceDragRef.current;
@@ -494,14 +503,17 @@ export function useSheetGridGestures({
       if (selectionDrag?.focus && selectionDrag.focus !== selectionDrag.startAddress) {
         focusSelectedGestureCell(callbacks?.object?.id, selectionDrag.focus);
       }
-    };
+  };
+
+  useEffect(() => {
+    const finishPointerGesture = (event) => finishPointerGestureRef.current?.(event);
     window.addEventListener("pointerup", finishPointerGesture, true);
     window.addEventListener("pointercancel", finishPointerGesture, true);
     return () => {
       window.removeEventListener("pointerup", finishPointerGesture, true);
       window.removeEventListener("pointercancel", finishPointerGesture, true);
     };
-  }, [cellAddressAtPoint, flushSelectionRangeUpdate, releaseSelectionViewportLock, stopSelectionAutoScroll, updateFormulaReference, updateSelectionAtPoint]);
+  }, []);
 
   useEffect(() => () => {
     stopSelectionAutoScroll();
@@ -574,8 +586,7 @@ export function useSheetGridGestures({
 
   moveSelectionGestureRef.current = moveSelectionGesture;
 
-  useEffect(() => {
-    const moveSelectionFromPointer = (event) => {
+  moveSelectionFromPointerRef.current = (event) => {
       const activeGesture = selectionDragRef.current || fillDragRef.current || formulaReferenceDragRef.current;
       if (!activeGesture) return;
       if (activeGesture.pointerId != null && event.pointerId != null && event.pointerId !== activeGesture.pointerId) return;
@@ -606,10 +617,13 @@ export function useSheetGridGestures({
           else moveSelectionGestureRef.current?.({ address });
         }
       }
-    };
+  };
+
+  useEffect(() => {
+    const moveSelectionFromPointer = (event) => moveSelectionFromPointerRef.current?.(event);
     window.addEventListener("pointermove", moveSelectionFromPointer, true);
     return () => window.removeEventListener("pointermove", moveSelectionFromPointer, true);
-  }, [cellAddressAtPoint, moveFormulaReference, scheduleSelectionAutoScroll, updateSelectionAtPoint]);
+  }, []);
 
   const startFill = useCallback((event, cell) => {
     event.preventDefault();
@@ -738,16 +752,19 @@ export function useSheetGridGestures({
   const autoFitAxisSize = useCallback((axis, index) => {
     const targets = axisResizeTargets(axis, index);
     const minimum = axis === "column" ? 56 : 24;
-    const maximum = axis === "column" ? 8000 : 8000;
+    const maximum = axis === "column" ? AUTO_FIT_COLUMN_MAX : AUTO_FIT_ROW_MAX;
+    // Measure every affected column/row in one sweep over the cells map so a
+    // whole-sheet fit stays O(cells) instead of O(columns x cells). The display
+    // provider makes embedded objects and links measure what they render.
+    const widths = axis === "column" ? measureColumnWidths(object, formulaValues, displayForCell) : null;
+    const heights = axis === "row" ? measureRowHeights(object, columnSizeForIndex) : null;
     const nextSizes = { ...(axis === "column" ? object.columnWidths : object.rowHeights) };
     targets.forEach((target) => {
-      const fit = axis === "column"
-        ? naturalColumnWidth(object, target, formulaValues)
-        : naturalRowHeight(object, target);
+      const fit = axis === "column" ? columnFitWidth(widths, target) : rowFitHeight(heights, target);
       nextSizes[target] = Math.max(minimum, Math.min(maximum, fit));
     });
     onUpdateObject?.(axis === "column" ? { columnWidths: nextSizes } : { rowHeights: nextSizes });
-  }, [axisResizeTargets, formulaValues, object.columnWidths, object.rowHeights, onUpdateObject]);
+  }, [axisResizeTargets, columnSizeForIndex, displayForCell, formulaValues, object.columnWidths, object.rowHeights, onUpdateObject]);
 
   const startAxisDrag = useCallback((event, axis, index) => {
     if (event.button !== 0 || event.target.closest(".column-resize-handle, .row-resize-handle, .column-group-toggle, .row-group-toggle")) return;

@@ -16,6 +16,8 @@ import {
 } from "../model.js";
 import { normalizeIconEmoji } from "../iconEmoji.js";
 import { repairWorkspaceTopology } from "../core/topology.js";
+import { cellsForMutation, cloneHistoryWorkspace } from "../core/history/snapshot.js";
+import { measureStage, measureStageAsync } from "../core/perf/stageTimer.js";
 import { reparentWorkspace } from "../core/reparenting.js";
 import { cellAddress, cellId, coordinatesFromCellId } from "../sheet/coordinates.js";
 import {
@@ -25,6 +27,12 @@ import {
   adjustFormulaForAxis,
   reorderFormulaForAxis,
 } from "../sheet/structure.js";
+import {
+  removeSheetAxisCells,
+  reorderSheetAxis,
+  shiftAxisSizes,
+  shiftCells,
+} from "../sheet/axisCells.js";
 import { loadWorkspace, loadWorkspaceCache, saveWorkspace, saveWorkspaceCache } from "../storage.js";
 import { createWave2Shadow } from "../core/engine/shadow.js";
 import { recordCellChanges } from "../objects/sheet/grid/cellChangeJournal.js";
@@ -50,12 +58,7 @@ function touch(workspace, objects, repairTopology = false) {
     updatedAt: new Date().toISOString(),
     objects,
   };
-  return repairTopology ? repairWorkspaceTopology(next) : next;
-}
-
-function cloneHistoryWorkspace(workspace) {
-  if (typeof structuredClone === "function") return structuredClone(workspace);
-  return JSON.parse(JSON.stringify(workspace));
+  return repairTopology ? measureStage("topology", () => repairWorkspaceTopology(next)) : next;
 }
 
 function cloneHistoryCell(cell) {
@@ -65,7 +68,7 @@ function cloneHistoryCell(cell) {
 function applyCellHistory(workspace, entry, direction) {
   const object = workspace.objects[entry.objectId];
   if (object?.type !== "sheet") return workspace;
-  const cells = object.cells;
+  const cells = cellsForMutation(object.cells);
   entry.changes.forEach((change) => {
     const cell = change[direction];
     if (cell) cells[change.cellId] = { ...cell };
@@ -76,105 +79,6 @@ function applyCellHistory(workspace, entry, direction) {
     ...workspace,
     objects: { ...workspace.objects, [entry.objectId]: { ...object, cells } },
   }, { ...workspace.objects, [entry.objectId]: { ...object, cells } }, entry.changes.some((change) => Boolean(change.before?.embed || change.after?.embed)));
-}
-
-function shiftCells(object, axis, index) {
-  const cells = {};
-  Object.values(object.cells || {}).forEach((cell) => {
-    const row = axis === "row" && cell.row >= index ? cell.row + 1 : cell.row;
-    const column = axis === "column" && cell.column >= index ? cell.column + 1 : cell.column;
-    const shifted = {
-      ...cell,
-      id: cellId(row, column),
-      address: cellAddress(row, column),
-      row,
-      column,
-      formula: adjustFormulaForAxis(cell.formula, axis, index, "insert"),
-    };
-    cells[shifted.id] = shifted;
-  });
-  return cells;
-}
-
-function removeSheetAxisCells(object, axis, index) {
-  const cells = {};
-  Object.values(object.cells || {}).forEach((cell) => {
-    if ((axis === "row" && cell.row === index) || (axis === "column" && cell.column === index)) return;
-    const row = axis === "row" && cell.row > index ? cell.row - 1 : cell.row;
-    const column = axis === "column" && cell.column > index ? cell.column - 1 : cell.column;
-    const shifted = {
-      ...cell,
-      id: cellId(row, column),
-      address: cellAddress(row, column),
-      row,
-      column,
-      formula: adjustFormulaForAxis(cell.formula, axis, index, "delete"),
-    };
-    cells[shifted.id] = shifted;
-  });
-  return cells;
-}
-
-function shiftAxisSizes(sizes, index, operation) {
-  const next = {};
-  Object.entries(sizes || {}).forEach(([key, value]) => {
-    const current = Number(key);
-    if (!Number.isInteger(current)) return;
-    if (operation === "delete" && current === index) return;
-    const shifted = operation === "insert" && current >= index
-      ? current + 1
-      : operation === "delete" && current > index
-        ? current - 1
-        : current;
-    next[shifted] = value;
-  });
-  return next;
-}
-
-function reorderAxisSizes(sizes, indexMap) {
-  const next = {};
-  Object.entries(sizes || {}).forEach(([key, value]) => {
-    const current = Number(key);
-    const reordered = indexMap.get(current);
-    if (Number.isInteger(reordered)) next[reordered] = value;
-  });
-  return next;
-}
-
-function reorderSheetAxis(object, axis, from, to) {
-  const length = axis === "row" ? object.rows : object.columns;
-  if (from === to || from < 0 || to < 0 || from >= length || to >= length) return object;
-  const order = Array.from({ length }, (_, index) => index);
-  const [moved] = order.splice(from, 1);
-  order.splice(to, 0, moved);
-  const indexMap = new Map(order.map((original, next) => [original, next]));
-  const cells = {};
-  Object.values(object.cells || {}).forEach((cell) => {
-    const row = axis === "row" ? indexMap.get(cell.row) : cell.row;
-    const column = axis === "column" ? indexMap.get(cell.column) : cell.column;
-    const shifted = {
-      ...cell,
-      id: cellId(row, column),
-      address: cellAddress(row, column),
-      row,
-      column,
-      formula: reorderFormulaForAxis(cell.formula, axis, indexMap),
-    };
-    cells[shifted.id] = shifted;
-  });
-  return {
-    ...object,
-    cells,
-    rowHeights: axis === "row" ? reorderAxisSizes(object.rowHeights, indexMap) : object.rowHeights,
-    columnWidths: axis === "column" ? reorderAxisSizes(object.columnWidths, indexMap) : object.columnWidths,
-    filters: axis === "column"
-      ? (object.filters || []).map((filter) => ({ ...filter, column: indexMap.get(filter.column) ?? filter.column }))
-      : object.filters,
-    conditionalFormats: (object.conditionalFormats || []).map((rule) => ({
-      ...rule,
-      range: reorderFormulaForAxis(`=${rule.range}`, axis, indexMap).slice(1),
-    })),
-  };
 }
 
 export function useLocalWorkspace() {
@@ -234,7 +138,7 @@ export function useLocalWorkspace() {
     if (shadow?.state?.persistence === "active") return undefined;
     setSaveState("saving");
     saveTimer.current = window.setTimeout(async () => {
-      const persisted = await saveWorkspace(workspace);
+      const persisted = await measureStageAsync("persist-snapshot", () => saveWorkspace(workspace));
       if (sequence !== saveSequenceRef.current) return;
       setSaveState(persisted ? "saved" : "saved in local cache");
     }, 120);
@@ -246,7 +150,7 @@ export function useLocalWorkspace() {
     if (!hydrated || !shadow) return undefined;
     let current = true;
     setSaveState("saving");
-    Promise.resolve(shadow.reconcile(workspace, { normalized: true })).then(
+    Promise.resolve(measureStageAsync("shadow-reconcile", () => shadow.reconcile(workspace, { normalized: true }))).then(
       () => {
         if (!current) return;
         setSaveState(shadow.state.persistence === "active" ? "saved" : "saved in local cache");
@@ -266,7 +170,10 @@ export function useLocalWorkspace() {
       const now = Date.now();
       const coalesced = history.lastKey === historyKey && now - history.lastAt < 650;
       if (!coalesced) {
-        history.past.push({ kind: "snapshot", value: cloneHistoryWorkspace(current) });
+        history.past.push({
+          kind: "snapshot",
+          value: measureStage("history-snapshot", () => cloneHistoryWorkspace(current)),
+        });
         if (history.past.length > 120) history.past.shift();
       }
       history.future = [];
@@ -283,7 +190,7 @@ export function useLocalWorkspace() {
       if (object?.type !== "sheet") return current;
       const historyChanges = [];
       let changed = false;
-      const cells = object.cells;
+      const cells = cellsForMutation(object.cells);
       changes.forEach(({ cellId: targetCellId, patch }) => {
         const coordinates = coordinatesFromCellId(targetCellId);
         if (!coordinates) return;
@@ -603,7 +510,7 @@ export function useLocalWorkspace() {
           ...object,
           rows,
           columns,
-          cells: shiftCells(object, axis, index),
+          cells: measureStage("shift-cells", () => shiftCells(object, axis, index)),
           rowHeights: axis === "row" ? shiftAxisSizes(object.rowHeights, index, "insert") : object.rowHeights,
           columnWidths: axis === "column" ? shiftAxisSizes(object.columnWidths, index, "insert") : object.columnWidths,
           rowGroups: axis === "row" ? adjustAxisGroups(object.rowGroups, index, "insert") : object.rowGroups,
@@ -627,7 +534,7 @@ export function useLocalWorkspace() {
           ...object,
           rows,
           columns,
-          cells: removeSheetAxisCells(object, axis, index),
+          cells: measureStage("remove-axis-cells", () => removeSheetAxisCells(object, axis, index)),
           rowHeights: axis === "row" ? shiftAxisSizes(object.rowHeights, index, "delete") : object.rowHeights,
           columnWidths: axis === "column" ? shiftAxisSizes(object.columnWidths, index, "delete") : object.columnWidths,
           rowGroups: axis === "row" ? adjustAxisGroups(object.rowGroups, index, "delete") : object.rowGroups,
@@ -729,7 +636,10 @@ export function useLocalWorkspace() {
         history.lastAt = 0;
         return applyCellHistory(current, previous, "before");
       }
-      history.future.push({ kind: "snapshot", value: cloneHistoryWorkspace(current) });
+      history.future.push({
+        kind: "snapshot",
+        value: cloneHistoryWorkspace(current),
+      });
       history.lastKey = null;
       history.lastAt = 0;
       return { ...previous.value, updatedAt: new Date().toISOString() };
@@ -747,7 +657,10 @@ export function useLocalWorkspace() {
         history.lastAt = 0;
         return applyCellHistory(current, next, "after");
       }
-      history.past.push({ kind: "snapshot", value: cloneHistoryWorkspace(current) });
+      history.past.push({
+        kind: "snapshot",
+        value: cloneHistoryWorkspace(current),
+      });
       history.lastKey = null;
       history.lastAt = 0;
       return { ...next.value, updatedAt: new Date().toISOString() };
