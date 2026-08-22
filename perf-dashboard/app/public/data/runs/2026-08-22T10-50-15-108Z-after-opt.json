@@ -1,0 +1,1177 @@
+{
+  "schemaVersion": 1,
+  "kind": "tactile-perf-suite",
+  "runId": "2026-08-22T10-50-15-108Z-after-opt",
+  "label": "after-opt",
+  "generatedAt": "2026-08-22T10:50:15.108Z",
+  "elapsedSec": 277,
+  "appVersion": "1.2.0-alpha.5",
+  "git": {
+    "branch": "alpha",
+    "commit": "9cbdef5e1876aedd2810a5a4d9c379aaf8cd2919"
+  },
+  "machine": {
+    "platform": "win32 10.0.26200 x64",
+    "cpuModel": "AMD Ryzen 5 5600H with Radeon Graphics",
+    "cpuCount": 12,
+    "cpuSpeedMhz": 3294,
+    "totalMemGB": 15.3,
+    "freeMemMB": 1717,
+    "nodeVersion": "v24.13.0",
+    "uptimeHours": 198.6
+  },
+  "envGuard": {
+    "at": "2026-08-22T10:45:39.090Z",
+    "actions": {
+      "killedProcesses": [],
+      "cleanedTempGlobs": [
+        "C:\\Users\\ARYANW~1\\AppData\\Local\\Temp\\tactile-perf-*",
+        "C:\\Users\\ARYANW~1\\AppData\\Local\\Temp\\tactile-code-run-*",
+        "C:\\Users\\ARYANW~1\\AppData\\Local\\Temp\\tactile*"
+      ],
+      "clearedWebviewCaches": []
+    },
+    "systemBefore": {
+      "platform": "win32 10.0.26200 x64",
+      "cpuModel": "AMD Ryzen 5 5600H with Radeon Graphics",
+      "cpuCount": 12,
+      "cpuSpeedMhz": 3294,
+      "totalMemGB": 15.3,
+      "freeMemMB": 1373,
+      "nodeVersion": "v24.13.0",
+      "uptimeHours": 198.5
+    },
+    "systemAfter": {
+      "platform": "win32 10.0.26200 x64",
+      "cpuModel": "AMD Ryzen 5 5600H with Radeon Graphics",
+      "cpuCount": 12,
+      "cpuSpeedMhz": 3294,
+      "totalMemGB": 15.3,
+      "freeMemMB": 1454,
+      "nodeVersion": "v24.13.0",
+      "uptimeHours": 198.5
+    }
+  },
+  "server": {
+    "mode": "preview",
+    "port": 4180
+  },
+  "target": "browser",
+  "repeats": 1,
+  "profiles": {
+    "low": {
+      "fixtureFingerprint": "611a8c3cf12e50de2f54b88b99fc19887fba127321b0ec82df265ea0f1b5c999",
+      "counts": {
+        "objects": 70,
+        "sheets": 23,
+        "usedCells": 7208
+      },
+      "loadWarmMs": {
+        "median": 932,
+        "min": 932,
+        "max": 932
+      },
+      "scenarios": {
+        "import-profile": {
+          "repeats": 1,
+          "usable": 1,
+          "durationMs": {
+            "median": 1653.1000000238419,
+            "p95": 1653.1000000238419,
+            "min": 1653.1000000238419,
+            "max": 1653.1000000238419
+          },
+          "frameTimeP95Ms": {
+            "median": 50.10000000000002,
+            "p95": 50.10000000000002,
+            "min": 50.10000000000002,
+            "max": 50.10000000000002
+          },
+          "frameTimeMaxMs": {
+            "median": 166.60000000000002,
+            "p95": 166.60000000000002,
+            "min": 166.60000000000002,
+            "max": 166.60000000000002
+          },
+          "droppedFrames": {
+            "median": 38,
+            "p95": 38,
+            "min": 38,
+            "max": 38
+          },
+          "longTasksOver50": {
+            "median": 3,
+            "p95": 3,
+            "min": 3,
+            "max": 3
+          },
+          "inputLatencyP95Ms": null,
+          "reactCommits": {
+            "median": 16,
+            "p95": 16,
+            "min": 16,
+            "max": 16
+          },
+          "domMutationBatches": null,
+          "mountedCellsMax": {
+            "median": 432,
+            "p95": 432,
+            "min": 432,
+            "max": 432
+          },
+          "memoryDeltaMB": {
+            "median": 0,
+            "max": 0
+          },
+          "opMedianMs": null,
+          "systemFreeMemMinMB": 1641,
+          "appRssMaxMB": 0,
+          "actionErrors": []
+        },
+        "scroll-vertical": {
+          "repeats": 1,
+          "usable": 1,
+          "durationMs": {
+            "median": 2052.600000023842,
+            "p95": 2052.600000023842,
+            "min": 2052.600000023842,
+            "max": 2052.600000023842
+          },
+          "frameTimeP95Ms": {
+            "median": 33.19999999999982,
+            "p95": 33.19999999999982,
+            "min": 33.19999999999982,
+            "max": 33.19999999999982
+          },
+          "frameTimeMaxMs": {
+            "median": 50,
+            "p95": 50,
+            "min": 50,
+            "max": 50
+          },
+          "droppedFrames": {
+            "median": 44,
+            "p95": 44,
+            "min": 44,
+            "max": 44
+          },
+          "longTasksOver50": {
+            "median": 1,
+            "p95": 1,
+            "min": 1,
+            "max": 1
+          },
+          "inputLatencyP95Ms": {
+            "median": 32,
+            "p95": 32,
+            "min": 32,
+            "max": 32
+          },
+          "reactCommits": {
+            "median": 8,
+            "p95": 8,
+            "min": 8,
+            "max": 8
+          },
+          "domMutationBatches": null,
+          "mountedCellsMax": {
+            "median": 646,
+            "p95": 646,
+            "min": 646,
+            "max": 646
+          },
+          "memoryDeltaMB": {
+            "median": 0,
+            "max": 0
+          },
+          "opMedianMs": null,
+          "systemFreeMemMinMB": 1582,
+          "appRssMaxMB": 0,
+          "actionErrors": []
+        },
+        "scroll-diagonal": {
+          "repeats": 1,
+          "usable": 1,
+          "durationMs": {
+            "median": 1447.8999999761581,
+            "p95": 1447.8999999761581,
+            "min": 1447.8999999761581,
+            "max": 1447.8999999761581
+          },
+          "frameTimeP95Ms": {
+            "median": 16.799999999999272,
+            "p95": 16.799999999999272,
+            "min": 16.799999999999272,
+            "max": 16.799999999999272
+          },
+          "frameTimeMaxMs": {
+            "median": 16.800000000000182,
+            "p95": 16.800000000000182,
+            "min": 16.800000000000182,
+            "max": 16.800000000000182
+          },
+          "droppedFrames": {
+            "median": 13,
+            "p95": 13,
+            "min": 13,
+            "max": 13
+          },
+          "longTasksOver50": {
+            "median": 0,
+            "p95": 0,
+            "min": 0,
+            "max": 0
+          },
+          "inputLatencyP95Ms": null,
+          "reactCommits": {
+            "median": 1,
+            "p95": 1,
+            "min": 1,
+            "max": 1
+          },
+          "domMutationBatches": null,
+          "mountedCellsMax": {
+            "median": 546,
+            "p95": 546,
+            "min": 546,
+            "max": 546
+          },
+          "memoryDeltaMB": {
+            "median": 0,
+            "max": 0
+          },
+          "opMedianMs": null,
+          "systemFreeMemMinMB": 1524,
+          "appRssMaxMB": 0,
+          "actionErrors": []
+        },
+        "typing-burst": {
+          "repeats": 1,
+          "usable": 1,
+          "durationMs": {
+            "median": 2133.5999999046326,
+            "p95": 2133.5999999046326,
+            "min": 2133.5999999046326,
+            "max": 2133.5999999046326
+          },
+          "frameTimeP95Ms": {
+            "median": 16.80000000000109,
+            "p95": 16.80000000000109,
+            "min": 16.80000000000109,
+            "max": 16.80000000000109
+          },
+          "frameTimeMaxMs": {
+            "median": 33.29999999999927,
+            "p95": 33.29999999999927,
+            "min": 33.29999999999927,
+            "max": 33.29999999999927
+          },
+          "droppedFrames": {
+            "median": 39,
+            "p95": 39,
+            "min": 39,
+            "max": 39
+          },
+          "longTasksOver50": {
+            "median": 0,
+            "p95": 0,
+            "min": 0,
+            "max": 0
+          },
+          "inputLatencyP95Ms": {
+            "median": 32,
+            "p95": 32,
+            "min": 32,
+            "max": 32
+          },
+          "reactCommits": {
+            "median": 57,
+            "p95": 57,
+            "min": 57,
+            "max": 57
+          },
+          "domMutationBatches": null,
+          "mountedCellsMax": {
+            "median": 546,
+            "p95": 546,
+            "min": 546,
+            "max": 546
+          },
+          "memoryDeltaMB": {
+            "median": 0,
+            "max": 0
+          },
+          "opMedianMs": null,
+          "systemFreeMemMinMB": 1489,
+          "appRssMaxMB": 0,
+          "actionErrors": []
+        },
+        "formula-add": {
+          "repeats": 1,
+          "usable": 1,
+          "durationMs": {
+            "median": 1489.8000000715256,
+            "p95": 1489.8000000715256,
+            "min": 1489.8000000715256,
+            "max": 1489.8000000715256
+          },
+          "frameTimeP95Ms": {
+            "median": 16.80000000000109,
+            "p95": 16.80000000000109,
+            "min": 16.80000000000109,
+            "max": 16.80000000000109
+          },
+          "frameTimeMaxMs": {
+            "median": 50,
+            "p95": 50,
+            "min": 50,
+            "max": 50
+          },
+          "droppedFrames": {
+            "median": 39,
+            "p95": 39,
+            "min": 39,
+            "max": 39
+          },
+          "longTasksOver50": {
+            "median": 1,
+            "p95": 1,
+            "min": 1,
+            "max": 1
+          },
+          "inputLatencyP95Ms": {
+            "median": 96,
+            "p95": 96,
+            "min": 96,
+            "max": 96
+          },
+          "reactCommits": {
+            "median": 59,
+            "p95": 59,
+            "min": 59,
+            "max": 59
+          },
+          "domMutationBatches": null,
+          "mountedCellsMax": {
+            "median": 546,
+            "p95": 546,
+            "min": 546,
+            "max": 546
+          },
+          "memoryDeltaMB": {
+            "median": 0,
+            "max": 0
+          },
+          "opMedianMs": null,
+          "systemFreeMemMinMB": 2244,
+          "appRssMaxMB": 0,
+          "actionErrors": []
+        },
+        "in-out": {
+          "repeats": 1,
+          "usable": 1,
+          "durationMs": {
+            "median": 1909.2000000476837,
+            "p95": 1909.2000000476837,
+            "min": 1909.2000000476837,
+            "max": 1909.2000000476837
+          },
+          "frameTimeP95Ms": {
+            "median": 33.30000000000109,
+            "p95": 33.30000000000109,
+            "min": 33.30000000000109,
+            "max": 33.30000000000109
+          },
+          "frameTimeMaxMs": {
+            "median": 50,
+            "p95": 50,
+            "min": 50,
+            "max": 50
+          },
+          "droppedFrames": {
+            "median": 43,
+            "p95": 43,
+            "min": 43,
+            "max": 43
+          },
+          "longTasksOver50": {
+            "median": 1,
+            "p95": 1,
+            "min": 1,
+            "max": 1
+          },
+          "inputLatencyP95Ms": {
+            "median": 88,
+            "p95": 88,
+            "min": 88,
+            "max": 88
+          },
+          "reactCommits": {
+            "median": 15,
+            "p95": 15,
+            "min": 15,
+            "max": 15
+          },
+          "domMutationBatches": null,
+          "mountedCellsMax": {
+            "median": 835,
+            "p95": 835,
+            "min": 835,
+            "max": 835
+          },
+          "memoryDeltaMB": {
+            "median": 0,
+            "max": 0
+          },
+          "opMedianMs": null,
+          "systemFreeMemMinMB": 2195,
+          "appRssMaxMB": 0,
+          "actionErrors": []
+        },
+        "nested": {
+          "repeats": 1,
+          "usable": 1,
+          "durationMs": {
+            "median": 8893.200000047684,
+            "p95": 8893.200000047684,
+            "min": 8893.200000047684,
+            "max": 8893.200000047684
+          },
+          "frameTimeP95Ms": {
+            "median": 33.29999999999927,
+            "p95": 33.29999999999927,
+            "min": 33.29999999999927,
+            "max": 33.29999999999927
+          },
+          "frameTimeMaxMs": {
+            "median": 66.70000000000073,
+            "p95": 66.70000000000073,
+            "min": 66.70000000000073,
+            "max": 66.70000000000073
+          },
+          "droppedFrames": {
+            "median": 246,
+            "p95": 246,
+            "min": 246,
+            "max": 246
+          },
+          "longTasksOver50": {
+            "median": 3,
+            "p95": 3,
+            "min": 3,
+            "max": 3
+          },
+          "inputLatencyP95Ms": {
+            "median": 104,
+            "p95": 104,
+            "min": 104,
+            "max": 104
+          },
+          "reactCommits": {
+            "median": 48,
+            "p95": 48,
+            "min": 48,
+            "max": 48
+          },
+          "domMutationBatches": null,
+          "mountedCellsMax": {
+            "median": 835,
+            "p95": 835,
+            "min": 835,
+            "max": 835
+          },
+          "memoryDeltaMB": {
+            "median": 0,
+            "max": 0
+          },
+          "opMedianMs": null,
+          "systemFreeMemMinMB": 1895,
+          "appRssMaxMB": 0,
+          "actionErrors": []
+        },
+        "add-row": {
+          "repeats": 1,
+          "usable": 1,
+          "durationMs": {
+            "median": 2190.5,
+            "p95": 2190.5,
+            "min": 2190.5,
+            "max": 2190.5
+          },
+          "frameTimeP95Ms": {
+            "median": 16.700000000000728,
+            "p95": 16.700000000000728,
+            "min": 16.700000000000728,
+            "max": 16.700000000000728
+          },
+          "frameTimeMaxMs": {
+            "median": 366.59999999999854,
+            "p95": 366.59999999999854,
+            "min": 366.59999999999854,
+            "max": 366.59999999999854
+          },
+          "droppedFrames": {
+            "median": 57,
+            "p95": 57,
+            "min": 57,
+            "max": 57
+          },
+          "longTasksOver50": {
+            "median": 1,
+            "p95": 1,
+            "min": 1,
+            "max": 1
+          },
+          "inputLatencyP95Ms": {
+            "median": 400,
+            "p95": 400,
+            "min": 400,
+            "max": 400
+          },
+          "reactCommits": {
+            "median": 11,
+            "p95": 11,
+            "min": 11,
+            "max": 11
+          },
+          "domMutationBatches": null,
+          "mountedCellsMax": {
+            "median": 546,
+            "p95": 546,
+            "min": 546,
+            "max": 546
+          },
+          "memoryDeltaMB": {
+            "median": 0,
+            "max": 0
+          },
+          "opMedianMs": 1226,
+          "systemFreeMemMinMB": 1883,
+          "appRssMaxMB": 0,
+          "actionErrors": []
+        },
+        "add-column": {
+          "repeats": 1,
+          "usable": 1,
+          "durationMs": {
+            "median": 2165,
+            "p95": 2165,
+            "min": 2165,
+            "max": 2165
+          },
+          "frameTimeP95Ms": {
+            "median": 16.799999999999272,
+            "p95": 16.799999999999272,
+            "min": 16.799999999999272,
+            "max": 16.799999999999272
+          },
+          "frameTimeMaxMs": {
+            "median": 316.7000000000007,
+            "p95": 316.7000000000007,
+            "min": 316.7000000000007,
+            "max": 316.7000000000007
+          },
+          "droppedFrames": {
+            "median": 63,
+            "p95": 63,
+            "min": 63,
+            "max": 63
+          },
+          "longTasksOver50": {
+            "median": 1,
+            "p95": 1,
+            "min": 1,
+            "max": 1
+          },
+          "inputLatencyP95Ms": {
+            "median": 352,
+            "p95": 352,
+            "min": 352,
+            "max": 352
+          },
+          "reactCommits": {
+            "median": 10,
+            "p95": 10,
+            "min": 10,
+            "max": 10
+          },
+          "domMutationBatches": null,
+          "mountedCellsMax": {
+            "median": 546,
+            "p95": 546,
+            "min": 546,
+            "max": 546
+          },
+          "memoryDeltaMB": {
+            "median": 0,
+            "max": 0
+          },
+          "opMedianMs": 1186,
+          "systemFreeMemMinMB": 2004,
+          "appRssMaxMB": 0,
+          "actionErrors": []
+        }
+      }
+    },
+    "high": {
+      "fixtureFingerprint": "8131f38127645b677ad39c84e2296bcafdb2d0fd4490ebc0737e69d5a8db46a4",
+      "counts": {
+        "objects": 100,
+        "sheets": 6,
+        "usedCells": 250000,
+        "rootUsedCells": 100000,
+        "formulas": 25000,
+        "formulaShapes": {
+          "chains": 5990,
+          "fanOut": 9990,
+          "ranges": 5000,
+          "lookups": 5000,
+          "conditionalAggregates": 5000
+        },
+        "conditionalFormats": 25,
+        "maxEmbedDepth": 5,
+        "markdownBytes": 256000,
+        "assetBytes": 104857600,
+        "assets": 10,
+        "styledCells": 7131,
+        "embeddedCells": 8
+      },
+      "loadWarmMs": null,
+      "scenarios": {
+        "import-profile": {
+          "repeats": 1,
+          "usable": 1,
+          "durationMs": {
+            "median": 13239.900000095367,
+            "p95": 13239.900000095367,
+            "min": 13239.900000095367,
+            "max": 13239.900000095367
+          },
+          "frameTimeP95Ms": {
+            "median": 1416.6,
+            "p95": 1416.6,
+            "min": 1416.6,
+            "max": 1416.6
+          },
+          "frameTimeMaxMs": {
+            "median": 5816.5,
+            "p95": 5816.5,
+            "min": 5816.5,
+            "max": 5816.5
+          },
+          "droppedFrames": {
+            "median": 13,
+            "p95": 13,
+            "min": 13,
+            "max": 13
+          },
+          "longTasksOver50": {
+            "median": 5,
+            "p95": 5,
+            "min": 5,
+            "max": 5
+          },
+          "inputLatencyP95Ms": null,
+          "reactCommits": {
+            "median": 14,
+            "p95": 14,
+            "min": 14,
+            "max": 14
+          },
+          "domMutationBatches": null,
+          "mountedCellsMax": {
+            "median": 476,
+            "p95": 476,
+            "min": 476,
+            "max": 476
+          },
+          "memoryDeltaMB": {
+            "median": 0,
+            "max": 0
+          },
+          "opMedianMs": null,
+          "systemFreeMemMinMB": 1429,
+          "appRssMaxMB": 0,
+          "actionErrors": []
+        },
+        "scroll-vertical": {
+          "repeats": 1,
+          "usable": 1,
+          "durationMs": {
+            "median": 4179.100000023842,
+            "p95": 4179.100000023842,
+            "min": 4179.100000023842,
+            "max": 4179.100000023842
+          },
+          "frameTimeP95Ms": {
+            "median": 66.69999999999891,
+            "p95": 66.69999999999891,
+            "min": 66.69999999999891,
+            "max": 66.69999999999891
+          },
+          "frameTimeMaxMs": {
+            "median": 433.3000000000011,
+            "p95": 433.3000000000011,
+            "min": 433.3000000000011,
+            "max": 433.3000000000011
+          },
+          "droppedFrames": {
+            "median": 82,
+            "p95": 82,
+            "min": 82,
+            "max": 82
+          },
+          "longTasksOver50": {
+            "median": 5,
+            "p95": 5,
+            "min": 5,
+            "max": 5
+          },
+          "inputLatencyP95Ms": {
+            "median": 272,
+            "p95": 272,
+            "min": 272,
+            "max": 272
+          },
+          "reactCommits": {
+            "median": 47,
+            "p95": 47,
+            "min": 47,
+            "max": 47
+          },
+          "domMutationBatches": null,
+          "mountedCellsMax": {
+            "median": 1088,
+            "p95": 1088,
+            "min": 1088,
+            "max": 1088
+          },
+          "memoryDeltaMB": {
+            "median": 0,
+            "max": 0
+          },
+          "opMedianMs": null,
+          "systemFreeMemMinMB": 1140,
+          "appRssMaxMB": 0,
+          "actionErrors": []
+        },
+        "scroll-diagonal": {
+          "repeats": 1,
+          "usable": 1,
+          "durationMs": {
+            "median": 1955.1000000238419,
+            "p95": 1955.1000000238419,
+            "min": 1955.1000000238419,
+            "max": 1955.1000000238419
+          },
+          "frameTimeP95Ms": {
+            "median": 50,
+            "p95": 50,
+            "min": 50,
+            "max": 50
+          },
+          "frameTimeMaxMs": {
+            "median": 66.69999999999709,
+            "p95": 66.69999999999709,
+            "min": 66.69999999999709,
+            "max": 66.69999999999709
+          },
+          "droppedFrames": {
+            "median": 58,
+            "p95": 58,
+            "min": 58,
+            "max": 58
+          },
+          "longTasksOver50": {
+            "median": 1,
+            "p95": 1,
+            "min": 1,
+            "max": 1
+          },
+          "inputLatencyP95Ms": null,
+          "reactCommits": {
+            "median": 8,
+            "p95": 8,
+            "min": 8,
+            "max": 8
+          },
+          "domMutationBatches": null,
+          "mountedCellsMax": {
+            "median": 875,
+            "p95": 875,
+            "min": 875,
+            "max": 875
+          },
+          "memoryDeltaMB": {
+            "median": 0,
+            "max": 0
+          },
+          "opMedianMs": null,
+          "systemFreeMemMinMB": 1160,
+          "appRssMaxMB": 0,
+          "actionErrors": []
+        },
+        "typing-burst": {
+          "repeats": 1,
+          "usable": 1,
+          "durationMs": {
+            "median": 4805.599999904633,
+            "p95": 4805.599999904633,
+            "min": 4805.599999904633,
+            "max": 4805.599999904633
+          },
+          "frameTimeP95Ms": {
+            "median": 16.799999999999272,
+            "p95": 16.799999999999272,
+            "min": 16.799999999999272,
+            "max": 16.799999999999272
+          },
+          "frameTimeMaxMs": {
+            "median": 2033.199999999997,
+            "p95": 2033.199999999997,
+            "min": 2033.199999999997,
+            "max": 2033.199999999997
+          },
+          "droppedFrames": {
+            "median": 62,
+            "p95": 62,
+            "min": 62,
+            "max": 62
+          },
+          "longTasksOver50": {
+            "median": 4,
+            "p95": 4,
+            "min": 4,
+            "max": 4
+          },
+          "inputLatencyP95Ms": {
+            "median": 56,
+            "p95": 56,
+            "min": 56,
+            "max": 56
+          },
+          "reactCommits": {
+            "median": 55,
+            "p95": 55,
+            "min": 55,
+            "max": 55
+          },
+          "domMutationBatches": null,
+          "mountedCellsMax": {
+            "median": 476,
+            "p95": 476,
+            "min": 476,
+            "max": 476
+          },
+          "memoryDeltaMB": {
+            "median": 0,
+            "max": 0
+          },
+          "opMedianMs": null,
+          "systemFreeMemMinMB": 1157,
+          "appRssMaxMB": 0,
+          "actionErrors": []
+        },
+        "formula-add": {
+          "repeats": 1,
+          "usable": 1,
+          "durationMs": {
+            "median": 30861.899999976158,
+            "p95": 30861.899999976158,
+            "min": 30861.899999976158,
+            "max": 30861.899999976158
+          },
+          "frameTimeP95Ms": {
+            "median": 16.700000000004366,
+            "p95": 16.700000000004366,
+            "min": 16.700000000004366,
+            "max": 16.700000000004366
+          },
+          "frameTimeMaxMs": {
+            "median": 66.69999999999709,
+            "p95": 66.69999999999709,
+            "min": 66.69999999999709,
+            "max": 66.69999999999709
+          },
+          "droppedFrames": {
+            "median": 611,
+            "p95": 611,
+            "min": 611,
+            "max": 611
+          },
+          "longTasksOver50": {
+            "median": 0,
+            "p95": 0,
+            "min": 0,
+            "max": 0
+          },
+          "inputLatencyP95Ms": null,
+          "reactCommits": {
+            "median": 2,
+            "p95": 2,
+            "min": 2,
+            "max": 2
+          },
+          "domMutationBatches": null,
+          "mountedCellsMax": {
+            "median": 644,
+            "p95": 644,
+            "min": 644,
+            "max": 644
+          },
+          "memoryDeltaMB": {
+            "median": 0,
+            "max": 0
+          },
+          "opMedianMs": null,
+          "systemFreeMemMinMB": 1285,
+          "appRssMaxMB": 0,
+          "actionErrors": [
+            "locator.waitFor: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('[data-object-id=\"perf-root-sheet\"][data-cell-address=\"M9\"]')\u001b[22m\n"
+          ]
+        },
+        "in-out": {
+          "repeats": 1,
+          "usable": 1,
+          "durationMs": {
+            "median": 3578.3000000715256,
+            "p95": 3578.3000000715256,
+            "min": 3578.3000000715256,
+            "max": 3578.3000000715256
+          },
+          "frameTimeP95Ms": {
+            "median": 300,
+            "p95": 300,
+            "min": 300,
+            "max": 300
+          },
+          "frameTimeMaxMs": {
+            "median": 499.90000000000146,
+            "p95": 499.90000000000146,
+            "min": 499.90000000000146,
+            "max": 499.90000000000146
+          },
+          "droppedFrames": {
+            "median": 20,
+            "p95": 20,
+            "min": 20,
+            "max": 20
+          },
+          "longTasksOver50": {
+            "median": 8,
+            "p95": 8,
+            "min": 8,
+            "max": 8
+          },
+          "inputLatencyP95Ms": {
+            "median": 440,
+            "p95": 440,
+            "min": 440,
+            "max": 440
+          },
+          "reactCommits": {
+            "median": 14,
+            "p95": 14,
+            "min": 14,
+            "max": 14
+          },
+          "domMutationBatches": null,
+          "mountedCellsMax": {
+            "median": 918,
+            "p95": 918,
+            "min": 918,
+            "max": 918
+          },
+          "memoryDeltaMB": {
+            "median": 0,
+            "max": 0
+          },
+          "opMedianMs": null,
+          "systemFreeMemMinMB": 1182,
+          "appRssMaxMB": 0,
+          "actionErrors": []
+        },
+        "nested": {
+          "repeats": 1,
+          "usable": 1,
+          "durationMs": {
+            "median": 21668.900000095367,
+            "p95": 21668.900000095367,
+            "min": 21668.900000095367,
+            "max": 21668.900000095367
+          },
+          "frameTimeP95Ms": {
+            "median": 266.6999999999971,
+            "p95": 266.6999999999971,
+            "min": 266.6999999999971,
+            "max": 266.6999999999971
+          },
+          "frameTimeMaxMs": {
+            "median": 3799.800000000003,
+            "p95": 3799.800000000003,
+            "min": 3799.800000000003,
+            "max": 3799.800000000003
+          },
+          "droppedFrames": {
+            "median": 129,
+            "p95": 129,
+            "min": 129,
+            "max": 129
+          },
+          "longTasksOver50": {
+            "median": 37,
+            "p95": 37,
+            "min": 37,
+            "max": 37
+          },
+          "inputLatencyP95Ms": {
+            "median": 3800.899999976158,
+            "p95": 3800.899999976158,
+            "min": 3800.899999976158,
+            "max": 3800.899999976158
+          },
+          "reactCommits": {
+            "median": 63,
+            "p95": 63,
+            "min": 63,
+            "max": 63
+          },
+          "domMutationBatches": null,
+          "mountedCellsMax": {
+            "median": 918,
+            "p95": 918,
+            "min": 918,
+            "max": 918
+          },
+          "memoryDeltaMB": {
+            "median": 0,
+            "max": 0
+          },
+          "opMedianMs": null,
+          "systemFreeMemMinMB": 1225,
+          "appRssMaxMB": 0,
+          "actionErrors": []
+        },
+        "add-row": {
+          "repeats": 1,
+          "usable": 1,
+          "durationMs": {
+            "median": 15865.199999928474,
+            "p95": 15865.199999928474,
+            "min": 15865.199999928474,
+            "max": 15865.199999928474
+          },
+          "frameTimeP95Ms": {
+            "median": 16.79999999998836,
+            "p95": 16.79999999998836,
+            "min": 16.79999999998836,
+            "max": 16.79999999998836
+          },
+          "frameTimeMaxMs": {
+            "median": 66.69999999999709,
+            "p95": 66.69999999999709,
+            "min": 66.69999999999709,
+            "max": 66.69999999999709
+          },
+          "droppedFrames": {
+            "median": 153,
+            "p95": 153,
+            "min": 153,
+            "max": 153
+          },
+          "longTasksOver50": {
+            "median": 0,
+            "p95": 0,
+            "min": 0,
+            "max": 0
+          },
+          "inputLatencyP95Ms": null,
+          "reactCommits": {
+            "median": 0,
+            "p95": 0,
+            "min": 0,
+            "max": 0
+          },
+          "domMutationBatches": null,
+          "mountedCellsMax": {
+            "median": 442,
+            "p95": 442,
+            "min": 442,
+            "max": 442
+          },
+          "memoryDeltaMB": {
+            "median": 0,
+            "max": 0
+          },
+          "opMedianMs": null,
+          "systemFreeMemMinMB": 1522,
+          "appRssMaxMB": 0,
+          "actionErrors": [
+            "locator.waitFor: Timeout 15000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('[data-object-id=\"perf-root-sheet\"][data-cell-address=\"B4\"]')\u001b[22m\n"
+          ]
+        },
+        "add-column": {
+          "repeats": 1,
+          "usable": 1,
+          "durationMs": {
+            "median": 13154.399999976158,
+            "p95": 13154.399999976158,
+            "min": 13154.399999976158,
+            "max": 13154.399999976158
+          },
+          "frameTimeP95Ms": {
+            "median": 50,
+            "p95": 50,
+            "min": 50,
+            "max": 50
+          },
+          "frameTimeMaxMs": {
+            "median": 10949.5,
+            "p95": 10949.5,
+            "min": 10949.5,
+            "max": 10949.5
+          },
+          "droppedFrames": {
+            "median": 14,
+            "p95": 14,
+            "min": 14,
+            "max": 14
+          },
+          "longTasksOver50": {
+            "median": 3,
+            "p95": 3,
+            "min": 3,
+            "max": 3
+          },
+          "inputLatencyP95Ms": {
+            "median": 10984,
+            "p95": 10984,
+            "min": 10984,
+            "max": 10984
+          },
+          "reactCommits": {
+            "median": 9,
+            "p95": 9,
+            "min": 9,
+            "max": 9
+          },
+          "domMutationBatches": null,
+          "mountedCellsMax": {
+            "median": 442,
+            "p95": 442,
+            "min": 442,
+            "max": 442
+          },
+          "memoryDeltaMB": {
+            "median": 0,
+            "max": 0
+          },
+          "opMedianMs": 12171,
+          "systemFreeMemMinMB": 1079,
+          "appRssMaxMB": 0,
+          "actionErrors": []
+        }
+      }
+    }
+  }
+}

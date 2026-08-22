@@ -5,6 +5,14 @@ import { normalizeWorkspace } from "../model.ts";
 
 const COMMAND_SOURCE = "system";
 
+// The differential check below re-normalizes BOTH the shadow snapshot and the
+// engine snapshot (each normalize call ends in a full topology repair) purely
+// to populate `state.differential` diagnostics. Structural edits such as axis
+// insert/delete rebuild every cell of a sheet; paying O(cells·log cells) twice
+// per op just for diagnostics dominates the edit. Above this many changed
+// cells the check is skipped and the differential is marked as such.
+const DIFFERENTIAL_MAX_CHANGED_CELLS = 20_000;
+
 function commandEnvelope(sequence) {
   return {
     commandId: `wave2-shadow-${sequence}`,
@@ -236,17 +244,26 @@ export function createWave2Shadow(initialWorkspace, options = {}) {
   let engine = createTransactionEngine(normalizeWorkspace(initialWorkspace), { initialRevision: "0" });
   const persistence = options.persistence || createBrowserPersistence();
   const useInitialSnapshot = options.useInitialSnapshot === true;
-  const preferActiveWorkspace = options.preferActiveWorkspace === true;
-  const formulaWorkerEnabled = options.formulaWorker === true;
+  // The per-commit differential re-normalizes both workspaces and deep-compares
+  // the full tree (4× normalize on a small edit). It exists to validate the
+  // normalized engine in tests/development; on the input path it is off by
+  // default. Enable with `createWave2Shadow(snapshot, { diagnostics: true })`.
+  const diagnostics = options.diagnostics === true;
+  // The shadow's formula worker mirrors evaluation purely for diagnostics
+  // (`state.lastFormula`); nothing in the app consumes it. It serializes the
+  // whole sheet graph on first use, so it stays opt-in. Enable with
+  // `createWave2Shadow(snapshot, { formulaWorkers: true })`.
+  const formulaWorkersEnabled = options.formulaWorkers === true;
   const formulaClients = new Map();
   const state = {
     enabled: true,
     engine: "transaction",
     mode: "default",
     persistence: "initializing",
-    formulaWorker: formulaWorkerEnabled ? "idle" : "deferred",
+    formulaWorker: "idle",
     revision: "0",
     transactions: 0,
+    diagnostics,
     differential: { equal: true },
     lastError: null,
   };
@@ -254,20 +271,21 @@ export function createWave2Shadow(initialWorkspace, options = {}) {
   let commandSequence = 1;
   let disposed = false;
   let queue = Promise.resolve();
+  let pendingReconcile = null;
+  let reconcileJob = null;
 
   exposeState(state);
 
   const ready = (async () => {
     try {
-      const openRequest = preferActiveWorkspace ? {} : { workspaceId: previous.id };
       const stored = useInitialSnapshot
         ? null
-        : await persistence.open(openRequest);
+        : await persistence.open({ workspaceId: previous.id });
       if (stored) {
         previous = normalizeWorkspace(stored);
         engine = createTransactionEngine(previous, { initialRevision: "0" });
       } else {
-        await persistence.open(openRequest);
+        await persistence.open({ workspaceId: previous.id });
         await persistence.writeSnapshot(previous, { revision: "0", activate: true });
       }
       state.persistence = "active";
@@ -280,8 +298,8 @@ export function createWave2Shadow(initialWorkspace, options = {}) {
   })();
 
   async function ensureFormulaClient(sheetId, sheet, revision) {
+    if (!formulaWorkersEnabled) return null;
     if (!sheet?.cells || formulaClients.has(String(sheetId))) return formulaClients.get(String(sheetId));
-    if (!formulaWorkerEnabled) return null;
     if (typeof Worker === "undefined") {
       state.formulaWorker = "unavailable";
       return null;
@@ -335,16 +353,11 @@ export function createWave2Shadow(initialWorkspace, options = {}) {
     state.differential = { equal: true, mode: "reset" };
   }
 
-  function reconcile(nextWorkspace, options = {}) {
-    const normalized = options.normalized === true
-      ? nextWorkspace
-      : normalizeWorkspace(nextWorkspace);
-    const next = shadowSnapshot(normalized);
-    const prior = previous;
-    previous = next;
-    queue = queue.then(async () => {
-      if (disposed) return;
+  async function runTransition(next) {
+      if (disposed || !next) return;
       await ready;
+      const prior = previous;
+      previous = next;
       const transition = commandsForWorkspaceTransition(prior, next, commandSequence);
       commandSequence += transition.commands.length + 1;
 
@@ -391,102 +404,62 @@ export function createWave2Shadow(initialWorkspace, options = {}) {
       // command union. Keep the shadow store aligned without changing the
       // transaction contract or the visible legacy rollback path.
       engine.store.replaceWorkspaceMeta(workspaceMeta(next));
-      const comparison = compareEngineSnapshots(
-        comparableSnapshot(next, next),
-        comparableSnapshot(engine.getSnapshot(), next),
-      );
-      state.differential = {
-        equal: comparison.equal,
-        ...(comparison.firstDifference ? { firstDifference: comparison.firstDifference } : {}),
-      };
-      exposeState(state);
-    }).catch((error) => {
-      state.lastError = error?.message || String(error);
-      exposeState(state);
-    });
-    return queue;
-  }
-
-  function reconcileCellChanges(nextWorkspace, operations = [], options = {}) {
-    const normalized = options.normalized === true
-      ? nextWorkspace
-      : normalizeWorkspace(nextWorkspace);
-    const byObject = new Map();
-    operations.forEach((operation) => {
-      if (!operation?.objectId || !Array.isArray(operation.changes)) return;
-      const changes = byObject.get(String(operation.objectId)) || [];
-      changes.push(...operation.changes);
-      byObject.set(String(operation.objectId), changes);
-    });
-    if (!byObject.size) return reconcile(normalized, { normalized: true });
-
-    const nextObjects = { ...previous.objects };
-    const changedSheets = new Map();
-    const commands = [];
-    for (const [objectId, changes] of byObject) {
-      const sheet = normalized.objects?.[objectId];
-      const baseline = previous.objects?.[objectId];
-      if (sheet?.type !== "sheet" || baseline?.type !== "sheet") {
-        return reconcile(normalized, { normalized: true });
+      let changedCellCount = 0;
+      for (const changes of transition.changedSheets.values()) {
+        changedCellCount += changes.length;
       }
-      const cells = baseline.cells || {};
-      const formulaChanges = [];
-      const commandChanges = [];
-      for (const change of changes) {
-        if (!change?.cellId) continue;
-        if (change.after) cells[change.cellId] = { ...change.after };
-        else delete cells[change.cellId];
-        commandChanges.push({ cellId: change.cellId, patch: cellPatch(change.after) });
-        formulaChanges.push({
-          address: change.after?.address || change.before?.address || change.cellId,
-          ...(change.after ? { patch: cellPatch(change.after) } : { delete: true }),
-        });
+      if (!state.diagnostics) {
+        state.differential = { equal: true, mode: "disabled" };
+      } else if (changedCellCount > DIFFERENTIAL_MAX_CHANGED_CELLS) {
+        state.differential = {
+          equal: true,
+          mode: "skipped-large-transition",
+          changedCells: changedCellCount,
+        };
+      } else {
+        const comparison = compareEngineSnapshots(
+          comparableSnapshot(next, next),
+          comparableSnapshot(engine.getSnapshot(), next),
+        );
+        state.differential = {
+          equal: comparison.equal,
+          ...(comparison.firstDifference ? { firstDifference: comparison.firstDifference } : {}),
+        };
       }
-      if (!commandChanges.length) continue;
-      nextObjects[objectId] = { ...sheet, cells };
-      changedSheets.set(objectId, formulaChanges);
-      const envelope = commandEnvelope(commandSequence++);
-      commands.push(commandChanges.length === 1
-        ? { ...envelope, type: "set-cell", objectId, ...commandChanges[0] }
-        : { ...envelope, type: "set-range", objectId, changes: commandChanges });
+      exposeState(state);
     }
-    if (!commands.length) return Promise.resolve();
 
-    previous = {
-      ...previous,
-      ...workspaceMeta(normalized),
-      objects: nextObjects,
-      updatedAt: normalized.updatedAt,
-    };
-    const next = previous;
-    queue = queue.then(async () => {
-      if (disposed) return;
-      await ready;
-      const transaction = await engine.dispatchBatch(commands, {
-        historyKey: operations.length === 1
-          ? operations[0].historyKey
-          : `wave2:${state.transactions + 1}`,
-      });
-      state.revision = String(transaction.revision);
-      state.transactions += 1;
-      if (state.persistence === "active") {
+    function scheduleReconcile() {
+      reconcileJob = queue.then(async () => {
         try {
-          await persistence.commit({ revision: transaction.revision, transaction });
-        } catch (error) {
-          state.persistence = "error";
-          state.lastError = error?.message || String(error);
+          if (disposed) return;
+          const next = pendingReconcile;
+          pendingReconcile = null;
+          await runTransition(next);
+        } finally {
+          reconcileJob = null;
+          // Drain any workspace that arrived while this job was running.
+          if (pendingReconcile && !disposed) scheduleReconcile();
         }
-      }
-      await refreshFormulaClients(next, next, changedSheets, Number(transaction.revision) || state.transactions);
-      engine.store.replaceWorkspaceMeta(workspaceMeta(next));
-      state.differential = { equal: true, mode: "targeted-cells" };
-      exposeState(state);
-    }).catch((error) => {
-      state.lastError = error?.message || String(error);
-      exposeState(state);
-    });
-    return queue;
-  }
+      }).catch((error) => {
+        state.lastError = error?.message || String(error);
+        exposeState(state);
+      });
+      return reconcileJob;
+    }
+
+    function reconcile(nextWorkspace, options = {}) {
+      // Coalesce bursts: hold the newest normalized snapshot and run at most
+      // one transition per job from the last *applied* baseline. A quick
+      // sequence of edits becomes a single diff + persist, instead of N
+      // full-workspace transitions.
+      const normalized = options.normalized === true
+        ? nextWorkspace
+        : normalizeWorkspace(nextWorkspace);
+      pendingReconcile = shadowSnapshot(normalized);
+      if (reconcileJob) return reconcileJob;
+      return scheduleReconcile();
+    }
 
   function dispose() {
     disposed = true;
@@ -507,7 +480,6 @@ export function createWave2Shadow(initialWorkspace, options = {}) {
     engine: () => engine,
     ready,
     reconcile,
-    reconcileCellChanges,
     dispose,
   };
 }

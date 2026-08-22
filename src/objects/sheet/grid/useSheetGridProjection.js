@@ -1,14 +1,14 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { cellId } from "../../../sheet/coordinates.js";
+import { useEffect, useMemo, useState } from "react";
+import { cellAddress, cellId } from "../../../sheet/coordinates.js";
 import { fillRange } from "../../../sheet/ranges.js";
+import { autoRowHeights, autoRowHeightsIncremental, mergeAutoRowHeights } from "../../../sheet/textMeasure.js";
+import { cellChangeVersion } from "./cellChangeJournal.js";
 import {
   getSurfaceCellDrafts,
   subscribeSurfaceCellDrafts,
 } from "../../../components/localEditSession.js";
-import { projectAutoRowHeights } from "./autoRowHeightProjection.js";
 import { boundedAxisEntries, canonicalSheetSelection } from "./selectionGeometry.js";
 import { useFormulaProjection } from "./useFormulaProjection.js";
-import { useDatasetViewport } from "./useDatasetViewport.js";
 import { useVirtualSheet } from "../useVirtualSheet.js";
 
 export function rangeValues(start, end) {
@@ -52,7 +52,8 @@ export function useSheetGridProjection({
       : null,
     [fillTarget, normalizedSelection],
   );
-  const formulaValues = useFormulaProjection(object);
+  const formulaProjection = useFormulaProjection(object);
+  const formulaValues = formulaProjection.values;
   const rowGroups = Array.isArray(object.rowGroups) ? object.rowGroups : [];
   const columnGroups = Array.isArray(object.columnGroups) ? object.columnGroups : [];
   const filters = Array.isArray(object.filters) ? object.filters : [];
@@ -72,7 +73,7 @@ export function useSheetGridProjection({
     const groupStarts = new Set(rowGroups.map((group) => group.start));
     const rows = Array.from({ length: object.rows }, (_, row) => row).filter((row) => {
       if (hidden.has(row)) return false;
-      if (row === selectedCoordinates.row || !filters.length || groupStarts.has(row)) return true;
+      if (!filters.length || groupStarts.has(row)) return true;
       return filters.every((filter) => {
         const cell = object.cells?.[cellId(row, filter.column)];
         const value = cell?.formula ? formulaValues.get(cell.address) : cell?.value;
@@ -80,7 +81,7 @@ export function useSheetGridProjection({
       });
     });
     return rows.length ? rows : [0];
-  }, [filters, formulaValues, object.cells, object.rows, rowGroups, selectedCoordinates.row]);
+  }, [filters, formulaValues, object.cells, object.rows, rowGroups]);
   const visibleColumnIndexMap = useMemo(() => {
     const hidden = new Set();
     columnGroups.filter((group) => group.collapsed).forEach((group) => {
@@ -107,21 +108,23 @@ export function useSheetGridProjection({
   // Grow rows live while a cell is edited inline (its value is held in the
   // surface draft store, not yet committed to the object). Without this a
   // Shift+Enter newline stays clipped until the edit commits.
-  const [draftTick, setDraftTick] = useState(0);
+  // The full stored-cell scan is journal-incremental: it re-runs only when a
+  // wrap-relevant cell changes (or the columns map changes). Keying on the
+  // stable `object.cells` reference keeps the O(stored cells) scan off every
+  // cell-edit render.
   const [surfaceDrafts, setSurfaceDrafts] = useState(null);
-  const autoRowHeightStateRef = useRef(null);
+  const cellsVersion = cellChangeVersion(object.cells);
+  const baseAutoRowHeightsMap = useMemo(
+    () => autoRowHeightsIncremental(object, columnWidthForIndex),
+    [columnWidthForIndex, object.cells, cellsVersion],
+  );
+  const liveDraftHeightsMap = useMemo(
+    () => (surfaceDrafts ? autoRowHeights(object, columnWidthForIndex, surfaceDrafts, true) : null),
+    [object, columnWidthForIndex, surfaceDrafts],
+  );
   const liveAutoRowHeightsMap = useMemo(
-    () => {
-      const projection = projectAutoRowHeights(
-        autoRowHeightStateRef.current,
-        object,
-        columnWidthForIndex,
-        surfaceDrafts,
-      );
-      autoRowHeightStateRef.current = projection.state;
-      return projection.heights;
-    },
-    [object, columnWidthForIndex, surfaceDrafts, draftTick],
+    () => mergeAutoRowHeights(baseAutoRowHeightsMap, liveDraftHeightsMap),
+    [baseAutoRowHeightsMap, liveDraftHeightsMap],
   );
   const virtualSheet = useVirtualSheet(
     object.rows,
@@ -148,7 +151,6 @@ export function useSheetGridProjection({
     setSurfaceDrafts(getSurfaceCellDrafts(surface));
     return subscribeSurfaceCellDrafts(surface, () => {
       setSurfaceDrafts(getSurfaceCellDrafts(surface));
-      setDraftTick((tick) => tick + 1);
     });
   }, [sheetScrollRef]);
   const visibleRows = useMemo(
@@ -195,7 +197,21 @@ export function useSheetGridProjection({
     return [...visibleColumns, { position: selectedPosition, column: selectedCoordinates.column }]
       .sort((left, right) => left.position - right.position);
   }, [object.columns, selectedCoordinates.column, virtualSheet.columnPositionForIndex, visibleColumns]);
-  const viewportCells = useDatasetViewport(object, pinnedVisibleRows, pinnedVisibleColumns);
+
+  // Keyed on the viewport rows/columns, not the pinned ones: pinning follows
+  // the selection, which would rebuild the band on every drag move.
+  const mountedBand = useMemo(() => {
+    const addresses = new Set();
+    for (const { row } of visibleRows) {
+      for (const { column } of visibleColumns) addresses.add(cellAddress(row, column));
+    }
+    return addresses;
+  }, [visibleColumns, visibleRows]);
+
+  const { setPriorityBand } = formulaProjection;
+  useEffect(() => {
+    setPriorityBand(mountedBand);
+  }, [mountedBand, setPriorityBand]);
 
   return {
     selectedCoordinates,
@@ -205,6 +221,7 @@ export function useSheetGridProjection({
     showActiveColumnContext,
     fillPreviewRange,
     formulaValues,
+    pendingCalculations: formulaProjection.pending,
     rowGroups,
     columnGroups,
     filters,
@@ -212,7 +229,6 @@ export function useSheetGridProjection({
     columnGroupByStart,
     visibleRows: pinnedVisibleRows,
     visibleColumns: pinnedVisibleColumns,
-    viewportCells,
     ...virtualSheet,
   };
 }

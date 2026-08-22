@@ -108,7 +108,7 @@ function previewSheetForCell(sheet, cell, address) {
   };
 }
 
-function useFormulaWorkerPreview({ value, address, cell, formulaSheet, enabled }) {
+function useFormulaWorkerPreview({ value, address, cell, formulaSheet }) {
   const [preview, setPreview] = useState("");
   const workerRef = useRef(null);
   const initializeRef = useRef(null);
@@ -126,7 +126,7 @@ function useFormulaWorkerPreview({ value, address, cell, formulaSheet, enabled }
   useEffect(() => () => workerRef.current?.dispose?.(), []);
 
   useEffect(() => {
-    if (!enabled || !value.startsWith("=")) {
+    if (!value.startsWith("=")) {
       setPreview("");
       return undefined;
     }
@@ -135,41 +135,49 @@ function useFormulaWorkerPreview({ value, address, cell, formulaSheet, enabled }
     let cancelled = false;
     const requestSerial = ++requestRef.current;
     const sheet = previewSheetForCell(formulaSheet, cell, address);
-    const run = async () => {
-      try {
-        if (!workerRef.current) {
-          workerRef.current = createFormulaWorker();
-          initializeRef.current = workerRef.current.initialize(sheet, { revision: 0 });
-          await initializeRef.current;
-        } else if (initializeRef.current) {
-          await initializeRef.current;
+    // Coalesce fast typing into the latest draft: firing a worker round trip
+    // per keystroke generates many doomed requests (revision-guarded) that
+    // still cost the worker a parsing/evaluation pass. A short debounce keeps
+    // the preview snappy while collapsing a burst into one update.
+    const timer = window.setTimeout(() => {
+      const run = async () => {
+        try {
+          if (!workerRef.current) {
+            workerRef.current = createFormulaWorker();
+            initializeRef.current = workerRef.current.initialize(sheet, { revision: 0 });
+            await initializeRef.current;
+          } else if (initializeRef.current) {
+            await initializeRef.current;
+          }
+          if (cancelled || requestSerial !== requestRef.current || !workerRef.current) return;
+          const revision = revisionRef.current + 1;
+          revisionRef.current = revision;
+          const result = await workerRef.current.update([{
+            address: address || cell?.address || "A1",
+            patch: { value: "", formula: value },
+          }], { revision });
+          if (cancelled || requestSerial !== requestRef.current) return;
+          const resultAddress = address || cell?.address || "A1";
+          const values = result.values || {};
+          setPreview(Object.prototype.hasOwnProperty.call(values, resultAddress)
+            ? formatFormulaResult(values[resultAddress])
+            : "");
+        } catch {
+          if (!cancelled && requestSerial === requestRef.current) setPreview("");
         }
-        if (cancelled || requestSerial !== requestRef.current || !workerRef.current) return;
-        const revision = revisionRef.current + 1;
-        revisionRef.current = revision;
-        const result = await workerRef.current.update([{
-          address: address || cell?.address || "A1",
-          patch: { value: "", formula: value },
-        }], { revision });
-        if (cancelled || requestSerial !== requestRef.current) return;
-        const resultAddress = address || cell?.address || "A1";
-        const values = result.values || {};
-        setPreview(Object.prototype.hasOwnProperty.call(values, resultAddress)
-          ? formatFormulaResult(values[resultAddress])
-          : "");
-      } catch {
-        if (!cancelled && requestSerial === requestRef.current) setPreview("");
-      }
+      };
+      run();
+    }, 80);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
     };
-    run();
-    return () => { cancelled = true; };
-  }, [address, cell, enabled, formulaSheet, value]);
+  }, [address, cell, formulaSheet, value]);
 
   return preview;
 }
 
-function FormulaEditor({ value, address, cellId, cell, formulaSheetHandle, formulaPreviewEnabled, inputRef, onChange, onFormulaModeChange, onCommit, onEditEnd }) {
-  const formulaSheet = formulaSheetHandle.current;
+function FormulaEditor({ value, address, cellId, cell, formulaSheet, inputRef, onChange, onFormulaModeChange, onCommit, onEditEnd }) {
   const localInputRef = useRef(null);
   const editorRef = inputRef || localInputRef;
   const editorCellIdRef = useRef(cellId);
@@ -207,7 +215,6 @@ function FormulaEditor({ value, address, cellId, cell, formulaSheetHandle, formu
     address,
     cell,
     formulaSheet,
-    enabled: formulaPreviewEnabled,
   });
   const suggestions = useMemo(() => {
     if (!query?.prefix) return [];
@@ -438,7 +445,7 @@ function FormulaEditor({ value, address, cellId, cell, formulaSheetHandle, formu
   );
 }
 
-export function FormulaBar({ address, rangeLabel, cell, formulaSheetHandle, formulaPreviewEnabled = false, inputRef, onChange, onFormulaModeChange, onCommit, onEditEnd, onAddressChange, onFormat, onConditionalFormat, hasConditionalFormat, filterCount, onClearFilters }) {
+export function FormulaBar({ address, rangeLabel, cell, formulaSheet, inputRef, onChange, onFormulaModeChange, onCommit, onEditEnd, onAddressChange, onFormat, onConditionalFormat, hasConditionalFormat, filterCount, onClearFilters }) {
   const formulaValue = cell?.formula || cell?.value || "";
 
   return (
@@ -465,8 +472,7 @@ export function FormulaBar({ address, rangeLabel, cell, formulaSheetHandle, form
           address={address}
           cellId={cell?.id}
           cell={cell}
-          formulaSheetHandle={formulaSheetHandle}
-          formulaPreviewEnabled={formulaPreviewEnabled}
+          formulaSheet={formulaSheet}
           inputRef={inputRef}
           onChange={(value) => onChange(value)}
           onFormulaModeChange={onFormulaModeChange}

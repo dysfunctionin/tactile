@@ -10,9 +10,21 @@ const ERROR = {
 
 const COMPARISON_OPERATORS = ["=", "<>", "<", ">", "<=", ">="];
 const MAX_MATERIALIZED_DEPENDENCIES = 100_000;
-const MAX_INDEXED_RANGE_ROWS = 1_024;
+const TRANSITIVE_CACHE_LIMIT = 4_096;
+// The parse tree cache is shared by every engine and worker realm. Bound it so
+// intermediate keystroke formulas and typos (which are cached too) cannot grow
+// the heap without limit over a long session. FIFO eviction keeps the hot,
+// recently-parsed formulas resident while capping worst-case memory.
+const AST_CACHE_LIMIT = 4_096;
 const AST_CACHE = new Map();
 const NUMBER_FORMATTER_CACHE = new Map();
+
+function cacheAst(key, value) {
+  AST_CACHE.set(key, value);
+  if (AST_CACHE.size > AST_CACHE_LIMIT) {
+    AST_CACHE.delete(AST_CACHE.keys().next().value);
+  }
+}
 
 function isError(value) {
   return typeof value === "string" && value.startsWith("#");
@@ -25,6 +37,16 @@ function scalar(value) {
 
 function flatten(values) {
   return values.flatMap((value) => (value && value.__range ? value.values : [value]));
+}
+
+// Iterate the scalar cells of aggregate arguments without materializing a new
+// array for the single-range case (the hot path: SUM/AVERAGE/... over one range).
+function argumentCells(args) {
+  if (args.length === 1) {
+    const value = args[0];
+    return value && value.__range ? value.values : [value];
+  }
+  return flatten(args);
 }
 
 function numeric(value) {
@@ -61,41 +83,57 @@ function cellAddressForCell(cell, fallbackId = "") {
   return "";
 }
 
+const TOKEN_WHITESPACE = /\s+/y;
+const TOKEN_STRING = /"((?:[^"]|"")*)"/y;
+const TOKEN_NUMBER = /(?:\d+\.\d*|\.\d+|\d+)/y;
+const TOKEN_REFERENCE = /\$?[A-Za-z]+\$?\d+/y;
+const TOKEN_IDENTIFIER = /[A-Za-z_][A-Za-z0-9_.]*/y;
+const TOKEN_OPERATOR = /(<=|>=|<>|[+\-*/^(),:=<>])/y;
+
+// Scans the source with anchored (sticky) regexes that advance `lastIndex`,
+// so a token never slices the remaining source. Slicing per token made a
+// single parse O(n²) in formula length; this is a single O(n) pass.
 function tokenize(source) {
   const tokens = [];
+  const length = source.length;
   let index = 0;
-  while (index < source.length) {
-    const rest = source.slice(index);
-    const whitespace = /^\s+/.exec(rest);
+  while (index < length) {
+    TOKEN_WHITESPACE.lastIndex = index;
+    const whitespace = TOKEN_WHITESPACE.exec(source);
     if (whitespace) {
       index += whitespace[0].length;
       continue;
     }
-    const string = /^"((?:[^"]|"")*)"/.exec(rest);
+    TOKEN_STRING.lastIndex = index;
+    const string = TOKEN_STRING.exec(source);
     if (string) {
       tokens.push({ type: "string", value: string[1].replace(/""/g, '"') });
       index += string[0].length;
       continue;
     }
-    const number = /^(?:\d+\.\d*|\.\d+|\d+)/.exec(rest);
+    TOKEN_NUMBER.lastIndex = index;
+    const number = TOKEN_NUMBER.exec(source);
     if (number) {
       tokens.push({ type: "number", value: Number(number[0]) });
       index += number[0].length;
       continue;
     }
-    const reference = /^\$?[A-Za-z]+\$?\d+/.exec(rest);
+    TOKEN_REFERENCE.lastIndex = index;
+    const reference = TOKEN_REFERENCE.exec(source);
     if (reference) {
       tokens.push({ type: "reference", value: normalizeAddress(reference[0]) });
       index += reference[0].length;
       continue;
     }
-    const identifier = /^[A-Za-z_][A-Za-z0-9_.]*/.exec(rest);
+    TOKEN_IDENTIFIER.lastIndex = index;
+    const identifier = TOKEN_IDENTIFIER.exec(source);
     if (identifier) {
       tokens.push({ type: "identifier", value: identifier[0].toUpperCase() });
       index += identifier[0].length;
       continue;
     }
-    const operator = /^(<=|>=|<>|[+\-*/^(),:=<>])/.exec(rest);
+    TOKEN_OPERATOR.lastIndex = index;
+    const operator = TOKEN_OPERATOR.exec(source);
     if (operator) {
       tokens.push({ type: "operator", value: operator[1] });
       index += operator[0].length;
@@ -134,21 +172,38 @@ function rangeDescriptor(startAddress, endAddress) {
   };
 }
 
-function rangeValues(startAddress, endAddress, readCell) {
+function rangeValues(startAddress, endAddress, readCell, readRangeCell = null) {
   const range = rangeCoordinates(startAddress, endAddress);
   if (!range) return { __range: true, values: [ERROR.ref] };
   const values = [];
-  const matrix = [];
   for (let row = range.startRow; row <= range.endRow; row += 1) {
-    const matrixRow = [];
     for (let column = range.startColumn; column <= range.endColumn; column += 1) {
-      const value = readCell(cellAddress(row, column));
+      const address = cellAddress(row, column);
+      const value = readRangeCell ? readRangeCell(row, column, address) : readCell(address);
       values.push(value);
-      matrixRow.push(value);
     }
-    matrix.push(matrixRow);
   }
-  return { __range: true, values, matrix, rows: matrix.length, columns: matrix[0]?.length || 0 };
+  const columnCount = range.endColumn - range.startColumn + 1;
+  let matrixValue = null;
+  return {
+    __range: true,
+    values,
+    rows: range.endRow - range.startRow + 1,
+    columns: columnCount,
+    // Scalar aggregates (SUM/AVERAGE/…) read `values` only. Building the 2-D
+    // matrix eagerly made every range evaluation allocate a copy of the range;
+    // materialize it lazily for the consumers that actually index it.
+    get matrix() {
+      if (matrixValue === null) {
+        const matrix = [];
+        for (let index = 0; index < values.length; index += columnCount) {
+          matrix.push(values.slice(index, index + columnCount));
+        }
+        matrixValue = matrix;
+      }
+      return matrixValue;
+    },
+  };
 }
 
 function criteriaMatches(value, criteria) {
@@ -170,24 +225,24 @@ function criteriaMatches(value, criteria) {
 }
 
 const FUNCTIONS = {
-  SUM: (args) => flatten(args).reduce((total, value) => {
+  SUM: (args) => argumentCells(args).reduce((total, value) => {
     const number = numeric(value);
     return isError(number) ? total : total + number;
   }, 0),
   AVERAGE: (args) => {
-    const values = flatten(args).filter((value) => scalar(value) !== "" && scalar(value) != null).map(numeric).filter((value) => !isError(value));
+    const values = argumentCells(args).filter((value) => scalar(value) !== "" && scalar(value) != null).map(numeric).filter((value) => !isError(value));
     return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : ERROR.div0;
   },
   MIN: (args) => {
-    const values = flatten(args).filter((value) => scalar(value) !== "" && scalar(value) != null).map(numeric).filter((value) => !isError(value));
+    const values = argumentCells(args).filter((value) => scalar(value) !== "" && scalar(value) != null).map(numeric).filter((value) => !isError(value));
     return values.length ? Math.min(...values) : 0;
   },
   MAX: (args) => {
-    const values = flatten(args).filter((value) => scalar(value) !== "" && scalar(value) != null).map(numeric).filter((value) => !isError(value));
+    const values = argumentCells(args).filter((value) => scalar(value) !== "" && scalar(value) != null).map(numeric).filter((value) => !isError(value));
     return values.length ? Math.max(...values) : 0;
   },
-  COUNT: (args) => flatten(args).filter((value) => scalar(value) !== "" && scalar(value) != null).map(numeric).filter((value) => !isError(value)).length,
-  COUNTA: (args) => flatten(args).filter((value) => scalar(value) !== "" && scalar(value) != null).length,
+  COUNT: (args) => argumentCells(args).filter((value) => scalar(value) !== "" && scalar(value) != null).map(numeric).filter((value) => !isError(value)).length,
+  COUNTA: (args) => argumentCells(args).filter((value) => scalar(value) !== "" && scalar(value) != null).length,
   ABS: (args) => {
     const value = numeric(args[0]);
     return isError(value) ? value : Math.abs(value);
@@ -414,11 +469,11 @@ export function parseFormula(formula) {
   }
   try {
     const ast = new Parser(tokenize(formulaSource(key))).parse();
-    AST_CACHE.set(key, { ast });
+    cacheAst(key, { ast });
     return ast;
   } catch (error) {
     const message = Object.values(ERROR).includes(error?.message) ? error.message : ERROR.value;
-    AST_CACHE.set(key, { error: message });
+    cacheAst(key, { error: message });
     throw new Error(message);
   }
 }
@@ -427,20 +482,20 @@ export function getCachedFormulaAst(formula) {
   return parseFormula(formula);
 }
 
-function evaluateAst(ast, readCell) {
+function evaluateAst(ast, readCell, readRangeCell = null) {
   if (!ast) return ERROR.value;
   if (ast.type === "literal") return ast.value;
   if (ast.type === "identifier") return ERROR.name;
   if (ast.type === "reference") return readCell(ast.address);
-  if (ast.type === "range") return rangeValues(ast.start, ast.end, readCell);
+  if (ast.type === "range") return rangeValues(ast.start, ast.end, readCell, readRangeCell);
   if (ast.type === "unary") {
-    const value = numeric(evaluateAst(ast.argument, readCell));
+    const value = numeric(evaluateAst(ast.argument, readCell, readRangeCell));
     if (ast.operator === "+") return value;
     return isError(value) ? value : -value;
   }
   if (ast.type === "binary") {
-    const left = evaluateAst(ast.left, readCell);
-    const right = evaluateAst(ast.right, readCell);
+    const left = evaluateAst(ast.left, readCell, readRangeCell);
+    const right = evaluateAst(ast.right, readCell, readRangeCell);
     if (COMPARISON_OPERATORS.includes(ast.operator)) {
       const a = comparable(left);
       const b = comparable(right);
@@ -461,8 +516,53 @@ function evaluateAst(ast, readCell) {
     return a ** b;
   }
   if (ast.type === "call") {
-    const args = ast.args.map((argument) => evaluateAst(argument, readCell));
-    return FUNCTIONS[ast.name] ? FUNCTIONS[ast.name](args) : ERROR.name;
+    const name = ast.name;
+    // Lazy conditionals: skip the untaken branch. Errors are values (never
+    // thrown), so short-circuiting IF/AND/OR/IFERROR returns exactly what the
+    // eager form would, while avoiding the cost of evaluating dead branches.
+    if (name === "IF") {
+      const condition = evaluateAst(ast.args[0], readCell, readRangeCell);
+      if (scalar(condition)) {
+        const yes = ast.args[1];
+        return yes ? scalar(evaluateAst(yes, readCell, readRangeCell)) : undefined;
+      }
+      const no = ast.args[2];
+      return no ? scalar(evaluateAst(no, readCell, readRangeCell)) : false;
+    }
+    if (name === "AND") {
+      for (const node of ast.args) {
+        const value = evaluateAst(node, readCell, readRangeCell);
+        if (value && value.__range) {
+          for (const item of value.values) {
+            if (!Boolean(scalar(item))) return false;
+          }
+        } else if (!Boolean(scalar(value))) {
+          return false;
+        }
+      }
+      return true;
+    }
+    if (name === "OR") {
+      for (const node of ast.args) {
+        const value = evaluateAst(node, readCell, readRangeCell);
+        if (value && value.__range) {
+          for (const item of value.values) {
+            if (Boolean(scalar(item))) return true;
+          }
+        } else if (Boolean(scalar(value))) {
+          return true;
+        }
+      }
+      return false;
+    }
+    if (name === "IFERROR") {
+      const value = evaluateAst(ast.args[0], readCell, readRangeCell);
+      if (!isError(scalar(value))) return scalar(value);
+      const fallback = ast.args[1];
+      return fallback ? scalar(evaluateAst(fallback, readCell, readRangeCell)) : "";
+    }
+    const args = ast.args.map((argument) => evaluateAst(argument, readCell, readRangeCell));
+    return FUNCTIONS[name] ? FUNCTIONS[name](args) : ERROR.name;
   }
   return ERROR.value;
 }
@@ -564,26 +664,92 @@ function forEachRangeCell(range, callback) {
   }
 }
 
+// Column-bucketed interval coverage. Each range contributes one interval per
+// column it spans; a dependent lookup for a cell queries only the cell's column
+// bucket, so `dependentsOf` returns exactly the formulas whose ranges contain
+// the cell (no per-row candidate explosion on dense range sheets). Removals are
+// O(1) Map deletes; buckets re-sort lazily at the next query (batch
+// re-registrations never pay O(n) per removal).
+function rangeBucket(buckets, column) {
+  let bucket = buckets.get(column);
+  if (!bucket) {
+    bucket = { byFormula: new Map(), entries: [], sorted: true };
+    buckets.set(column, bucket);
+  }
+  return bucket;
+}
+
+function addRangeInterval(buckets, column, rowStart, rowEnd, formula) {
+  const bucket = rangeBucket(buckets, column);
+  let list = bucket.byFormula.get(formula);
+  if (!list) {
+    list = [];
+    bucket.byFormula.set(formula, list);
+  }
+  list.push({ rowStart, rowEnd });
+  bucket.sorted = false;
+}
+
+function removeRangeFormula(buckets, column, formula) {
+  const bucket = buckets.get(column);
+  if (!bucket) return;
+  if (bucket.byFormula.delete(formula)) bucket.sorted = false;
+  if (!bucket.byFormula.size) buckets.delete(column);
+}
+
+function ensureRangeBucketSorted(bucket) {
+  if (bucket.sorted) return;
+  const entries = [];
+  for (const [formula, list] of bucket.byFormula) {
+    for (const { rowStart, rowEnd } of list) entries.push({ rowStart, rowEnd, formula });
+  }
+  entries.sort((left, right) => left.rowStart - right.rowStart);
+  bucket.entries = entries;
+  bucket.sorted = true;
+}
+
+function rangeFormulasCovering(buckets, column, row) {
+  const bucket = buckets.get(column);
+  if (!bucket) return [];
+  ensureRangeBucketSorted(bucket);
+  const entries = bucket.entries;
+  let low = 0;
+  let high = entries.length;
+  while (low < high) {
+    const middle = (low + high) >> 1;
+    if (entries[middle].rowStart <= row) low = middle + 1;
+    else high = middle;
+  }
+  const matches = [];
+  for (let index = 0; index < low; index += 1) {
+    if (entries[index].rowEnd >= row) matches.push(entries[index].formula);
+  }
+  return matches;
+}
+
 export class FormulaDependencyGraph {
   constructor() {
     this.entries = new Map();
     this.dependencies = new Map();
     this.reverseDependencies = new Map();
-    this.rangeReverseDependencies = new Map();
-    this.wideRanges = new Map();
+    this.rangeCoverageByColumn = new Map();
+    // Reachability from an address is stable until the graph shape changes,
+    // and typing re-edits the same address over and over.
+    this.transitiveCache = new Map();
   }
 
   clear() {
     this.entries.clear();
     this.dependencies.clear();
     this.reverseDependencies.clear();
-    this.rangeReverseDependencies.clear();
-    this.wideRanges.clear();
+    this.rangeCoverageByColumn.clear();
+    this.transitiveCache.clear();
   }
 
   setFormula(address, descriptors) {
     const formulaAddress = normalizeAddress(address);
     this.removeFormula(formulaAddress);
+    this.transitiveCache.clear();
     const cells = new Set();
     const ranges = [];
     for (const cell of descriptors?.cells || []) {
@@ -607,12 +773,8 @@ export class FormulaDependencyGraph {
       if (materialized) {
         forEachRangeCell(stored, (cell) => cells.add(cell));
       }
-      if (range.endRow - range.startRow + 1 <= MAX_INDEXED_RANGE_ROWS) {
-        for (let row = range.startRow; row <= range.endRow; row += 1) {
-          addSetValue(this.rangeReverseDependencies, row, formulaAddress);
-        }
-      } else {
-        this.wideRanges.set(formulaAddress, true);
+      for (let column = range.startColumn; column <= range.endColumn; column += 1) {
+        addRangeInterval(this.rangeCoverageByColumn, column, range.startRow, range.endRow, formulaAddress);
       }
     }
     this.entries.set(formulaAddress, { cells, ranges });
@@ -624,15 +786,13 @@ export class FormulaDependencyGraph {
     const formulaAddress = normalizeAddress(address);
     const entry = this.entries.get(formulaAddress);
     if (!entry) return;
+    this.transitiveCache.clear();
     for (const cell of entry.cells) deleteSetValue(this.reverseDependencies, cell, formulaAddress);
     for (const range of entry.ranges) {
-      if (range.endRow - range.startRow + 1 <= MAX_INDEXED_RANGE_ROWS) {
-        for (let row = range.startRow; row <= range.endRow; row += 1) {
-          deleteSetValue(this.rangeReverseDependencies, row, formulaAddress);
-        }
+      for (let column = range.startColumn; column <= range.endColumn; column += 1) {
+        removeRangeFormula(this.rangeCoverageByColumn, column, formulaAddress);
       }
     }
-    this.wideRanges.delete(formulaAddress);
     this.entries.delete(formulaAddress);
     this.dependencies.delete(formulaAddress);
   }
@@ -667,35 +827,42 @@ export class FormulaDependencyGraph {
       for (const formula of this.reverseDependencies.get(normalized) || []) dependents.add(formula);
       const coordinates = coordinatesFromAddress(normalized);
       if (!coordinates) continue;
-      const candidates = new Set(this.rangeReverseDependencies.get(coordinates.row) || []);
-      for (const formula of this.wideRanges.keys()) candidates.add(formula);
-      for (const formula of candidates) {
-        const entry = this.entries.get(formula);
-        if (entry?.ranges.some((range) => (
-          coordinates.row >= range.startRow
-          && coordinates.row <= range.endRow
-          && coordinates.column >= range.startColumn
-          && coordinates.column <= range.endColumn
-        ))) {
-          dependents.add(formula);
-        }
+      for (const formula of rangeFormulasCovering(this.rangeCoverageByColumn, coordinates.column, coordinates.row)) {
+        dependents.add(formula);
       }
     }
     return dependents;
   }
 
   transitiveDependentsOf(addresses) {
-    const seen = new Set();
-    const queue = [...(Array.isArray(addresses) || addresses instanceof Set ? addresses : [addresses])]
+    const list = [...(Array.isArray(addresses) || addresses instanceof Set ? addresses : [addresses])]
       .map(normalizeAddress);
-    while (queue.length) {
-      const address = queue.shift();
-      for (const dependent of this.dependentsOf(address)) {
+    if (list.length === 1) return this._transitiveFrom(list[0]);
+    const dependents = new Set();
+    for (const address of list) {
+      for (const dependent of this._transitiveFrom(address)) dependents.add(dependent);
+    }
+    return dependents;
+  }
+
+  _transitiveFrom(address) {
+    const cached = this.transitiveCache.get(address);
+    if (cached) return cached;
+    const seen = new Set();
+    const queue = [address];
+    // Head-index BFS: Array.shift() is O(n) per dequeue, which made dense
+    // dependency trees O(n²). Advancing an index keeps the whole walk O(n).
+    for (let head = 0; head < queue.length; head += 1) {
+      for (const dependent of this.dependentsOf(queue[head])) {
         if (seen.has(dependent)) continue;
         seen.add(dependent);
         queue.push(dependent);
       }
     }
+    if (this.transitiveCache.size >= TRANSITIVE_CACHE_LIMIT) {
+      this.transitiveCache.delete(this.transitiveCache.keys().next().value);
+    }
+    this.transitiveCache.set(address, seen);
     return seen;
   }
 
@@ -747,7 +914,7 @@ function normalizeChanges(changes) {
   return Object.entries(changes).map(([address, patch]) => ({ address, patch }));
 }
 
-function applyCellChange(sheet, change) {
+function applyCellChange(sheet, change, readOnlyCells = false) {
   const address = normalizeAddress(change?.address || change?.cell?.address || "");
   const coordinates = coordinatesFromAddress(address);
   if (!coordinates) return { address: "", removed: false };
@@ -755,7 +922,7 @@ function applyCellChange(sheet, change) {
   const existing = sheet.cells?.[id];
   const shouldRemove = change?.delete === true || change?.cell === null;
   if (shouldRemove) {
-    if (existing) delete sheet.cells[id];
+    if (existing && !readOnlyCells) delete sheet.cells[id];
     return { address, removed: true };
   }
   const supplied = change?.patch || change?.cell || Object.fromEntries(
@@ -776,7 +943,7 @@ function applyCellChange(sheet, change) {
   cell.address = address;
   cell.row = coordinates.row;
   cell.column = coordinates.column;
-  sheet.cells[id] = cell;
+  if (!readOnlyCells) sheet.cells[id] = cell;
   return { address, removed: false, cell };
 }
 
@@ -815,21 +982,91 @@ export class FormulaEngine {
       formulaCount: 0,
     };
     this._evaluationTrace = null;
-    this.rebuild({ recalculate: options.autoRecalculate !== false });
+    this.priorityAddresses = null;
+    // The projection shares the live workspace cells map; the caller has
+    // already written each change before it reaches applyChanges.
+    this.readOnlyCells = options.readOnlyCells === true;
+    this.rebuild({
+      recalculate: options.autoRecalculate !== false,
+      registerOnly: options.registerOnly || null,
+    });
   }
 
-  rebuild({ recalculate = true } = {}) {
+  /**
+   * Restrict synchronous recalculation to a set of addresses (the mounted
+   * band). Everything else stays invalidated and is evaluated by
+   * `drainInvalidated`, or on demand when a priority formula reads it.
+   */
+  setPriorityAddresses(addresses) {
+    this.priorityAddresses = addresses instanceof Set ? addresses : addresses ? new Set(addresses) : null;
+  }
+
+  drainInvalidated({ budgetMs = 8, maxAddresses = Infinity } = {}) {
+    const start = now();
+    const priority = this.priorityAddresses;
+    const pending = [];
+    if (priority) {
+      for (const address of this.invalidated) if (priority.has(address)) pending.push(address);
+      for (const address of this.invalidated) if (!priority.has(address)) pending.push(address);
+    } else {
+      pending.push(...this.invalidated);
+    }
+    const values = new Map();
+    const evaluatedAddresses = [];
+    const runStack = new Set();
+    for (const address of pending) {
+      if (!this.graph.hasFormula(address)) {
+        this.invalidated.delete(address);
+        continue;
+      }
+      values.set(address, this.evaluateAddress(address, runStack));
+      evaluatedAddresses.push(address);
+      if (evaluatedAddresses.length >= maxAddresses) break;
+      if (now() - start >= budgetMs) break;
+    }
+    return { values, evaluatedAddresses, remaining: this.invalidated.size };
+  }
+
+  /**
+   * `registerOnly` limits the dependency graph to a subset of formula
+   * addresses (the mounted band). Evaluation still resolves references
+   * outside that subset on demand — only invalidation tracking is scoped.
+   */
+  rebuild({ recalculate = true, registerOnly = null } = {}) {
     this.graph.clear();
     this.values.clear();
     this.invalidated.clear();
-    for (const [id, cell] of Object.entries(this.sheet.cells || {})) {
-      if (!cell?.formula) continue;
-      const address = cellAddressForCell(cell, id);
-      if (!address) continue;
-      this.graph.setFormula(address, formulaDescriptors(cell.formula, this.stats));
+    if (registerOnly) {
+      for (const address of registerOnly) {
+        const cell = this.getCell(address);
+        if (!cell?.formula) continue;
+        this.graph.setFormula(normalizeAddress(address), formulaDescriptors(cell.formula, this.stats));
+      }
+    } else {
+      for (const [id, cell] of Object.entries(this.sheet.cells || {})) {
+        if (!cell?.formula) continue;
+        const address = cellAddressForCell(cell, id);
+        if (!address) continue;
+        this.graph.setFormula(address, formulaDescriptors(cell.formula, this.stats));
+      }
     }
     if (recalculate) return this.recalculateAll({ advanceRevision: false });
     return this.lastCalculation;
+  }
+
+  /** Register formulas that just scrolled into the band. */
+  registerFormulasIn(addresses) {
+    let added = 0;
+    for (const address of addresses || []) {
+      const normalized = normalizeAddress(address);
+      if (this.graph.hasFormula(normalized)) continue;
+      const cell = this.getCell(normalized);
+      if (!cell?.formula) continue;
+      this.graph.setFormula(normalized, formulaDescriptors(cell.formula, this.stats));
+      if (!this.values.has(normalized)) this.invalidated.add(normalized);
+      added += 1;
+    }
+    return added;
   }
 
   getCell(address) {
@@ -841,9 +1078,11 @@ export class FormulaEngine {
     if (this.values.has(normalizedAddress) && !this.invalidated.has(normalizedAddress)) {
       return this.values.get(normalizedAddress);
     }
-    if (stack.has(normalizedAddress)) return ERROR.cycle;
     const cell = this.getCell(normalizedAddress);
     if (!cell?.formula) return rawCellValue(cell);
+    // Cycle-guard work happens only for formula cells (plain range reads — the
+    // bulk of evaluation traffic — skip the stack entirely).
+    if (stack.has(normalizedAddress)) return ERROR.cycle;
 
     stack.add(normalizedAddress);
     if (this._evaluationTrace && !this._evaluationTrace.includes(normalizedAddress)) {
@@ -852,7 +1091,21 @@ export class FormulaEngine {
     let value;
     try {
       const ast = cachedAst(cell.formula, this.stats);
-      value = scalar(evaluateAst(ast, (reference) => this.evaluateAddress(reference, stack)));
+      const readRangeCell = (row, column, reference) => {
+        // Range reads are the bulk of evaluation traffic. For plain or already
+        // cached cells, skip the full address normalization + graph path.
+        if (this.values.has(reference) && !this.invalidated.has(reference)) {
+          return this.values.get(reference);
+        }
+        const rangeCell = this.sheet.cells?.[cellId(row, column)];
+        if (!rangeCell?.formula) return rangeCell?.value ?? "";
+        return this.evaluateAddress(reference, stack);
+      };
+      value = scalar(evaluateAst(
+        ast,
+        (reference) => this.evaluateAddress(reference, stack),
+        readRangeCell,
+      ));
     } catch (error) {
       value = errorValue(error);
     }
@@ -869,9 +1122,13 @@ export class FormulaEngine {
     const targetSet = new Set(targets.filter((address) => this.graph.hasFormula(address)));
     const previousTrace = this._evaluationTrace;
     this._evaluationTrace = trace;
+    // Evaluate only the affected set (in dependency order via the recursive
+    // memoized `evaluateAddress`), sharing one recursion stack for the whole
+    // run instead of allocating a Set per formula. Never scan every formula.
+    const runStack = new Set();
     try {
-      for (const address of this.graph.formulaAddresses()) {
-        if (targetSet.has(address)) this.evaluateAddress(address, new Set());
+      for (const address of targetSet) {
+        this.evaluateAddress(address, runStack);
       }
     } finally {
       this._evaluationTrace = previousTrace;
@@ -908,9 +1165,13 @@ export class FormulaEngine {
   recalculateAll({ advanceRevision = false } = {}) {
     this.values.clear();
     this.invalidated.clear();
-    return this._runRecalculation(this.graph.formulaAddresses(), {
+    const addresses = this.graph.formulaAddresses();
+    for (const address of addresses) this.invalidated.add(address);
+    const priority = this.priorityAddresses;
+    const targets = priority ? addresses.filter((address) => priority.has(address)) : addresses;
+    return this._runRecalculation(targets, {
       mode: "full",
-      affectedAddresses: this.graph.formulaAddresses(),
+      affectedAddresses: addresses,
       advanceRevision,
     });
   }
@@ -936,7 +1197,7 @@ export class FormulaEngine {
     const changedAddresses = [];
     const removedAddresses = [];
     for (const change of normalizedChanges) {
-      const result = applyCellChange(this.sheet, change);
+      const result = applyCellChange(this.sheet, change, this.readOnlyCells);
       if (!result.address) continue;
       changedAddresses.push(result.address);
       if (result.removed) removedAddresses.push(result.address);
@@ -957,10 +1218,13 @@ export class FormulaEngine {
     for (const address of affected) this.invalidated.add(address);
     if (Number.isInteger(revision)) this.revision = revision;
     else this.revision += 1;
-    const result = this._runRecalculation([...affected], {
+    const priority = this.priorityAddresses;
+    const targets = priority ? [...affected].filter((address) => priority.has(address)) : [...affected];
+    const result = this._runRecalculation(targets, {
       mode: "incremental",
       affectedAddresses: [...affected],
     });
+    result.deferredCount = priority ? affected.size - targets.length : 0;
     result.changedAddresses = changedAddresses;
     result.removedAddresses = removedAddresses;
     return result;

@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "latestRunId": "2026-08-22T15-41-11-447Z-band-first",
+  "runs": [
+    {
+      "runId": "2026-08-22T10-06-00-320Z-baseline",
+      "label": "baseline",
+      "generatedAt": "2026-08-22T10:06:00.320Z",
+      "appVersion": "1.2.0-alpha.5",
+      "gitCommit": "9cbdef5e1",
+      "profiles": [
+        "low",
+        "high"
+      ],
+      "file": "runs/2026-08-22T10-06-00-320Z-baseline.json"
+    },
+    {
+      "runId": "2026-08-22T10-50-15-108Z-after-opt",
+      "label": "after-opt",
+      "generatedAt": "2026-08-22T10:50:15.108Z",
+      "appVersion": "1.2.0-alpha.5",
+      "gitCommit": "9cbdef5e1",
+      "profiles": [
+        "low",
+        "high"
+      ],
+      "file": "runs/2026-08-22T10-50-15-108Z-after-opt.json"
+    },
+    {
+      "runId": "2026-08-22T11-21-19-368Z-final-opt",
+      "label": "final-opt",
+      "generatedAt": "2026-08-22T11:21:19.368Z",
+      "appVersion": "1.2.0-alpha.5",
+      "gitCommit": "9cbdef5e1",
+      "profiles": [
+        "low",
+        "high"
+      ],
+      "file": "runs/2026-08-22T11-21-19-368Z-final-opt.json"
+    },
+    {
+      "runId": "2026-08-22T15-19-46-568Z-band-first",
+      "label": "band-first",
+      "generatedAt": "2026-08-22T15:19:46.568Z",
+      "appVersion": "1.2.0-alpha.5",
+      "gitCommit": "1901c84db",
+      "profiles": [
+        "high"
+      ],
+      "file": "runs/2026-08-22T15-19-46-568Z-band-first.json"
+    },
+    {
+      "runId": "2026-08-22T15-41-11-447Z-band-first",
+      "label": "band-first",
+      "generatedAt": "2026-08-22T15:41:11.447Z",
+      "appVersion": "1.2.0-alpha.5",
+      "gitCommit": "39b78b697",
+      "profiles": [
+        "high"
+      ],
+      "file": "runs/2026-08-22T15-41-11-447Z-band-first.json"
+    }
+  ]
+}

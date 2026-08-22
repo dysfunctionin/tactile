@@ -15,38 +15,33 @@ import {
   normalizeWorkspace,
 } from "../model.js";
 import { normalizeIconEmoji } from "../iconEmoji.js";
-import { repairWorkspaceTopology, TOPOLOGY_REVISION } from "../core/topology.js";
+import { repairWorkspaceTopology } from "../core/topology.js";
+import { cellsForMutation, cloneHistoryWorkspace } from "../core/history/snapshot.js";
+import { measureStage, measureStageAsync } from "../core/perf/stageTimer.js";
 import { reparentWorkspace } from "../core/reparenting.js";
 import { cellAddress, cellId, coordinatesFromCellId } from "../sheet/coordinates.js";
-import { reorderFormulaForAxis } from "../sheet/structure.js";
 import {
-  loadWorkspace,
-  loadWorkspaceBootState,
-  loadWorkspaceCache,
-  saveWorkspace,
-  saveWorkspaceBootState,
-  saveWorkspaceCache,
-} from "../storage.js";
+  adjustAxisGroups,
+  adjustColumnFilters,
+  adjustConditionalFormats,
+  adjustFormulaForAxis,
+  reorderFormulaForAxis,
+} from "../sheet/structure.js";
+import {
+  removeSheetAxisCells,
+  reorderSheetAxis,
+  shiftAxisSizes,
+  shiftCells,
+} from "../sheet/axisCells.js";
+import { loadWorkspace, loadWorkspaceCache, saveWorkspace, saveWorkspaceCache } from "../storage.js";
 import { createWave2Shadow } from "../core/engine/shadow.js";
-import { createStructureWorker } from "../workers/structure/index.js";
-import { recordCellChanges, recordStructureChange } from "../objects/sheet/grid/cellChangeJournal.js";
+import { recordCellChanges } from "../objects/sheet/grid/cellChangeJournal.js";
 import { isTauriRuntime } from "../platform/tauri/runtime.ts";
-import { readBootMetadata } from "../platform/browser/bootMetadata.js";
 import { getObjectTypeDefinition } from "../objects/registry/index.js";
 
 function initialWorkspace() {
   const cached = loadWorkspaceCache();
-  const boot = loadWorkspaceBootState();
-  const source = cached && boot?.workspaceId === cached.id
-    ? {
-        ...cached,
-        homeObjectId: boot.homeObjectId ?? cached.homeObjectId,
-        homePath: boot.homePath ?? cached.homePath,
-        activeThemeId: boot.activeThemeId ?? cached.activeThemeId,
-        settings: boot.settings ?? cached.settings,
-      }
-    : cached;
-  const workspace = normalizeWorkspace(source || createBlankWorkspace());
+  const workspace = normalizeWorkspace(cached || createBlankWorkspace());
   if (isTauriRuntime() && !cached) {
     return normalizeWorkspace({
       ...workspace,
@@ -63,36 +58,7 @@ function touch(workspace, objects, repairTopology = false) {
     updatedAt: new Date().toISOString(),
     objects,
   };
-  return repairTopology ? repairWorkspaceTopology(next) : next;
-}
-
-function touchStructure(workspace, objectId, object, embeddedLinks) {
-  const linksByChild = new Map(embeddedLinks.map((link) => [String(link.objectId), link]));
-  const objects = { ...workspace.objects, [objectId]: object };
-  linksByChild.forEach((link, childId) => {
-    const child = objects[childId];
-    if (!child?.parent || String(child.parent.linkId || "") !== String(link.linkId || "")) return;
-    objects[childId] = {
-      ...child,
-      parent: {
-        ...child.parent,
-        sourceObjectId: objectId,
-        sourceCellId: link.sourceCellId,
-        sourceAddress: link.sourceAddress,
-      },
-    };
-  });
-  return {
-    ...workspace,
-    objects,
-    updatedAt: new Date().toISOString(),
-    [TOPOLOGY_REVISION]: (workspace[TOPOLOGY_REVISION] || 0) + 1,
-  };
-}
-
-function cloneHistoryWorkspace(workspace) {
-  if (typeof structuredClone === "function") return structuredClone(workspace);
-  return JSON.parse(JSON.stringify(workspace));
+  return repairTopology ? measureStage("topology", () => repairWorkspaceTopology(next)) : next;
 }
 
 function cloneHistoryCell(cell) {
@@ -102,7 +68,7 @@ function cloneHistoryCell(cell) {
 function applyCellHistory(workspace, entry, direction) {
   const object = workspace.objects[entry.objectId];
   if (object?.type !== "sheet") return workspace;
-  const cells = object.cells;
+  const cells = cellsForMutation(object.cells);
   entry.changes.forEach((change) => {
     const cell = change[direction];
     if (cell) cells[change.cellId] = { ...cell };
@@ -115,52 +81,6 @@ function applyCellHistory(workspace, entry, direction) {
   }, { ...workspace.objects, [entry.objectId]: { ...object, cells } }, entry.changes.some((change) => Boolean(change.before?.embed || change.after?.embed)));
 }
 
-function reorderAxisSizes(sizes, indexMap) {
-  const next = {};
-  Object.entries(sizes || {}).forEach(([key, value]) => {
-    const current = Number(key);
-    const reordered = indexMap.get(current);
-    if (Number.isInteger(reordered)) next[reordered] = value;
-  });
-  return next;
-}
-
-function reorderSheetAxis(object, axis, from, to) {
-  const length = axis === "row" ? object.rows : object.columns;
-  if (from === to || from < 0 || to < 0 || from >= length || to >= length) return object;
-  const order = Array.from({ length }, (_, index) => index);
-  const [moved] = order.splice(from, 1);
-  order.splice(to, 0, moved);
-  const indexMap = new Map(order.map((original, next) => [original, next]));
-  const cells = {};
-  Object.values(object.cells || {}).forEach((cell) => {
-    const row = axis === "row" ? indexMap.get(cell.row) : cell.row;
-    const column = axis === "column" ? indexMap.get(cell.column) : cell.column;
-    const shifted = {
-      ...cell,
-      id: cellId(row, column),
-      address: cellAddress(row, column),
-      row,
-      column,
-      formula: reorderFormulaForAxis(cell.formula, axis, indexMap),
-    };
-    cells[shifted.id] = shifted;
-  });
-  return {
-    ...object,
-    cells,
-    rowHeights: axis === "row" ? reorderAxisSizes(object.rowHeights, indexMap) : object.rowHeights,
-    columnWidths: axis === "column" ? reorderAxisSizes(object.columnWidths, indexMap) : object.columnWidths,
-    filters: axis === "column"
-      ? (object.filters || []).map((filter) => ({ ...filter, column: indexMap.get(filter.column) ?? filter.column }))
-      : object.filters,
-    conditionalFormats: (object.conditionalFormats || []).map((rule) => ({
-      ...rule,
-      range: reorderFormulaForAxis(`=${rule.range}`, axis, indexMap).slice(1),
-    })),
-  };
-}
-
 export function useLocalWorkspace() {
   const [workspace, setWorkspace] = useState(initialWorkspace);
   const [saveState, setSaveState] = useState("loading local copy");
@@ -169,21 +89,15 @@ export function useLocalWorkspace() {
   const saveSequenceRef = useRef(0);
   const historyRef = useRef({ past: [], future: [], lastKey: null, lastAt: 0 });
   const wave2ShadowRef = useRef(null);
-  const pendingCellReconcileRef = useRef(null);
   const workspaceMutationRef = useRef(false);
-  const structureWorkerRef = useRef(null);
 
   useEffect(() => {
     let cancelled = false;
     loadWorkspace().then(async (stored) => {
       if (cancelled) return;
       const initial = normalizeWorkspace(stored || initialWorkspace());
-      const nativeRuntime = isTauriRuntime();
-      const activeBrowserWorkspaceId = readBootMetadata()?.activeWorkspaceId;
-      const normalizedWorkspaceMatches = String(activeBrowserWorkspaceId || "") === String(initial.id);
       const controller = createWave2Shadow(initial, {
-        useInitialSnapshot: nativeRuntime || !normalizedWorkspaceMatches,
-        preferActiveWorkspace: !nativeRuntime && normalizedWorkspaceMatches,
+        useInitialSnapshot: true,
       });
       wave2ShadowRef.current = controller;
       const resolved = await controller.ready;
@@ -205,8 +119,6 @@ export function useLocalWorkspace() {
     });
     return () => {
       cancelled = true;
-      structureWorkerRef.current?.dispose?.();
-      structureWorkerRef.current = null;
       wave2ShadowRef.current?.dispose?.();
       wave2ShadowRef.current = null;
     };
@@ -216,18 +128,17 @@ export function useLocalWorkspace() {
     if (!hydrated) return undefined;
     const shadow = wave2ShadowRef.current;
     const sequence = ++saveSequenceRef.current;
+    saveWorkspaceCache(workspace);
     // The Wave 2 record adapter persists dirty cells and metadata as patches.
     // Falling back to the legacy snapshot writer here during normal edits
     // serializes the entire workspace on the input path, including large
     // fixtures and binary metadata. Keep the snapshot writer for environments
     // where the record adapter is unavailable.
     window.clearTimeout(saveTimer.current);
-    saveWorkspaceBootState(workspace);
     if (shadow?.state?.persistence === "active") return undefined;
-    saveWorkspaceCache(workspace);
     setSaveState("saving");
     saveTimer.current = window.setTimeout(async () => {
-      const persisted = await saveWorkspace(workspace);
+      const persisted = await measureStageAsync("persist-snapshot", () => saveWorkspace(workspace));
       if (sequence !== saveSequenceRef.current) return;
       setSaveState(persisted ? "saved" : "saved in local cache");
     }, 120);
@@ -239,12 +150,7 @@ export function useLocalWorkspace() {
     if (!hydrated || !shadow) return undefined;
     let current = true;
     setSaveState("saving");
-    const pendingCells = pendingCellReconcileRef.current;
-    const reconciliation = pendingCells?.workspace === workspace
-      ? shadow.reconcileCellChanges(workspace, pendingCells.operations, { normalized: true })
-      : shadow.reconcile(workspace, { normalized: true });
-    if (pendingCells?.workspace === workspace) pendingCellReconcileRef.current = null;
-    Promise.resolve(reconciliation).then(
+    Promise.resolve(measureStageAsync("shadow-reconcile", () => shadow.reconcile(workspace, { normalized: true }))).then(
       () => {
         if (!current) return;
         setSaveState(shadow.state.persistence === "active" ? "saved" : "saved in local cache");
@@ -264,7 +170,10 @@ export function useLocalWorkspace() {
       const now = Date.now();
       const coalesced = history.lastKey === historyKey && now - history.lastAt < 650;
       if (!coalesced) {
-        history.past.push({ kind: "snapshot", value: cloneHistoryWorkspace(current) });
+        history.past.push({
+          kind: "snapshot",
+          value: measureStage("history-snapshot", () => cloneHistoryWorkspace(current)),
+        });
         if (history.past.length > 120) history.past.shift();
       }
       history.future = [];
@@ -281,7 +190,7 @@ export function useLocalWorkspace() {
       if (object?.type !== "sheet") return current;
       const historyChanges = [];
       let changed = false;
-      const cells = object.cells;
+      const cells = cellsForMutation(object.cells);
       changes.forEach(({ cellId: targetCellId, patch }) => {
         const coordinates = coordinatesFromCellId(targetCellId);
         if (!coordinates) return;
@@ -326,29 +235,17 @@ export function useLocalWorkspace() {
       history.future = [];
       history.lastKey = historyKey;
       history.lastAt = now;
-      const next = touch({
+      return touch({
         ...current,
         objects: { ...current.objects, [objectId]: { ...object, cells } },
       }, { ...current.objects, [objectId]: { ...object, cells } }, changes.some(({ patch }) => Object.prototype.hasOwnProperty.call(patch || {}, "embed")));
-      const pending = pendingCellReconcileRef.current;
-      pendingCellReconcileRef.current = {
-        workspace: next,
-        operations: [
-          ...(pending?.workspace === current ? pending.operations : []),
-          { objectId, historyKey, changes: historyChanges },
-        ],
-      };
-      return next;
     });
   }, []);
 
   const replaceWorkspace = useCallback((nextWorkspace) => {
     workspaceMutationRef.current = true;
     historyRef.current = { past: [], future: [], lastKey: null, lastAt: 0 };
-    const normalized = normalizeWorkspace(nextWorkspace);
-    saveWorkspaceCache(normalized);
-    saveWorkspaceBootState(normalized);
-    setWorkspace(normalized);
+    setWorkspace(normalizeWorkspace(nextWorkspace));
   }, []);
 
   const updateObject = useCallback((objectId, patch) => {
@@ -601,33 +498,53 @@ export function useLocalWorkspace() {
     commitWorkspace((current) => deleteObjectFromWorkspace(current, objectId), `object-delete:${objectId}`);
   }, [commitWorkspace]);
 
-  const mutateSheetAxis = useCallback(async (objectId, axis, index, operation) => {
-    const source = workspace.objects[objectId];
-    if (source?.type !== "sheet") return;
-    if (!structureWorkerRef.current) structureWorkerRef.current = createStructureWorker();
-    setSaveState("saving");
-    const result = await structureWorkerRef.current.mutate(source, axis, index, operation);
-    const nextObject = result.object;
-    recordStructureChange(nextObject.cells, source.cells, axis, index, operation);
-    setWorkspace((current) => {
-      if (current.objects[objectId] !== source) return current;
-      const history = historyRef.current;
-      history.past.push({ kind: "object", objectId, before: source, after: nextObject });
-      if (history.past.length > 120) history.past.shift();
-      history.future = [];
-      history.lastKey = null;
-      history.lastAt = 0;
-      return touchStructure(current, objectId, nextObject, result.embeddedLinks);
-    });
-  }, [workspace]);
-
   const insertSheetAxis = useCallback((objectId, axis, index) => {
-    mutateSheetAxis(objectId, axis, index, "insert").catch(() => setSaveState("saved in local cache"));
-  }, [mutateSheetAxis]);
+    commitWorkspace((current) => {
+      const object = current.objects[objectId];
+      if (object?.type !== "sheet") return current;
+      const rows = axis === "row" ? Math.max(DEFAULT_ROWS, object.rows + 1) : object.rows;
+      const columns = axis === "column" ? Math.max(DEFAULT_COLUMNS, object.columns + 1) : object.columns;
+      return touch(current, {
+        ...current.objects,
+        [objectId]: {
+          ...object,
+          rows,
+          columns,
+          cells: measureStage("shift-cells", () => shiftCells(object, axis, index)),
+          rowHeights: axis === "row" ? shiftAxisSizes(object.rowHeights, index, "insert") : object.rowHeights,
+          columnWidths: axis === "column" ? shiftAxisSizes(object.columnWidths, index, "insert") : object.columnWidths,
+          rowGroups: axis === "row" ? adjustAxisGroups(object.rowGroups, index, "insert") : object.rowGroups,
+          columnGroups: axis === "column" ? adjustAxisGroups(object.columnGroups, index, "insert") : object.columnGroups,
+          filters: axis === "column" ? adjustColumnFilters(object.filters, index, "insert") : object.filters,
+          conditionalFormats: adjustConditionalFormats(object.conditionalFormats, axis, index, "insert"),
+        },
+      }, true);
+    }, `insert:${objectId}:${axis}:${index}`);
+  }, [commitWorkspace]);
 
   const deleteSheetAxis = useCallback((objectId, axis, index) => {
-    mutateSheetAxis(objectId, axis, index, "delete").catch(() => setSaveState("saved in local cache"));
-  }, [mutateSheetAxis]);
+    commitWorkspace((current) => {
+      const object = current.objects[objectId];
+      if (object?.type !== "sheet") return current;
+      const rows = axis === "row" ? Math.max(DEFAULT_ROWS, object.rows - 1) : object.rows;
+      const columns = axis === "column" ? Math.max(DEFAULT_COLUMNS, object.columns - 1) : object.columns;
+      return touch(current, {
+        ...current.objects,
+        [objectId]: {
+          ...object,
+          rows,
+          columns,
+          cells: measureStage("remove-axis-cells", () => removeSheetAxisCells(object, axis, index)),
+          rowHeights: axis === "row" ? shiftAxisSizes(object.rowHeights, index, "delete") : object.rowHeights,
+          columnWidths: axis === "column" ? shiftAxisSizes(object.columnWidths, index, "delete") : object.columnWidths,
+          rowGroups: axis === "row" ? adjustAxisGroups(object.rowGroups, index, "delete") : object.rowGroups,
+          columnGroups: axis === "column" ? adjustAxisGroups(object.columnGroups, index, "delete") : object.columnGroups,
+          filters: axis === "column" ? adjustColumnFilters(object.filters, index, "delete") : object.filters,
+          conditionalFormats: adjustConditionalFormats(object.conditionalFormats, axis, index, "delete"),
+        },
+      }, true);
+    }, `delete:${objectId}:${axis}:${index}`);
+  }, [commitWorkspace]);
 
   const moveSheetAxis = useCallback((objectId, axis, from, to) => {
     if (!Number.isInteger(from) || !Number.isInteger(to) || from === to) return;
@@ -719,13 +636,10 @@ export function useLocalWorkspace() {
         history.lastAt = 0;
         return applyCellHistory(current, previous, "before");
       }
-      if (previous.kind === "object") {
-        history.future.push(previous);
-        history.lastKey = null;
-        history.lastAt = 0;
-        return touch(current, { ...current.objects, [previous.objectId]: previous.before }, true);
-      }
-      history.future.push({ kind: "snapshot", value: cloneHistoryWorkspace(current) });
+      history.future.push({
+        kind: "snapshot",
+        value: cloneHistoryWorkspace(current),
+      });
       history.lastKey = null;
       history.lastAt = 0;
       return { ...previous.value, updatedAt: new Date().toISOString() };
@@ -743,13 +657,10 @@ export function useLocalWorkspace() {
         history.lastAt = 0;
         return applyCellHistory(current, next, "after");
       }
-      if (next.kind === "object") {
-        history.past.push(next);
-        history.lastKey = null;
-        history.lastAt = 0;
-        return touch(current, { ...current.objects, [next.objectId]: next.after }, true);
-      }
-      history.past.push({ kind: "snapshot", value: cloneHistoryWorkspace(current) });
+      history.past.push({
+        kind: "snapshot",
+        value: cloneHistoryWorkspace(current),
+      });
       history.lastKey = null;
       history.lastAt = 0;
       return { ...next.value, updatedAt: new Date().toISOString() };

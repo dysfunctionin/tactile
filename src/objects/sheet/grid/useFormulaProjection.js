@@ -1,20 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createFormulaEngine } from "../../../sheet/formulas.js";
 import { cellAddress, coordinatesFromCellId } from "../../../sheet/coordinates.js";
-import { createFormulaWorker } from "../../../workers/formula/index.js";
 import { cellChangeVersion, cellChangesSince } from "./cellChangeJournal.js";
-
-const FORMULA_WORKER_CELL_THRESHOLD = 10_000;
-const populatedCellCounts = new WeakMap();
-
-function populatedCellCount(cells) {
-  if (!cells || typeof cells !== "object") return 0;
-  const cached = populatedCellCounts.get(cells);
-  if (cached !== undefined) return cached;
-  const count = Object.keys(cells).length;
-  populatedCellCounts.set(cells, count);
-  return count;
-}
+import { clearCalculationStatus, reportCalculationStatus } from "./calculationStatus.js";
+import { measureStage } from "../../../core/perf/stageTimer.js";
 
 function formulaRelevant(cell) {
   return Boolean(cell?.formula || cell?.value);
@@ -31,21 +20,27 @@ function addressForCell(id, cell) {
 }
 
 function engineSheet(object) {
-  return {
-    ...object,
-    // FormulaEngine.applyChanges mutates its sheet. Keep that private from
-    // the render workspace, whose sparse cells map is shared by the editor.
-    cells: { ...(object.cells || {}) },
-  };
+  // Shallow object copy only: `rows`/`columns` are written by the engine, but
+  // the cells map is shared with the render workspace and never mutated here.
+  return { ...object, cells: object.cells || {} };
 }
 
-function createProjectionState(object) {
-  const engine = createFormulaEngine(engineSheet(object));
+function createProjectionState(object, priorityAddresses) {
+  const engine = createFormulaEngine(engineSheet(object), {
+    autoRecalculate: false,
+    readOnlyCells: true,
+    registerOnly: priorityAddresses,
+  });
+  engine.setPriorityAddresses(priorityAddresses);
+  engine.recalculateAll();
   const cells = object.cells || {};
   return {
     objectId: object.id,
+    ready: true,
     cells,
-    cellRefs: new Map(Object.entries(cells)),
+    // Populated lazily by the journal diff; seeding it from every cell would
+    // make a rebuild O(cells) again.
+    cellRefs: new Map(),
     journalVersion: cellChangeVersion(cells),
     engine,
     values: engine.getFormulaValues(),
@@ -69,51 +64,24 @@ function changesForCellIds(state, cells, ids) {
   return ids.map((id) => changeForCell(state, cells, id)).filter(Boolean);
 }
 
-function fullChangesSinceLastProjection(state, object) {
-  const cells = object.cells || {};
-  const changes = [];
-
-  for (const [id, cell] of Object.entries(cells)) {
-    const previous = state.cellRefs.get(id);
-    if (previous === cell) continue;
-    state.cellRefs.set(id, cell);
-    if (!formulaRelevant(previous) && !formulaRelevant(cell)) continue;
-    if (!formulaInputChanged(previous, cell)) continue;
-    const address = addressForCell(id, cell || previous);
-    if (address) changes.push({ address, cell: cell || null });
-  }
-
-  for (const [id, previous] of state.cellRefs) {
-    if (Object.prototype.hasOwnProperty.call(cells, id)) continue;
-    state.cellRefs.delete(id);
-    if (!formulaRelevant(previous)) continue;
-    const address = addressForCell(id, previous);
-    if (address) changes.push({ address, delete: true });
-  }
-
-  return changes;
-}
-
+// Returns null when the journal cannot describe the delta (the cells map was
+// replaced wholesale), which the caller answers with a band-scoped rebuild.
 function changesSinceLastProjection(state, object) {
-  const cells = object.cells || {};
-  if (state.cells === cells) {
+  return measureStage("projection-diff", () => {
+    const cells = object.cells || {};
+    if (state.cells !== cells) return null;
     const journal = cellChangesSince(cells, state.journalVersion);
-    if (journal) {
-      state.journalVersion = journal.version;
-      return changesForCellIds(state, cells, journal.ids);
-    }
-  }
-
-  state.cells = cells;
-  state.journalVersion = cellChangeVersion(cells);
-  return fullChangesSinceLastProjection(state, object);
+    if (!journal) return null;
+    state.journalVersion = journal.version;
+    return changesForCellIds(state, cells, journal.ids);
+  });
 }
 
 function updateProjectionState(state, object, changes) {
   if (!changes.length) return;
   state.engine.sheet.rows = object.rows;
   state.engine.sheet.columns = object.columns;
-  const calculation = state.engine.applyChanges(changes);
+  const calculation = measureStage("engine-apply", () => state.engine.applyChanges(changes));
   for (const address of calculation.evaluatedAddresses || []) {
     if (calculation.values.has(address)) state.values.set(address, calculation.values.get(address));
   }
@@ -123,100 +91,130 @@ function updateProjectionState(state, object, changes) {
   }
 }
 
-function workerChanges(cells, ids) {
-  return ids.map((id) => {
-    const cell = cells[id];
-    const address = addressForCell(id, cell);
-    if (!address) return null;
-    return cell ? { address, cell } : { address, delete: true };
-  }).filter(Boolean);
+const DRAIN_SLICE_MS = 6;
+const BAND_SLICE_MS = 8;
+const EMPTY_VALUES = new Map();
+
+function scheduleIdle(callback) {
+  if (typeof window === "undefined") return null;
+  if (typeof window.requestIdleCallback === "function") {
+    return { kind: "idle", id: window.requestIdleCallback(callback, { timeout: 250 }) };
+  }
+  return { kind: "timeout", id: window.setTimeout(callback, 0) };
 }
 
-function applyWorkerResult(previous, result) {
-  const values = result.operation === "init"
-    ? new Map()
-    : new Map(previous);
-  Object.entries(result.values || {}).forEach(([address, value]) => values.set(address, value));
-  (result.removedAddresses || []).forEach((address) => values.delete(address));
-  return values;
+function cancelIdle(handle) {
+  if (!handle || typeof window === "undefined") return;
+  if (handle.kind === "idle") window.cancelIdleCallback?.(handle.id);
+  else window.clearTimeout(handle.id);
 }
 
-function useWorkerFormulaProjection(object, enabled) {
-  const stateRef = useRef(null);
-  const [projection, setProjection] = useState({ objectId: null, values: new Map() });
-
-  useEffect(() => {
-    if (!enabled) return;
-    const cells = object.cells || {};
-    let state = stateRef.current;
-    if (!state || state.objectId !== object.id || state.cells !== cells) {
-      state?.client.dispose?.();
-      const client = createFormulaWorker();
-      state = {
-        objectId: object.id,
-        cells,
-        journalVersion: cellChangeVersion(cells),
-        revision: 0,
-        client,
-        queue: Promise.resolve(),
-      };
-      stateRef.current = state;
-      setProjection({ objectId: object.id, values: new Map() });
-      state.queue = client.initialize(object, { revision: 0 }).then((result) => {
-        if (stateRef.current !== state) return;
-        setProjection((current) => ({
-          objectId: object.id,
-          values: applyWorkerResult(current.objectId === object.id ? current.values : new Map(), result),
-        }));
-      }).catch(() => {});
-      return;
-    }
-
-    const journal = cellChangesSince(cells, state.journalVersion);
-    if (!journal) {
-      stateRef.current = null;
-      setProjection({ objectId: null, values: new Map() });
-      return;
-    }
-    state.journalVersion = journal.version;
-    const changes = workerChanges(cells, journal.ids);
-    if (!changes.length) return;
-    const revision = state.revision + 1;
-    state.revision = revision;
-    state.queue = state.queue.then(() => state.client.update(changes, { revision })).then((result) => {
-      if (stateRef.current !== state) return;
-      setProjection((current) => ({
-        objectId: object.id,
-        values: applyWorkerResult(current.objectId === object.id ? current.values : new Map(), result),
-      }));
-    }).catch(() => {});
-  }, [enabled, object]);
-
-  useEffect(() => () => {
-    stateRef.current?.client.dispose?.();
-    stateRef.current = null;
-  }, []);
-
-  return projection.objectId === object.id ? projection.values : new Map();
+function drainInto(state, budgetMs) {
+  const slice = state.engine.drainInvalidated({ budgetMs });
+  if (!slice.evaluatedAddresses.length) return false;
+  // Values map is mutated in place; the ready tick is what re-renders the grid.
+  for (const [address, value] of slice.values) state.values.set(address, value);
+  return true;
 }
 
 export function useFormulaProjection(object) {
   const stateRef = useRef(null);
-  const workerBacked = typeof Worker !== "undefined"
-    && populatedCellCount(object.cells) > FORMULA_WORKER_CELL_THRESHOLD;
-  const workerValues = useWorkerFormulaProjection(object, workerBacked);
-  const synchronousValues = useMemo(() => {
-    if (workerBacked) return new Map();
-    let state = stateRef.current;
-    if (!state || state.objectId !== object.id) {
-      state = createProjectionState(object);
-      stateRef.current = state;
-      return state.values;
-    }
+  const objectRef = useRef(object);
+  objectRef.current = object;
+  const bandRef = useRef(null);
+  const buildScheduledRef = useRef(false);
+  const [, setReadyTick] = useState(0);
 
+  // Imperative rather than a prop: the mounted band is derived from the virtual
+  // window, which itself depends on formula values through column filters.
+  const setPriorityBand = useCallback((band) => {
+    bandRef.current = band;
+    const state = stateRef.current;
+    if (!state?.ready) return;
+    state.engine.setPriorityAddresses(band);
+    state.engine.registerFormulasIn(band);
+    if (!state.engine.invalidated.size) return;
+    if (drainInto(state, BAND_SLICE_MS)) setReadyTick((tick) => tick + 1);
+  }, []);
+
+  useEffect(() => {
+    const ensureBuild = (target) => {
+      if (buildScheduledRef.current) return;
+      stateRef.current = { objectId: target.id, ready: false, values: new Map() };
+      buildScheduledRef.current = true;
+      const schedule = () => {
+        if (objectRef.current?.id !== target.id) return; // stale: cross-sheet effect already rebuilt
+        buildScheduledRef.current = false;
+        stateRef.current = measureStage("engine-build", () => createProjectionState(objectRef.current, bandRef.current));
+        setReadyTick((tick) => tick + 1);
+      };
+      // Build after first paint (idle priority) so a large sheet's first render
+      // is not blocked by graph construction + full recalculation. Formula cells
+      // render blank until the engine catches up; `setReadyTick` swaps in values.
+      if (typeof window !== "undefined" && typeof window.requestIdleCallback === "function") {
+        window.requestIdleCallback(schedule, { timeout: 4000 });
+      } else if (typeof window !== "undefined") {
+        window.setTimeout(schedule, 0);
+      } else {
+        buildScheduledRef.current = false;
+      }
+    };
+    const current = stateRef.current;
+    if (current?.ready && current.objectId === object.id) return undefined;
+    if (current?.objectId !== object.id) {
+      stateRef.current = null;
+      buildScheduledRef.current = false;
+    }
+    ensureBuild(object);
+    return undefined;
+  }, [object]);
+
+  // Off-band dependents settle over idle slices so a single edit never blocks
+  // a frame on the full dependent set.
+  useEffect(() => {
+    const state = stateRef.current;
+    if (!state?.ready || !state.engine.invalidated.size) return undefined;
+    let cancelled = false;
+    let handle = null;
+    const step = () => {
+      if (cancelled) return;
+      const current = stateRef.current;
+      if (!current?.ready) return;
+      if (drainInto(current, DRAIN_SLICE_MS)) setReadyTick((tick) => tick + 1);
+      else if (current.engine.invalidated.size) handle = scheduleIdle(step);
+    };
+    handle = scheduleIdle(step);
+    return () => {
+      cancelled = true;
+      cancelIdle(handle);
+    };
+  });
+
+  const state = stateRef.current;
+  let active = state;
+  if (state?.ready && state.objectId === object.id) {
     const changes = changesSinceLastProjection(state, object);
-    updateProjectionState(state, object, changes);
-    return state.values;
-  }, [object, workerBacked]);
-  return workerBacked ? workerValues : synchronousValues;
+    if (changes) {
+      updateProjectionState(state, object, changes);
+    } else {
+      // Structural ops replace the cells map wholesale. Diffing 100k cells and
+      // replaying the result costs orders of magnitude more than rebuilding the
+      // band-scoped engine.
+      active = measureStage("engine-rebuild", () => createProjectionState(object, bandRef.current));
+      stateRef.current = active;
+    }
+  }
+
+  const pending = active?.ready && active.objectId === object.id ? active.engine.invalidated.size : 0;
+  useEffect(() => {
+    reportCalculationStatus(object.id, pending);
+  }, [object.id, pending]);
+  useEffect(() => () => clearCalculationStatus(object.id), [object.id]);
+
+  return {
+    values: active?.ready && active.objectId === object.id ? active.values : (active?.values || EMPTY_VALUES),
+    pending,
+    setPriorityBand,
+  };
 }
+
