@@ -198,13 +198,15 @@ export function useSheetGridProjection({
       .sort((left, right) => left.position - right.position);
   }, [object.columns, selectedCoordinates.column, virtualSheet.columnPositionForIndex, visibleColumns]);
 
+  // Keyed on the viewport rows/columns, not the pinned ones: pinning follows
+  // the selection, which would rebuild the band on every drag move.
   const mountedBand = useMemo(() => {
     const addresses = new Set();
-    for (const { row } of pinnedVisibleRows) {
-      for (const { column } of pinnedVisibleColumns) addresses.add(cellAddress(row, column));
+    for (const { row } of visibleRows) {
+      for (const { column } of visibleColumns) addresses.add(cellAddress(row, column));
     }
     return addresses;
-  }, [pinnedVisibleColumns, pinnedVisibleRows]);
+  }, [visibleColumns, visibleRows]);
 
   const { setPriorityBand } = formulaProjection;
   useEffect(() => {
