@@ -37,6 +37,9 @@ export const DEFAULT_TIMEOUT_MS = Object.freeze({
 // happen, so the ratio is reported for every scenario and gated in CI.
 export const DEFAULT_TIMEOUT_RATIO_LIMIT = 0.75;
 
+// Runs retained per scenario so a dashboard can plot duration and status trends.
+export const HISTORY_LIMIT = 5;
+
 export function roundMs(value) {
   return Number.isFinite(value) ? Math.round(value * 1000) / 1000 : null;
 }

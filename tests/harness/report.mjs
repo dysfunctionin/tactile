@@ -6,7 +6,7 @@ import { execFile } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
-import { DEFAULT_TIMEOUT_RATIO_LIMIT, SCHEMA_VERSION, STATUS, roundMs } from "./schema.mjs";
+import { DEFAULT_TIMEOUT_RATIO_LIMIT, HISTORY_LIMIT, SCHEMA_VERSION, STATUS, roundMs } from "./schema.mjs";
 import { RESULTS_DIR, SHARD_DIR, currentRunId } from "./writer.mjs";
 
 const run = promisify(execFile);
@@ -118,7 +118,78 @@ export async function writeReport({ ratioLimit = DEFAULT_TIMEOUT_RATIO_LIMIT } =
     "utf8",
   );
   await writeFile(path.join(RESULTS_DIR, "summary.json"), `${JSON.stringify(summary, null, 2)}\n`, "utf8");
+  summary.history = await writeHistory(summary, records);
   return summary;
+}
+
+function scenarioKey(record) {
+  return `${record.type}|${record.suite}|${record.scenario}`;
+}
+
+async function readHistory() {
+  try {
+    return JSON.parse(await readFile(path.join(RESULTS_DIR, "history.json"), "utf8"));
+  } catch {
+    return { runs: [], scenarios: {} };
+  }
+}
+
+/**
+ * Keeps the last few runs per scenario so duration and status can be graphed.
+ * Re-reporting the same run replaces its entry rather than duplicating it.
+ */
+async function writeHistory(summary, records) {
+  const previous = await readHistory();
+  const runs = [
+    {
+      runId: summary.runId,
+      finishedAt: summary.finishedAt,
+      branch: summary.environment.branch,
+      commit: summary.environment.commit,
+      totals: summary.totals,
+    },
+    ...(previous.runs || []).filter((run) => run.runId !== summary.runId),
+  ].slice(0, HISTORY_LIMIT);
+  const retained = new Set(runs.map((run) => run.runId));
+
+  const scenarios = {};
+  for (const [key, entry] of Object.entries(previous.scenarios || {})) {
+    const kept = (entry.runs || []).filter((run) => retained.has(run.runId) && run.runId !== summary.runId);
+    if (kept.length) scenarios[key] = { ...entry, runs: kept };
+  }
+
+  for (const record of records) {
+    const key = scenarioKey(record);
+    const entry = (scenarios[key] ??= {
+      type: record.type,
+      suite: record.suite,
+      scenario: record.scenario,
+      file: record.file,
+      runs: [],
+    });
+    entry.file = record.file;
+    entry.runs = [
+      {
+        runId: summary.runId,
+        finishedAt: summary.finishedAt,
+        status: record.status,
+        durationMs: record.durationMs,
+        timeoutMs: record.timeoutMs,
+        timeoutRatio: record.timeoutRatio,
+      },
+      ...entry.runs,
+    ].slice(0, HISTORY_LIMIT);
+  }
+
+  const history = {
+    schemaVersion: SCHEMA_VERSION,
+    limit: HISTORY_LIMIT,
+    updatedAt: summary.finishedAt,
+    runs,
+    scenarios,
+  };
+  await writeFile(path.join(RESULTS_DIR, "history.json"), `${JSON.stringify(history, null, 2)}\n`, "utf8");
+  return { runs: history.runs.length, scenarios: Object.keys(scenarios).length };
 }
 
 export function printSummary(summary) {
@@ -153,6 +224,10 @@ export function printSummary(summary) {
     }
   }
   console.log(`report: ${path.relative(process.cwd(), path.join(RESULTS_DIR, "summary.json"))}`);
+  if (summary.history) {
+    const historyPath = path.relative(process.cwd(), path.join(RESULTS_DIR, "history.json"));
+    console.log(`history: ${historyPath} (${summary.history.runs} runs, ${summary.history.scenarios} scenarios)`);
+  }
 }
 
 export async function clearShards() {

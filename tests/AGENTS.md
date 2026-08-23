@@ -80,8 +80,10 @@ them to the result record. Call `ensureArtifactDir()` when the scenario has to w
 ## Results
 
 Every scenario records type, suite, scenario, file, status (`pass`, `fail`, `timeout`, `skipped`), `durationMs`,
-`timeoutMs`, `timeoutRatio`, and its setup summary. Runs write `test-results/results.ndjson` and
-`test-results/summary.json`; both stay out of commits.
+`timeoutMs`, `timeoutRatio`, and its setup summary. `durationMs` measures the scenario body; setup time is reported
+separately under `setup.durationMs`. Runs write `test-results/results.ndjson` and `test-results/summary.json`, and
+`test-results/history.json` keeps the last five runs per scenario so duration and status can be graphed over time. All
+three stay out of commits.
 
 ```bash
 npm test                 # unit scenarios

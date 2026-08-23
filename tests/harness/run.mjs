@@ -21,6 +21,8 @@ if (!command) {
 
 const inheritedRunId = process.env.TACTILE_TEST_RUN_ID;
 const runId = inheritedRunId || new Date().toISOString().replace(/[:.]/g, "-");
+// The reporter runs in this process, so it needs the id too.
+process.env.TACTILE_TEST_RUN_ID = runId;
 if (!inheritedRunId) await clearShards();
 
 // Only shell out for launcher scripts (npx, playwright); spawning node
