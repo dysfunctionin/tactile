@@ -98,3 +98,32 @@ export const largeSheet = defineScenarioSetup({
     };
   },
 });
+
+/** Same workspace written to disk, for tests that import it through the app. */
+export const largeSheetFile = defineScenarioSetup({
+  id: "large-sheet-file",
+  label: "250k-cell stress workspace written to disk",
+  profile: "large",
+  async materialize({ artifactDir, ensureArtifactDir }) {
+    const { stat, writeFile } = await import("node:fs/promises");
+    const path = await import("node:path");
+    await ensureArtifactDir();
+    const artifactPath = path.join(artifactDir, "workspace.json");
+
+    // The workspace is deterministic and ~25 MB, so reuse it across scenarios.
+    const cached = await stat(artifactPath).catch(() => null);
+    if (!cached?.size) {
+      await writeFile(artifactPath, JSON.stringify(createLargeWorkspace()), "utf8");
+    }
+
+    return {
+      artifactPath,
+      spec: LARGE_SHEET_SPEC,
+      counts: {
+        objects: LARGE_SHEET_SPEC.objectCount,
+        usedCells: LARGE_SHEET_SPEC.usedCellCount,
+        formulas: LARGE_SHEET_SPEC.formulaCount,
+      },
+    };
+  },
+});

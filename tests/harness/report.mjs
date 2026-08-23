@@ -219,6 +219,13 @@ export function printSummary(summary) {
   console.log(
     `total ${totals.total}  pass ${totals.pass}  fail ${totals.fail}  timeout ${totals.timeout}  skipped ${totals.skipped}`,
   );
+  if (summary.slowestSteps?.length) {
+    console.log("");
+    console.log("slowest actions");
+    for (const entry of summary.slowestSteps.slice(0, 5)) {
+      console.log(`  ${String(entry.durationMs).padStart(10)} ms  ${entry.name.slice(0, 78)}`);
+    }
+  }
   if (summary.nearTimeout.length) {
     console.log("");
     console.log(
@@ -239,7 +246,89 @@ export async function clearShards() {
   await rm(SHARD_DIR, { recursive: true, force: true });
 }
 
+function matches(entry, filter) {
+  if (!filter) return true;
+  const needle = filter.toLowerCase();
+  return [entry.scenario, entry.suite, entry.type, entry.file].some((value) =>
+    String(value || "")
+      .toLowerCase()
+      .includes(needle),
+  );
+}
+
+export function printSteps(summary, filter) {
+  const scenarios = summary.results.filter((record) => record.steps?.length && matches(record, filter));
+  if (!scenarios.length) {
+    console.log(filter ? `no timed actions match "${filter}"` : "no timed actions recorded");
+    return;
+  }
+  for (const record of scenarios) {
+    console.log("");
+    console.log(`${record.type}/${record.suite}  ${record.scenario}`);
+    const setup = record.setup ? `  setup ${record.setup.durationMs} ms (${record.setup.label})` : "";
+    console.log(`  body ${record.durationMs} ms${setup}`);
+    for (const entry of record.steps) {
+      const flag = entry.status === "pass" ? " " : "!";
+      console.log(`   ${flag} ${String(entry.durationMs).padStart(10)} ms  ${entry.name}`);
+    }
+  }
+}
+
+export function printFailures(summary, filter) {
+  const failed = summary.results.filter((record) => record.status !== "pass" && matches(record, filter));
+  console.log("");
+  if (!failed.length) {
+    console.log("no failures");
+    return;
+  }
+  console.log(`failures (${failed.length}):`);
+  for (const record of failed) {
+    console.log(`  ${record.status.toUpperCase()}  ${record.type}/${record.suite}  ${record.scenario}`);
+    if (record.error) console.log(`         ${record.error.message.split("\n")[0]}`);
+    console.log(`         ${record.file}`);
+  }
+}
+
+export async function printTrend(filter) {
+  let history;
+  try {
+    history = JSON.parse(await readFile(path.join(RESULTS_DIR, "history.json"), "utf8"));
+  } catch {
+    console.log("no history recorded yet");
+    return;
+  }
+  const entries = Object.values(history.scenarios).filter((entry) => matches(entry, filter));
+  if (!entries.length) {
+    console.log(filter ? `no scenarios match "${filter}"` : "no scenarios recorded");
+    return;
+  }
+  console.log("");
+  console.log(`duration trend, newest first (last ${history.limit} runs)`);
+  for (const entry of entries.sort((a, b) => (b.runs[0]?.durationMs || 0) - (a.runs[0]?.durationMs || 0))) {
+    const series = entry.runs.map((run) => `${run.status === "pass" ? "" : "!"}${run.durationMs}`).join("  ");
+    console.log("");
+    console.log(`  ${entry.type}/${entry.suite}  ${entry.scenario}`);
+    console.log(`    ${series}`);
+  }
+}
+
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const summary = await writeReport();
-  printSummary(summary);
+  const argv = process.argv.slice(2);
+  const has = (flag) => argv.includes(flag);
+  const valueOf = (flag) => {
+    const index = argv.indexOf(flag);
+    return index >= 0 ? argv[index + 1] : null;
+  };
+  const filter = valueOf("--scenario");
+  const viewing = has("--steps") || has("--trend") || has("--failed");
+
+  // Viewing flags read the last report; without them the shards are merged anew.
+  const summary = viewing
+    ? JSON.parse(await readFile(path.join(RESULTS_DIR, "summary.json"), "utf8"))
+    : await writeReport();
+
+  if (!viewing) printSummary(summary);
+  if (has("--failed")) printFailures(summary, filter);
+  if (has("--steps")) printSteps(summary, filter);
+  if (has("--trend")) await printTrend(filter);
 }

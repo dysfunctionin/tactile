@@ -1,6 +1,7 @@
 import { expect } from "@playwright/test";
 
 import { defineSuite } from "../../harness/playwright.mjs";
+import { largeSheetFile } from "../../scenarios/large-sheet.mjs";
 
 const scenario = defineSuite({ type: "e2e", suite: "overlay-surfaces" });
 
@@ -179,39 +180,48 @@ scenario("row and column insertion visibly shifts sheet cells", async ({ page })
   await expect(page.locator(".object-statusbar")).toContainText("257 × 65");
 });
 
-scenario("row and column insertion stays visible in a filtered grouped sheet", async ({ page }) => {
-  await page.goto("/");
-  await page
-    .locator('input[type="file"][accept*=".json"]')
-    .setInputFiles("tests/performance/benchmarks/.generated/tactile-250k/fixture.json");
-  await expect(page.locator('[data-object-id="perf-root-sheet"][data-cell-address="A1"]')).toBeVisible({
-    timeout: 120_000,
-  });
+scenario(
+  "row and column insertion stays visible in a filtered grouped sheet",
+  { setup: largeSheetFile },
+  async ({ page, artifactPath, spec }) => {
+    const rootCell = (address) =>
+      page.locator(`[data-object-id="${spec.rootSheetId}"][data-cell-address="${address}"]`);
+    const { rootRows, rootColumns } = spec;
 
-  const cellA1 = page.locator('[data-object-id="perf-root-sheet"][data-cell-address="A1"]');
-  await cellA1.click({ button: "right" });
-  let menu = page.getByRole("menu", { name: "Commands for A1" });
-  await selectRowColumnCommand(menu, "Insert row above");
-  await expect(page.locator(".object-statusbar")).toContainText("501 × 200", { timeout: 120_000 });
-  await expect(page.locator('[data-object-id="perf-root-sheet"][data-cell-address="A1"]')).toBeEmpty();
+    await page.goto("/");
+    await page.locator('input[type="file"][accept*=".json"]').setInputFiles(artifactPath);
+    await expect(rootCell("A1")).toBeVisible({ timeout: 120_000 });
 
-  await page.locator('[data-object-id="perf-root-sheet"][data-cell-address="A1"]').click({ button: "right" });
-  menu = page.getByRole("menu", { name: "Commands for A1" });
-  await selectRowColumnCommand(menu, "Insert column left");
-  await expect(page.locator(".object-statusbar")).toContainText("501 × 201", { timeout: 120_000 });
-  await expect(page.locator('[data-object-id="perf-root-sheet"][data-cell-address="A1"]')).toBeEmpty();
+    await rootCell("A1").click({ button: "right" });
+    let menu = page.getByRole("menu", { name: "Commands for A1" });
+    await selectRowColumnCommand(menu, "Insert row above");
+    await expect(page.locator(".object-statusbar")).toContainText(`${rootRows + 1} × ${rootColumns}`, {
+      timeout: 120_000,
+    });
+    await expect(rootCell("A1")).toBeEmpty();
 
-  await page.locator('[data-object-id="perf-root-sheet"][data-cell-address="A1"]').click({ button: "right" });
-  menu = page.getByRole("menu", { name: "Commands for A1" });
-  await selectRowColumnCommand(menu, "Delete row");
-  await expect(page.locator(".object-statusbar")).toContainText("500 × 201", { timeout: 120_000 });
+    await rootCell("A1").click({ button: "right" });
+    menu = page.getByRole("menu", { name: "Commands for A1" });
+    await selectRowColumnCommand(menu, "Insert column left");
+    await expect(page.locator(".object-statusbar")).toContainText(`${rootRows + 1} × ${rootColumns + 1}`, {
+      timeout: 120_000,
+    });
+    await expect(rootCell("A1")).toBeEmpty();
 
-  await page.locator('[data-object-id="perf-root-sheet"][data-cell-address="A1"]').click({ button: "right" });
-  menu = page.getByRole("menu", { name: "Commands for A1" });
-  await selectRowColumnCommand(menu, "Delete column");
-  await expect(page.locator(".object-statusbar")).toContainText("500 × 200", { timeout: 120_000 });
-  await expect(page.locator('[data-object-id="perf-root-sheet"][data-cell-address="A1"]')).toContainText("Layer one");
-});
+    await rootCell("A1").click({ button: "right" });
+    menu = page.getByRole("menu", { name: "Commands for A1" });
+    await selectRowColumnCommand(menu, "Delete row");
+    await expect(page.locator(".object-statusbar")).toContainText(`${rootRows} × ${rootColumns + 1}`, {
+      timeout: 120_000,
+    });
+
+    await rootCell("A1").click({ button: "right" });
+    menu = page.getByRole("menu", { name: "Commands for A1" });
+    await selectRowColumnCommand(menu, "Delete column");
+    await expect(page.locator(".object-statusbar")).toContainText(`${rootRows} × ${rootColumns}`, { timeout: 120_000 });
+    await expect(rootCell("A1")).toContainText("Row-0001");
+  },
+);
 
 scenario("settings keeps the workspace sharp behind its panel", async ({ page }) => {
   await page.goto("/");

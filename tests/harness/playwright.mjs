@@ -5,6 +5,7 @@ import { test as playwrightTest } from "@playwright/test";
 import { STATUS, assertType, createRecord, createStepRecorder, roundMs, timeoutFor, typeSelected } from "./schema.mjs";
 import { appendRecord, currentRunId, repoRelative } from "./writer.mjs";
 import { callerFile } from "./caller.mjs";
+import { instrumentBrowser } from "./browser-actions.mjs";
 
 class ScenarioTimeoutError extends Error {
   constructor(timeoutMs) {
@@ -63,8 +64,9 @@ export function defineSuite({ type = "e2e", suite, setup = null }) {
         }
         // Timed from here so the recorded duration matches what the timeout guards.
         bodyStarted = performance.now();
+        const timedPage = instrumentBrowser(page, step);
         await withTimeout(
-          Promise.resolve(body({ page, context, browserName, ...prepared, step, testInfo, scenario: name })),
+          Promise.resolve(body({ page: timedPage, context, browserName, ...prepared, step, testInfo, scenario: name })),
           timeoutMs,
         );
       } catch (caught) {

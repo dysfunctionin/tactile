@@ -1,6 +1,8 @@
 import process from "node:process";
 import { performance } from "node:perf_hooks";
 
+import { instrumentObject } from "./instrument.mjs";
+
 export const SCHEMA_VERSION = 1;
 
 export const TEST_TYPES = Object.freeze([
@@ -68,6 +70,7 @@ export function createStepRecorder() {
       steps.push({ name, status, durationMs: roundMs(performance.now() - started) });
     }
   }
+  step.instrument = (target, label) => instrumentObject(target, step, label);
   return { step, steps };
 }
 
