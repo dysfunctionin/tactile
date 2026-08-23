@@ -34,8 +34,16 @@ test("engine leaves a range formula untouched when an outside cell changes", () 
   const engine = engineWithRanges();
   engine.updateCell("D5", { value: "99" });
   const evaluated = engine.lastCalculation.evaluatedAddresses;
-  assert.equal(evaluated.includes("E1"), false, `E1 should not re-evaluate for an outside edit: ${evaluated.join(",")}`);
-  assert.equal(evaluated.includes("F1"), false, `F1 should not re-evaluate for an outside edit: ${evaluated.join(",")}`);
+  assert.equal(
+    evaluated.includes("E1"),
+    false,
+    `E1 should not re-evaluate for an outside edit: ${evaluated.join(",")}`,
+  );
+  assert.equal(
+    evaluated.includes("F1"),
+    false,
+    `F1 should not re-evaluate for an outside edit: ${evaluated.join(",")}`,
+  );
 });
 
 test("multi-column ranges re-evaluate only on column-inside edits", () => {

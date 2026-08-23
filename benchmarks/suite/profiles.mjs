@@ -70,14 +70,8 @@ function makeLowSheet({ id, title, rows, columns, sheetIndex, embedAt, formulas 
   for (let row = 0; row < rows; row += 1) {
     for (let column = 0; column < columns; column += 1) {
       const embed = embedAt?.(row, column) || null;
-      const formula =
-        formulas && !embed && column === 7
-          ? `=SUM(B${row + 1}:E${row + 1})`
-          : "";
-      const style =
-        row === 0
-          ? { bold: true, align: column === 0 ? "left" : "center" }
-          : undefined;
+      const formula = formulas && !embed && column === 7 ? `=SUM(B${row + 1}:E${row + 1})` : "";
+      const style = row === 0 ? { bold: true, align: column === 0 ? "left" : "center" } : undefined;
       const cell = makeCell(row, column, {
         value: embed ? "" : lowValue(row, column),
         formula,
@@ -126,10 +120,8 @@ export function createLowStressWorkspace() {
     columns: spec.rootColumns,
     sheetIndex: 0,
     embedAt: (row, column) => {
-      if (row === 0 && column === 0)
-        return { type: "sheet", objectId: layerIds[0], title: "Layer one" };
-      if (row === 1 && column === 1)
-        return { type: "markdown", objectId: markdownId, title: "Notes document" };
+      if (row === 0 && column === 0) return { type: "sheet", objectId: layerIds[0], title: "Layer one" };
+      if (row === 1 && column === 1) return { type: "markdown", objectId: markdownId, title: "Notes document" };
       return null;
     },
   });
@@ -159,9 +151,7 @@ export function createLowStressWorkspace() {
     columns: spec.supportColumns,
     sheetIndex: 9,
     embedAt: (row, column) =>
-      row === 0 && column === 0
-        ? { type: "markdown", objectId: markdownId, title: "Notes document" }
-        : null,
+      row === 0 && column === 0 ? { type: "markdown", objectId: markdownId, title: "Notes document" } : null,
   });
 
   objects[markdownId] = {
@@ -233,8 +223,7 @@ export function validateLowStressWorkspace(workspace) {
     format: workspace?.format === "tactile",
     version: workspace?.version === 4,
     objectCountInRange:
-      Object.keys(workspace?.objects || {}).length >= 50 &&
-      Object.keys(workspace?.objects || {}).length <= 100,
+      Object.keys(workspace?.objects || {}).length >= 50 && Object.keys(workspace?.objects || {}).length <= 100,
     hasRoot: Boolean(workspace?.objects?.[LOW_STRESS_SPEC.rootSheetId]),
     sheetCount: sheetObjects.length >= 8,
     usedCellsInRange: usedCells >= 1500 && usedCells <= 12000,
@@ -257,9 +246,7 @@ function layerIdsEmbedded(workspace) {
 }
 
 export function profileFingerprint(profile, workspace) {
-  return profile === "high"
-    ? fixtureFingerprint(workspace)
-    : fixtureFingerprint(workspace);
+  return profile === "high" ? fixtureFingerprint(workspace) : fixtureFingerprint(workspace);
 }
 
 export async function writeProfileFixture(profile, outputDir) {

@@ -23,7 +23,9 @@ async function writeFolder(workspace, outDir) {
     }
   }
   console.log(`Wrote ${Object.keys(pkg.files).length} files to ${outDir}`);
-  console.log(`  workspace.json (full, ${Math.round(JSON.stringify(workspace).length / 1024)} KB) + ${Object.keys(pkg.files).filter((p) => p.startsWith("objects/")).length} object files`);
+  console.log(
+    `  workspace.json (full, ${Math.round(JSON.stringify(workspace).length / 1024)} KB) + ${Object.keys(pkg.files).filter((p) => p.startsWith("objects/")).length} object files`,
+  );
 }
 
 const lowOut = path.resolve("benchmarks/.generated/native-workspaces/low");

@@ -24,11 +24,11 @@ export async function ensureNativeBinary({ rebuild = false, log = console.log } 
   });
   log("native: cargo build --release (first run can take several minutes)…");
   await new Promise((resolve, reject) => {
-    const child = spawn(
-      "cargo",
-      ["build", "--release", "--manifest-path", path.resolve("src-tauri", "Cargo.toml")],
-      { cwd: process.cwd(), stdio: "inherit", shell: true },
-    );
+    const child = spawn("cargo", ["build", "--release", "--manifest-path", path.resolve("src-tauri", "Cargo.toml")], {
+      cwd: process.cwd(),
+      stdio: "inherit",
+      shell: true,
+    });
     child.on("exit", (code) => (code === 0 ? resolve() : reject(new Error(`cargo build exited ${code}`))));
   });
   return { rebuilt: true, path: NATIVE_EXE_PATH };
