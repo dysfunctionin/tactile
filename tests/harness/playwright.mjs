@@ -2,7 +2,7 @@ import { performance } from "node:perf_hooks";
 
 import { test as playwrightTest } from "@playwright/test";
 
-import { STATUS, assertType, createRecord, createStepRecorder, roundMs, timeoutFor, typeSelected } from "./schema.mjs";
+import { STATUS, assertType, createRecord, createStepRecorder, roundMs, selectedRuntime, timeoutFor, typeSelected } from "./schema.mjs";
 import { appendRecord, currentRunId, repoRelative } from "./writer.mjs";
 import { callerFile } from "./caller.mjs";
 import { instrumentBrowser } from "./browser-actions.mjs";
@@ -39,6 +39,7 @@ export function defineSuite({ type = "e2e", suite, setup = null }) {
 
     const scenarioSetup = options.setup ?? setup;
     const timeoutMs = timeoutFor(type, options.timeoutMs);
+    const runtime = selectedRuntime(type);
     if (!typeSelected(type)) return undefined;
     const file = repoRelative(options.file || callerFile());
 
@@ -86,6 +87,7 @@ export function defineSuite({ type = "e2e", suite, setup = null }) {
             suite,
             scenario: name,
             file: file || repoRelative(testInfo?.file),
+            runtime,
             status,
             durationMs: roundMs(performance.now() - bodyStarted),
             timeoutMs,

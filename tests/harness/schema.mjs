@@ -3,7 +3,9 @@ import { performance } from "node:perf_hooks";
 
 import { instrumentObject } from "./instrument.mjs";
 
-export const SCHEMA_VERSION = 1;
+// 2 adds `runtime`, which also joins the history key, so older history cannot
+// be merged with new runs and is discarded on first report.
+export const SCHEMA_VERSION = 2;
 
 export const TEST_TYPES = Object.freeze([
   "unit",
@@ -22,6 +24,28 @@ export const STATUS = Object.freeze({
   TIMEOUT: "timeout",
   SKIPPED: "skipped",
 });
+
+// Which build a scenario measured. Headless suites exercise `src/core/` with no
+// platform adapter, so they are neither and stay "agnostic".
+export const RUNTIMES = Object.freeze(["web", "native", "agnostic"]);
+
+export const DEFAULT_RUNTIME = "agnostic";
+
+// Types that reach a platform adapter, so the same scenario can be measured per
+// runtime and the two results are not comparable to each other's budgets.
+export const RUNTIME_SENSITIVE_TYPES = Object.freeze(["e2e", "visual", "sites"]);
+
+export function assertRuntime(runtime) {
+  if (!RUNTIMES.includes(runtime)) {
+    throw new TypeError(`Unknown test runtime "${runtime}". Expected one of ${RUNTIMES.join(", ")}.`);
+  }
+  return runtime;
+}
+
+export function selectedRuntime(type) {
+  if (!RUNTIME_SENSITIVE_TYPES.includes(type)) return DEFAULT_RUNTIME;
+  return assertRuntime(process.env.TACTILE_TEST_RUNTIME || "web");
+}
 
 // Derived from a full green run: roughly four times the observed maximum per
 // type, with a 5s floor. Setup time is reported separately and not included.
@@ -102,6 +126,7 @@ export function createRecord({
   status,
   durationMs,
   timeoutMs,
+  runtime = DEFAULT_RUNTIME,
   setup = null,
   steps = null,
   metrics = null,
@@ -116,6 +141,7 @@ export function createRecord({
     suite,
     scenario,
     file,
+    runtime: assertRuntime(runtime),
     status,
     durationMs: duration,
     timeoutMs,

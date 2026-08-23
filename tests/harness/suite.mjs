@@ -3,7 +3,7 @@ import { performance } from "node:perf_hooks";
 
 import { blankApp } from "../scenarios/blank-app.mjs";
 
-import { STATUS, assertType, createRecord, createStepRecorder, roundMs, timeoutFor, typeSelected } from "./schema.mjs";
+import { STATUS, assertType, createRecord, createStepRecorder, roundMs, selectedRuntime, timeoutFor, typeSelected } from "./schema.mjs";
 import { appendRecord, currentRunId, repoRelative } from "./writer.mjs";
 import { callerFile } from "./caller.mjs";
 
@@ -41,6 +41,7 @@ export function defineSuite({ type, suite, setup: suiteSetup = blankApp }) {
 
     const setup = options.setup ?? suiteSetup;
     const timeoutMs = timeoutFor(type, options.timeoutMs);
+    const runtime = selectedRuntime(type);
     const file = repoRelative(options.file || callerFile());
 
     // The harness owns the timeout so status is Pass/Fail/Timeout everywhere;
@@ -81,6 +82,7 @@ export function defineSuite({ type, suite, setup: suiteSetup = blankApp }) {
             suite,
             scenario: name,
             file,
+            runtime,
             status,
             durationMs: roundMs(performance.now() - bodyStarted),
             timeoutMs,

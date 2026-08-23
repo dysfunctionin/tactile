@@ -190,6 +190,99 @@ export function compareBars(entries, { limit = 24 } = {}) {
 }
 
 /**
+ * The same scenario measured on each runtime, paired.
+ * Absolute cost is what matters here, so both bars share one scale and the
+ * ratio states which runtime won and by how much.
+ */
+export function runtimeCompare(entries, { limit = 20 } = {}) {
+  const figure = document.createElement("figure");
+  figure.className = "chart";
+  const caption = document.createElement("figcaption");
+  figure.append(caption);
+
+  const groups = new Map();
+  for (const [key, entry] of entries) {
+    const runtime = entry.runtime || "agnostic";
+    if (runtime === "agnostic") continue;
+    const duration = entry.runs[0]?.durationMs;
+    if (!Number.isFinite(duration)) continue;
+    const id = `${entry.type}|${entry.suite}|${entry.scenario}`;
+    const group = groups.get(id) || { scenario: entry.scenario, type: entry.type, measured: new Map() };
+    group.measured.set(runtime, { key, duration, status: entry.runs[0].status });
+    groups.set(id, group);
+  }
+
+  const slowest = (group) => Math.max(...[...group.measured.values()].map((measurement) => measurement.duration));
+  const paired = [...groups.values()]
+    .filter((group) => group.measured.size >= 2)
+    .sort((a, b) => slowest(b) - slowest(a))
+    .slice(0, limit);
+
+  caption.textContent = `${paired.length} scenario${paired.length === 1 ? "" : "s"} measured on more than one runtime`;
+
+  if (!paired.length) {
+    const note = document.createElement("p");
+    note.className = "chart-empty";
+    note.textContent = "No scenario has been measured on both runtimes yet. Run test:e2e:web and test:e2e:native.";
+    figure.append(note);
+    return figure;
+  }
+
+  const list = document.createElement("ul");
+  list.className = "bars runtime-compare";
+
+  for (const group of paired) {
+    const measurements = [...group.measured.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+    const max = Math.max(...measurements.map(([, m]) => m.duration)) || 1;
+    const min = Math.min(...measurements.map(([, m]) => m.duration)) || 1;
+    const fastest = measurements.find(([, m]) => m.duration === min);
+
+    const item = document.createElement("li");
+    item.className = "runtime-group";
+
+    const heading = document.createElement("p");
+    heading.className = "runtime-group-title";
+    heading.textContent = group.scenario;
+    item.append(heading);
+
+    for (const [runtime, measurement] of measurements) {
+      const row = document.createElement("div");
+      row.className = "runtime-row";
+
+      const label = document.createElement("a");
+      label.className = "bar-label";
+      label.href = `#/scenario/${encodeURIComponent(measurement.key)}`;
+      label.textContent = runtime;
+
+      const track = document.createElement("span");
+      track.className = "bar-track";
+      const fill = document.createElement("span");
+      fill.className = `bar-fill${measurement.status === "pass" ? "" : " is-failed"}${runtime === fastest?.[0] ? " is-fastest" : ""}`;
+      fill.style.width = `${Math.max(1, (measurement.duration / max) * 100)}%`;
+      track.append(fill);
+
+      const value = document.createElement("span");
+      value.className = "bar-value";
+      value.textContent = formatMs(measurement.duration);
+
+      row.append(label, track, value);
+      item.append(row);
+    }
+
+    const verdict = document.createElement("p");
+    verdict.className = "runtime-verdict";
+    verdict.textContent =
+      max === min ? "no measurable difference" : `${fastest[0]} is ${(max / min).toFixed(2)}x faster`;
+    item.append(verdict);
+
+    list.append(item);
+  }
+
+  figure.append(list);
+  return figure;
+}
+
+/**
  * Several scenarios on one axis, each normalized to its own oldest retained run.
  * Absolute durations differ by orders of magnitude, so relative change is what
  * makes them comparable.

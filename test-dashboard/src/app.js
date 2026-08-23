@@ -1,6 +1,6 @@
 import { config } from "./config.js";
 import { describeFailure, loadResults, readSource, writeSource } from "./data.js";
-import { compareBars, durationChart, relativeTrend, stepBars } from "./charts.js";
+import { compareBars, durationChart, relativeTrend, runtimeCompare, stepBars } from "./charts.js";
 import { cleanDiagnostic, createAgentContext } from "./agent-context.js";
 import {
   formatMs,
@@ -22,6 +22,7 @@ let state = {
   latestRunId: null,
   filter: "",
   graphType: null,
+  graphRuntime: "all",
 };
 
 function h(tag, className, text) {
@@ -623,7 +624,33 @@ function renderGraph(main) {
   }
   main.append(filters);
 
-  const scoped = state.graphType ? state.entries.filter(([, entry]) => entry.type === state.graphType) : state.entries;
+  // Headless scenarios reach no platform adapter, so they carry no runtime and
+  // would otherwise vanish whenever a runtime is selected.
+  const runtimes = [...new Set(state.entries.map(([, entry]) => entry.runtime).filter(Boolean))]
+    .filter((runtime) => runtime !== "agnostic")
+    .sort();
+  if (runtimes.length) {
+    const runtimeFilters = h("div", "graph-filters");
+    runtimeFilters.append(h("span", "chip-label", "runtime"));
+    const options = ["all", ...runtimes, ...(runtimes.length > 1 ? ["compare"] : [])];
+    for (const option of options) {
+      const chip = h("button", `chip${state.graphRuntime === option ? " is-active" : ""}`, option);
+      chip.type = "button";
+      chip.addEventListener("click", () => {
+        state.graphRuntime = option;
+        route();
+      });
+      runtimeFilters.append(chip);
+    }
+    main.append(runtimeFilters);
+  }
+
+  const byType = state.graphType ? state.entries.filter(([, entry]) => entry.type === state.graphType) : state.entries;
+  // Compare keeps every runtime so the same scenario shows one series each.
+  const scoped =
+    state.graphRuntime === "all" || state.graphRuntime === "compare"
+      ? byType
+      : byType.filter(([, entry]) => (entry.runtime || "agnostic") === state.graphRuntime);
 
   const trend = section(
     "Movement across runs",
@@ -631,6 +658,15 @@ function renderGraph(main) {
   );
   trend.append(relativeTrend(scoped));
   main.append(trend);
+
+  if (state.graphRuntime === "compare") {
+    const runtimes = section(
+      "Web against native",
+      "The same scenario measured on each runtime, on one scale. This is the only view where the native claim can be checked.",
+    );
+    runtimes.append(runtimeCompare(scoped));
+    main.append(runtimes);
+  }
 
   const compare = section(
     "Cost comparison",

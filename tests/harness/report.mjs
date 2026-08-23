@@ -6,7 +6,7 @@ import { execFile } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
-import { DEFAULT_TIMEOUT_RATIO_LIMIT, HISTORY_LIMIT, SCHEMA_VERSION, STATUS, roundMs } from "./schema.mjs";
+import { DEFAULT_RUNTIME, DEFAULT_TIMEOUT_RATIO_LIMIT, HISTORY_LIMIT, SCHEMA_VERSION, STATUS, roundMs } from "./schema.mjs";
 import { RESULTS_DIR, SHARD_DIR, currentRunId } from "./writer.mjs";
 
 const run = promisify(execFile);
@@ -73,10 +73,26 @@ function groupByType(records) {
   return byType;
 }
 
+function groupByRuntime(records) {
+  const byRuntime = {};
+  for (const record of records) {
+    const runtime = record.runtime || DEFAULT_RUNTIME;
+    const bucket = (byRuntime[runtime] ??= { total: 0, pass: 0, fail: 0, timeout: 0, skipped: 0, durationMs: 0 });
+    bucket.total += 1;
+    if (record.status === STATUS.PASS) bucket.pass += 1;
+    else if (record.status === STATUS.TIMEOUT) bucket.timeout += 1;
+    else if (record.status === STATUS.SKIPPED) bucket.skipped += 1;
+    else bucket.fail += 1;
+    bucket.durationMs = roundMs(bucket.durationMs + (record.durationMs || 0));
+  }
+  return byRuntime;
+}
+
 export async function writeReport({ ratioLimit = DEFAULT_TIMEOUT_RATIO_LIMIT } = {}) {
   const records = await collectRecords();
   const totals = tally(records);
   const byType = groupByType(records);
+  const byRuntime = groupByRuntime(records);
   const durations = records.map((record) => record.durationMs || 0);
 
   const summary = {
@@ -92,6 +108,7 @@ export async function writeReport({ ratioLimit = DEFAULT_TIMEOUT_RATIO_LIMIT } =
     },
     totals,
     byType,
+    byRuntime,
     ratioLimit,
     durationMs: roundMs(durations.reduce((sum, value) => sum + value, 0)),
     slowest: [...records]
@@ -127,7 +144,9 @@ export async function writeReport({ ratioLimit = DEFAULT_TIMEOUT_RATIO_LIMIT } =
 }
 
 function scenarioKey(record) {
-  return `${record.type}|${record.suite}|${record.scenario}`;
+  // Runtime is part of the identity: the same scenario measured on web and on
+  // native are two series, and sharing a key would interleave them into one.
+  return `${record.type}|${record.suite}|${record.scenario}|${record.runtime || DEFAULT_RUNTIME}`;
 }
 
 function retainedError(error) {
@@ -142,7 +161,11 @@ function retainedError(error) {
 
 async function readHistory() {
   try {
-    return JSON.parse(await readFile(path.join(RESULTS_DIR, "history.json"), "utf8"));
+    const history = JSON.parse(await readFile(path.join(RESULTS_DIR, "history.json"), "utf8"));
+    // Scenario keys changed shape with the schema, so older entries would graph
+    // as a different scenario rather than an earlier run of this one.
+    if (history.schemaVersion !== SCHEMA_VERSION) return { runs: [], scenarios: {} };
+    return history;
   } catch {
     return { runs: [], scenarios: {} };
   }
@@ -178,6 +201,7 @@ async function writeHistory(summary, records) {
       type: record.type,
       suite: record.suite,
       scenario: record.scenario,
+      runtime: record.runtime || DEFAULT_RUNTIME,
       file: record.file,
       runs: [],
     });
