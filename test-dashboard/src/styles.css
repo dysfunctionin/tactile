@@ -723,6 +723,45 @@ summary:focus-visible {
   font-size: 12px;
 }
 
+.run-cause-details summary {
+  cursor: pointer;
+  color: var(--ink);
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
+.run-cause-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 520px;
+  margin-top: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--paper);
+}
+
+.run-cause-body pre {
+  max-height: 240px;
+  margin: 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.run-cause-stack {
+  padding-top: 8px;
+  border-top: 1px dashed var(--line);
+}
+
+.run-cause-empty {
+  color: var(--steady);
+}
+
 .chart {
   margin: 0;
   display: flex;

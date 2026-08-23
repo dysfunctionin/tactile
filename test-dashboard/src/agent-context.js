@@ -32,7 +32,9 @@ export function createAgentContext(entry, summary) {
   const metrics = scenarioMetrics(entry);
   const steps = stepComparison(entry);
   const result = latestResult(summary, entry);
-  const error = entry.runs[0]?.error || result?.error;
+  const errorsByRun = entry.runs
+    .map((run, index) => ({ run, error: run.error || (index === 0 ? result?.error : null) }))
+    .filter(({ error }) => error);
   const lines = [
     "# Tactile test scenario context",
     "",
@@ -85,24 +87,29 @@ export function createAgentContext(entry, summary) {
     "",
     "## Retained runs",
     table(
-      ["Run", "Finished (UTC)", "Status", "Duration", "Timeout ratio"],
+      ["Run", "Finished (UTC)", "Status", "Cause", "Duration", "Timeout ratio"],
       entry.runs.map((run) => [
         run.runId,
         new Date(run.finishedAt).toISOString(),
         run.status,
+        cleanDiagnostic(run.error?.message).split(/\r?\n/).find(Boolean) ||
+          (run.status === "pass" ? "—" : "not retained"),
         formatMs(run.durationMs),
         Number.isFinite(run.timeoutRatio) ? run.timeoutRatio.toFixed(3) : "—",
       ]),
     ),
   );
 
-  if (error) {
-    const errorText = [error.failureType, error.message, error.stack]
-      .filter(Boolean)
-      .join("\n")
-      .replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, "")
-      .replaceAll("```", "''' ");
-    lines.push("", "## Latest failure cause", "```text", errorText, "```");
+  if (errorsByRun.length) {
+    lines.push("", "## Failure causes by run");
+    for (const { run, error: runError } of errorsByRun) {
+      const errorText = [runError.failureType, runError.message, runError.stack]
+        .filter(Boolean)
+        .join("\n")
+        .replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, "")
+        .replaceAll("```", "''' ");
+      lines.push("", `### ${run.runId}`, "```text", errorText, "```");
+    }
   }
 
   lines.push(

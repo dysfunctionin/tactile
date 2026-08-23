@@ -131,6 +131,21 @@ function failureSummary(error) {
     .find((line) => line.trim());
 }
 
+function runCause(entry, run) {
+  if (run.status === "pass") return h("span", "run-cause-empty", "—");
+
+  const error = errorForRun(entry, run);
+  if (!error) return h("span", "run-cause-empty", "Failure detail was not retained for this run");
+
+  const details = h("details", "run-cause-details");
+  details.append(h("summary", null, failureSummary(error) || `${run.status} without an error message`));
+  const body = h("div", "run-cause-body");
+  body.append(h("pre", null, cleanDiagnostic(error.message)));
+  if (error.stack) body.append(h("pre", "run-cause-stack", cleanDiagnostic(error.stack)));
+  details.append(body);
+  return details;
+}
+
 function failureCause(entry) {
   const run = entry.runs[0];
   if (!run || run.status === "pass") return null;
@@ -245,14 +260,9 @@ function scenarioDetail(entry) {
     const status = h("td");
     status.append(statusPill(run.status));
     row.append(status);
-    const error = errorForRun(entry, run);
-    row.append(
-      h(
-        "td",
-        "run-cause",
-        run.status === "pass" ? "—" : failureSummary(error) || "Failure detail was not retained for this run",
-      ),
-    );
+    const cause = h("td", "run-cause");
+    cause.append(runCause(entry, run));
+    row.append(cause);
     row.append(h("td", "numeric", formatMs(run.durationMs)));
     row.append(h("td", "numeric", run.timeoutRatio === null ? "—" : run.timeoutRatio.toFixed(3)));
     runBody.append(row);
