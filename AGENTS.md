@@ -16,16 +16,17 @@ Do not scan all Markdown, source, tests, or history. Expand context one concrete
 
 Resolve ownership here before searching.
 
-| Path            | Owns                                                                   |
-| --------------- | ---------------------------------------------------------------------- |
-| `src/app/`      | Entry point and composition root                                       |
-| `src/core/`     | Headless domain: engine, sheet math, workspace, compatibility, workers |
-| `src/ui/`       | React components, object renderers, shell, styles                      |
-| `src/platform/` | Browser, Tauri, and code-runtime adapters                              |
-| `src-tauri/`    | Rust shell, native persistence, packaging                              |
-| `marketplace/`  | Plugin packages, host SDK, generated catalog                           |
-| `tests/`        | `harness/` templates, `scenarios/` setup, `cases/` tests               |
-| `scripts/`      | Build, marketplace, and release automation                             |
+| Path              | Owns                                                                   |
+| ----------------- | ---------------------------------------------------------------------- |
+| `src/app/`        | Entry point and composition root                                       |
+| `src/core/`       | Headless domain: engine, sheet math, workspace, compatibility, workers |
+| `src/ui/`         | React components, object renderers, shell, styles                      |
+| `src/platform/`   | Browser, Tauri, and code-runtime adapters                              |
+| `src-tauri/`      | Rust shell, native persistence, packaging                              |
+| `marketplace/`    | Plugin packages, host SDK, generated catalog                           |
+| `tests/`          | `harness/` templates, `scenarios/` setup, `cases/` tests               |
+| `test-dashboard/` | Static, dependency-free dashboard for test latency trends              |
+| `scripts/`        | Build, marketplace, and release automation                             |
 
 Headless logic belongs in `src/core/`; React belongs in `src/ui/`. Choose the folder before loading callers.
 

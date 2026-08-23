@@ -7,6 +7,8 @@ Use with `.agents/workflows/testing.md` for QA, performance, or certification ta
 - Runs emit `test-results/results.ndjson`, `summary.json`, and `history.json` with status, duration, timeout, per-action steps, and setup detail.
 - Browser scenarios are timed per interaction automatically; `history.json` keeps the last five runs for trend comparison.
 - Read results with `npm run test:report`, `test:steps`, `test:trend`, and `test:failures` rather than ad-hoc scripts.
+- `npm run dashboard` charts the same data at http://127.0.0.1:4300/test-dashboard/; read `test-dashboard/AGENTS.md` before editing it.
+- The dashboard carries no dependencies and never imports `src/`; keep it liftable into its own repository.
 - Browser interaction uses the Playwright configuration under `config/playwright/`.
 - Performance budgets live in `tests/harness/measurement.mjs` and are asserted by the `performance` scenarios.
 - Interaction latency on heavy workspaces is covered by `tests/cases/e2e/large-sheet-interactions.e2e.spec.mjs`; the first interaction after a large import costs far more than later ones, so compare like with like.
