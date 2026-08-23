@@ -20,8 +20,8 @@ import type {
   WorkspaceCatalog,
 } from "./contracts.ts";
 import { DatasetAggregateQueue } from "./aggregateQueue.ts";
+import { sheetColumnIndex, sheetColumnName } from "./sheetColumns.js";
 
-const COLUMN_PREFIX = "sheet-column:";
 const SUMMARY_ROWS = 64;
 
 interface NumericSummary {
@@ -51,14 +51,11 @@ function mergeSummary(target: NumericSummary, source: NumericSummary): void {
 }
 
 export function sheetSnapshotColumnId(index: number): ColumnId {
-  return asColumnId(`${COLUMN_PREFIX}${index}`);
+  return asColumnId(sheetColumnName(index));
 }
 
 function columnIndex(columnId: ColumnId): number | null {
-  const value = String(columnId);
-  if (!value.startsWith(COLUMN_PREFIX)) return null;
-  const index = Number(value.slice(COLUMN_PREFIX.length));
-  return Number.isSafeInteger(index) && index >= 0 ? index : null;
+  return sheetColumnIndex(columnId);
 }
 
 export class SheetSnapshotDatasetStore implements DatasetStore {
