@@ -11,12 +11,11 @@ export default tseslint.config(
     ignores: [
       "dist/**",
       "marketplace/dist/**",
-      "perf-dashboard/**/dist/**",
       "node_modules/**",
       "tmp/**",
       "coverage/**",
       "src-tauri/target/**",
-      "benchmarks/.generated/**",
+      "tests/performance/benchmarks/.generated/**",
       "tests/visual/baselines/**",
       "test-results/**",
       "test-results-sol-max*/**",
@@ -24,13 +23,7 @@ export default tseslint.config(
   },
   eslint.configs.recommended,
   {
-    files: [
-      "src/**/*.js",
-      "src/**/*.jsx",
-      "worker/**/*.js",
-      "perf-dashboard/app/src/**/*.js",
-      "perf-dashboard/app/src/**/*.jsx",
-    ],
+    files: ["src/**/*.js", "src/**/*.jsx", "worker/**/*.js"],
     languageOptions: {
       globals: {
         ...globals.browser,
@@ -47,15 +40,7 @@ export default tseslint.config(
     },
   },
   {
-    files: [
-      "*.js",
-      "*.mjs",
-      "benchmarks/**/*.mjs",
-      "config/**/*.mjs",
-      "scripts/**/*.mjs",
-      "tests/**/*.mjs",
-      "src/compat/**/*.js",
-    ],
+    files: ["*.js", "*.mjs", "config/**/*.mjs", "scripts/**/*.mjs", "tests/**/*.mjs", "src/compat/**/*.js"],
     languageOptions: {
       ecmaVersion: "latest",
       sourceType: "module",

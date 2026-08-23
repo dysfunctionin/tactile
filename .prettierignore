@@ -3,7 +3,7 @@ dist
 tmp
 coverage
 src-tauri/target
-benchmarks/.generated
+tests/performance/benchmarks/.generated
 tests/visual/baselines
 test-results
 test-results-sol-max*

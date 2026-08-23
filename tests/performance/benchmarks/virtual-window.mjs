@@ -1,6 +1,6 @@
 import { performance } from "node:perf_hooks";
 
-import { buildAxisGeometry, buildVirtualRange, rangeContains } from "../src/objects/sheet/useVirtualSheet.js";
+import { buildAxisGeometry, buildVirtualRange, rangeContains } from "../../../src/objects/sheet/useVirtualSheet.js";
 
 const rowCount = 10_000;
 const columnCount = 256;

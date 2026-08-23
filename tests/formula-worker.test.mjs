@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createPerformanceWorkspace, FIXTURE_SPEC } from "../benchmarks/generate-fixture.mjs";
+import { createPerformanceWorkspace, FIXTURE_SPEC } from "./performance/benchmarks/generate-fixture.mjs";
 import {
   FormulaEngine,
   clearFormulaCaches,

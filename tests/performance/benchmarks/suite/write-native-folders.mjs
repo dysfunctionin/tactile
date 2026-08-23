@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import { buildPortablePackage } from "../../src/export.js";
+import { buildPortablePackage } from "../../../../src/export.js";
 import { createLowStressWorkspace } from "./profiles.mjs";
 import { createPerformanceWorkspace } from "../generate-fixture.mjs";
 
@@ -28,8 +28,8 @@ async function writeFolder(workspace, outDir) {
   );
 }
 
-const lowOut = path.resolve("benchmarks/.generated/native-workspaces/low");
-const highOut = path.resolve("benchmarks/.generated/native-workspaces/high");
+const lowOut = path.resolve("tests/performance/benchmarks/.generated/native-workspaces/low");
+const highOut = path.resolve("tests/performance/benchmarks/.generated/native-workspaces/high");
 
 await writeFolder(createLowStressWorkspace(), lowOut);
 await writeFolder(createPerformanceWorkspace(), highOut);

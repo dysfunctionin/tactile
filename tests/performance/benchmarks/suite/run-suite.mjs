@@ -26,10 +26,10 @@ import {
   createMeasurementInitScript,
   percentile,
   summarizeInstrumentation,
-} from "../../tests/performance/measurement.mjs";
+} from "../../measurement.mjs";
 
 const SUITE_SCHEMA_VERSION = 1;
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 const run = promisify(execFile);
 
 function parseArgs(argv) {
@@ -39,7 +39,7 @@ function parseArgs(argv) {
     server: "auto",
     port: 4180,
     label: "",
-    out: "perf-dashboard/app/public/data",
+    out: "evidence/performance/runs",
     build: false,
     headless: true,
     target: "browser",
@@ -460,7 +460,7 @@ async function main(argv = process.argv.slice(2)) {
   const args = parseArgs(argv);
   if (args.help) {
     console.log(
-      "Usage: node benchmarks/suite/run-suite.mjs [--profiles low,high] [--repeats 3] [--target browser|native] [--server auto|preview|dev] [--port 4174] [--cdp-port 9223] [--label <text>] [--out perf-dashboard/app/public/data] [--build] [--headed]",
+      "Usage: node tests/performance/benchmarks/suite/run-suite.mjs [--profiles low,high] [--repeats 3] [--target browser|native] [--server auto|preview|dev] [--port 4174] [--cdp-port 9223] [--label <text>] [--out evidence/performance/runs] [--build] [--headed]",
     );
     return;
   }

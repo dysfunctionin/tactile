@@ -5,7 +5,7 @@ import { formulaAddAction, addRowsAction, addColumnsAction, importFixture } from
 import { spawn } from "node:child_process";
 import { access } from "node:fs/promises";
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 async function exists(p) {
   try {
     await access(p);
@@ -49,9 +49,9 @@ async function loadPlaywright() {
   }
   throw new Error("playwright missing");
 }
-import { createMeasurementInitScript } from "../../tests/performance/measurement.mjs";
+import { createMeasurementInitScript } from "../../measurement.mjs";
 
-const fixture = await writeProfileFixture("low", path.join(ROOT, "benchmarks/.generated/tactile-low-suite"));
+const fixture = await writeProfileFixture("low", path.join(ROOT, "tests/performance/benchmarks/.generated/tactile-low-suite"));
 console.log(
   `low fixture ${fixture.fingerprint.slice(0, 12)} ${JSON.stringify(fixture.validation.counts)} path=${fixture.path}`,
 );

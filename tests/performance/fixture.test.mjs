@@ -6,7 +6,7 @@ import {
   createPerformanceWorkspace,
   fixtureFingerprint,
   validatePerformanceWorkspace,
-} from "../../benchmarks/generate-fixture.mjs";
+} from "./benchmarks/generate-fixture.mjs";
 
 test("performance fixture is the fixed 250,000-cell workspace", () => {
   const workspace = createPerformanceWorkspace();

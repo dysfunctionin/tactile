@@ -1,17 +1,17 @@
 import { createPerformanceWorkspace } from "../generate-fixture.mjs";
-import { normalizeWorkspace } from "../../src/model.js";
-import { createFormulaEngine } from "../../src/sheet/formulas.js";
-import { cellAddress } from "../../src/sheet/coordinates.js";
-import { removeSheetAxisCells, reorderSheetAxis, shiftCells } from "../../src/sheet/axisCells.js";
-import { autoRowHeightsIncremental } from "../../src/sheet/textMeasure.js";
-import { cloneHistoryWorkspace } from "../../src/core/history/snapshot.js";
-import { repairWorkspaceTopology } from "../../src/core/topology.js";
-import { recordCellChanges } from "../../src/objects/sheet/grid/cellChangeJournal.js";
-import { buildAxisGeometry, buildVirtualRange, rangeContains } from "../../src/objects/sheet/useVirtualSheet.js";
+import { normalizeWorkspace } from "../../../../src/model.js";
+import { createFormulaEngine } from "../../../../src/sheet/formulas.js";
+import { cellAddress } from "../../../../src/sheet/coordinates.js";
+import { removeSheetAxisCells, reorderSheetAxis, shiftCells } from "../../../../src/sheet/axisCells.js";
+import { autoRowHeightsIncremental } from "../../../../src/sheet/textMeasure.js";
+import { cloneHistoryWorkspace } from "../../../../src/core/history/snapshot.js";
+import { repairWorkspaceTopology } from "../../../../src/core/topology.js";
+import { recordCellChanges } from "../../../../src/objects/sheet/grid/cellChangeJournal.js";
+import { buildAxisGeometry, buildVirtualRange, rangeContains } from "../../../../src/objects/sheet/useVirtualSheet.js";
 
 const ROOT_SHEET_ID = "perf-root-sheet";
 
-// Fixture column map (see benchmarks/generate-fixture.mjs):
+// Fixture column map (see tests/performance/benchmarks/generate-fixture.mjs):
 //   A..J  plain values, K..ET plain filler, EU..GR (150..199) formulas.
 // K300 has no dependents; B300 feeds the row-local chain/fan-out/range bands;
 // B5 additionally sits inside the absolute $B$1:$B$32 aggregate ranges.

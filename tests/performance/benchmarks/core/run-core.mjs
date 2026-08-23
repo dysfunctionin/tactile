@@ -10,11 +10,11 @@ import os from "node:os";
 import { CASES, createContext } from "./cases.mjs";
 import { formatRow, runCase } from "./harness.mjs";
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 const run = promisify(execFile);
 
 function parseArgs(argv) {
-  const args = { gate: false, only: null, out: "perf-dashboard/app/public/data/core.json", label: "" };
+  const args = { gate: false, only: null, out: "evidence/performance/core.json", label: "" };
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
     if (argument === "--gate") args.gate = true;

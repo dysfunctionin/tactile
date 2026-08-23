@@ -593,7 +593,7 @@ export async function writePerformanceFixture({ outputDir, writeAssets = false }
 }
 
 function parseArgs(argv) {
-  const args = { outputDir: "benchmarks/.generated/tactile-250k", writeAssets: false };
+  const args = { outputDir: "tests/performance/benchmarks/.generated/tactile-250k", writeAssets: false };
   for (let index = 0; index < argv.length; index += 1) {
     if (argv[index] === "--output") args.outputDir = argv[++index];
     else if (argv[index] === "--materialize-assets") args.writeAssets = true;
@@ -606,7 +606,9 @@ function parseArgs(argv) {
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const args = parseArgs(process.argv.slice(2));
   if (args.help) {
-    console.log("Usage: node benchmarks/generate-fixture.mjs [--output <directory>] [--materialize-assets]");
+    console.log(
+      "Usage: node tests/performance/benchmarks/generate-fixture.mjs [--output <directory>] [--materialize-assets]",
+    );
   } else {
     const result = await writePerformanceFixture(args);
     console.log(

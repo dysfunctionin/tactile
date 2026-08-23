@@ -8,7 +8,7 @@ import {
   fixtureFingerprint,
   validatePerformanceWorkspace,
   writePerformanceFixture,
-} from "../../benchmarks/generate-fixture.mjs";
+} from "./benchmarks/generate-fixture.mjs";
 
 import { measureBundle } from "./bundle.mjs";
 import {

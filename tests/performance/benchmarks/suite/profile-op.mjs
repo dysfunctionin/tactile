@@ -20,7 +20,7 @@ import {
   typingBurstAction,
 } from "./scenarios.mjs";
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 
 const ACTIONS = {
   "add-row": (page, profile) => addRowsAction(page, profile, 1),
@@ -121,7 +121,10 @@ const args = parseArgs(process.argv.slice(2));
 const action = ACTIONS[args.scenario];
 if (!action) throw new Error(`Unknown scenario ${args.scenario}. Known: ${Object.keys(ACTIONS).join(", ")}`);
 
-const fixture = await writeProfileFixture(args.profile, path.join(ROOT, "benchmarks/.generated/profile-fixture"));
+const fixture = await writeProfileFixture(
+  args.profile,
+  path.join(ROOT, "tests/performance/benchmarks/.generated/profile-fixture"),
+);
 const server = await startPreview(args.port);
 const { chromium } = await import("playwright");
 const browser = await chromium.launch({ headless: true });
