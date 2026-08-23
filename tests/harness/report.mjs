@@ -130,6 +130,16 @@ function scenarioKey(record) {
   return `${record.type}|${record.suite}|${record.scenario}`;
 }
 
+function retainedError(error) {
+  if (!error) return null;
+  const clean = (value) => (value ? String(value).replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, "") : null);
+  return {
+    failureType: clean(error.failureType),
+    message: clean(error.message),
+    stack: clean(error.stack),
+  };
+}
+
 async function readHistory() {
   try {
     return JSON.parse(await readFile(path.join(RESULTS_DIR, "history.json"), "utf8"));
@@ -181,6 +191,7 @@ async function writeHistory(summary, records) {
         timeoutMs: record.timeoutMs,
         timeoutRatio: record.timeoutRatio,
         steps: record.steps || null,
+        error: retainedError(record.error),
       },
       ...entry.runs,
     ].slice(0, HISTORY_LIMIT);

@@ -66,7 +66,11 @@ export function defineSuite({ type, suite, setup: suiteSetup = blankApp }) {
         if (outcome && typeof outcome === "object" && outcome.metrics) options.metrics = outcome.metrics;
       } catch (caught) {
         status = caught instanceof ScenarioTimeoutError ? STATUS.TIMEOUT : STATUS.FAIL;
-        error = { message: String(caught?.message || caught), failureType: caught?.name || "Error" };
+        error = {
+          message: String(caught?.message || caught),
+          failureType: caught?.name || "Error",
+          stack: caught?.stack ? String(caught.stack) : null,
+        };
         throw caught;
       } finally {
         if (setup?.teardown) await setup.teardown(prepared);

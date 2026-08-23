@@ -56,7 +56,6 @@ body {
   font-display: swap;
 }
 
-
 #app {
   display: grid;
   grid-template-columns: 248px minmax(0, 1fr);
@@ -359,6 +358,80 @@ p {
   min-width: 0;
 }
 
+.context-copy-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 32px;
+  margin-top: 12px;
+}
+
+.context-copy {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  color: var(--ink);
+  background: var(--paper-elevated);
+  cursor: pointer;
+}
+
+.context-copy::before,
+.context-copy::after {
+  position: absolute;
+  width: 10px;
+  height: 12px;
+  border: 1.5px solid currentColor;
+  border-radius: 2px;
+  content: "";
+}
+
+.context-copy::before {
+  top: 8px;
+  left: 9px;
+}
+
+.context-copy::after {
+  top: 11px;
+  left: 12px;
+  background: var(--paper-elevated);
+}
+
+.context-copy:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.context-copy:disabled {
+  cursor: default;
+  opacity: 0.72;
+}
+
+.context-copy.is-copied {
+  border-color: var(--better);
+  color: var(--better);
+}
+
+.context-copy.is-failed {
+  border-color: var(--worse);
+  color: var(--worse);
+}
+
+.context-copy-status {
+  color: var(--steady);
+  font-size: 12px;
+}
+
+.clipboard-fallback {
+  position: fixed;
+  left: -10000px;
+  width: 1px;
+  height: 1px;
+}
+
 .page-subtitle,
 .section-subtitle,
 .card-path,
@@ -590,6 +663,64 @@ summary:focus-visible {
   gap: var(--gap);
   padding-top: 8px;
   border-top: 1px dashed var(--line);
+}
+
+.failure-cause {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  border: 1px solid color-mix(in srgb, var(--worse) 52%, var(--line));
+  border-left: 3px solid var(--worse);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--worse) 7%, var(--paper-elevated));
+}
+
+.failure-cause-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.failure-message {
+  max-height: 300px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.failure-meta,
+.failure-explanation {
+  color: var(--steady);
+  font-size: 12px;
+}
+
+.failure-stack summary {
+  width: fit-content;
+  cursor: pointer;
+  color: var(--steady);
+  font-size: 12px;
+}
+
+.failure-stack pre {
+  max-height: 280px;
+  margin: 10px 0 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.run-cause {
+  min-width: 220px;
+  max-width: 420px;
+  color: var(--steady);
+  font-size: 12px;
 }
 
 .chart {

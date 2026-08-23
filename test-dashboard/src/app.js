@@ -1,6 +1,7 @@
 import { config } from "./config.js";
 import { describeFailure, loadResults, readSource, writeSource } from "./data.js";
 import { compareBars, durationChart, relativeTrend, stepBars } from "./charts.js";
+import { cleanDiagnostic, createAgentContext } from "./agent-context.js";
 import { formatMs, formatPercent, scenarioMetrics, stepComparison, trendClass, verdict } from "./metrics.js";
 
 const root = document.querySelector("#app");
@@ -63,6 +64,114 @@ function stalenessNote(entry) {
   return note;
 }
 
+async function copyText(text) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  const textarea = h("textarea", "clipboard-fallback");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  document.body.append(textarea);
+  textarea.select();
+  const copied = document.execCommand("copy");
+  textarea.remove();
+  if (!copied) throw new Error("Clipboard copy was rejected");
+}
+
+function agentContextButton(entry) {
+  const group = h("div", "context-copy-group");
+  const button = h("button", "context-copy");
+  button.type = "button";
+  button.title = "Copy agent context";
+  button.setAttribute("aria-label", "Copy agent context");
+  const status = h("span", "context-copy-status");
+  status.setAttribute("aria-live", "polite");
+
+  button.addEventListener("click", async () => {
+    button.disabled = true;
+    button.classList.remove("is-copied", "is-failed");
+    try {
+      await copyText(createAgentContext(entry, state.summary));
+      button.classList.add("is-copied");
+      status.textContent = "Scenario context copied to clipboard.";
+    } catch {
+      button.classList.add("is-failed");
+      status.textContent = "Clipboard access failed. Try again from a secure browser page.";
+    } finally {
+      window.setTimeout(() => {
+        button.disabled = false;
+        button.classList.remove("is-copied", "is-failed");
+      }, 1800);
+    }
+  });
+
+  group.append(button, status);
+  return group;
+}
+
+function resultForRun(entry, run) {
+  return state.summary?.results?.find(
+    (record) =>
+      record.runId === run.runId &&
+      record.type === entry.type &&
+      record.suite === entry.suite &&
+      record.scenario === entry.scenario,
+  );
+}
+
+function errorForRun(entry, run) {
+  return run.error || resultForRun(entry, run)?.error || null;
+}
+
+function failureSummary(error) {
+  return cleanDiagnostic(error?.message)
+    .split(/\r?\n/)
+    .find((line) => line.trim());
+}
+
+function failureCause(entry) {
+  const run = entry.runs[0];
+  if (!run || run.status === "pass") return null;
+
+  const error = errorForRun(entry, run);
+  const panel = h("section", "failure-cause");
+  const heading = h("div", "failure-cause-heading");
+  heading.append(h("h3", null, "Failure cause"), statusPill(run.status));
+  panel.append(heading);
+  panel.append(
+    h(
+      "p",
+      "failure-message",
+      cleanDiagnostic(error?.message) ||
+        "This run predates failure-detail retention, so only its failed status is available.",
+    ),
+  );
+  panel.append(
+    h(
+      "p",
+      "failure-meta",
+      `${error?.failureType || "Test failure"} · Scenario check “${entry.scenario}” · ${entry.file}`,
+    ),
+  );
+  panel.append(
+    h(
+      "p",
+      "failure-explanation",
+      "Recorded actions are instrumentation, not verdict checks. They can pass before a later assertion or uninstrumented operation fails the scenario.",
+    ),
+  );
+
+  if (error?.stack) {
+    const details = h("details", "failure-stack");
+    details.append(h("summary", null, "Stack trace"), h("pre", null, cleanDiagnostic(error.stack)));
+    panel.append(details);
+  }
+
+  return panel;
+}
+
 function scenarioDetail(entry) {
   const metrics = scenarioMetrics(entry);
   const detail = h("div", "detail");
@@ -90,6 +199,8 @@ function scenarioDetail(entry) {
     ),
   );
   detail.append(metricRow);
+  const cause = failureCause(entry);
+  if (cause) detail.append(cause);
   detail.append(durationChart(entry));
 
   const steps = stepComparison(entry);
@@ -121,7 +232,7 @@ function scenarioDetail(entry) {
   const runs = h("table", "runs");
   const runHead = h("thead");
   const runHeadRow = h("tr");
-  for (const label of ["Run", "Finished", "Status", "Duration", "Timeout ratio"]) {
+  for (const label of ["Run", "Finished", "Status", "Cause", "Duration", "Timeout ratio"]) {
     runHeadRow.append(h("th", null, label));
   }
   runHead.append(runHeadRow);
@@ -134,6 +245,14 @@ function scenarioDetail(entry) {
     const status = h("td");
     status.append(statusPill(run.status));
     row.append(status);
+    const error = errorForRun(entry, run);
+    row.append(
+      h(
+        "td",
+        "run-cause",
+        run.status === "pass" ? "—" : failureSummary(error) || "Failure detail was not retained for this run",
+      ),
+    );
     row.append(h("td", "numeric", formatMs(run.durationMs)));
     row.append(h("td", "numeric", run.timeoutRatio === null ? "—" : run.timeoutRatio.toFixed(3)));
     runBody.append(row);
@@ -430,6 +549,7 @@ function renderScenario(main, key) {
   title.append(crumb);
   title.append(h("h1", null, entry.scenario));
   title.append(h("p", "page-subtitle", entry.file));
+  title.append(agentContextButton(entry));
   header.append(title);
   header.append(renderControls());
 

@@ -71,7 +71,11 @@ export function defineSuite({ type = "e2e", suite, setup = null }) {
         );
       } catch (caught) {
         status = caught instanceof ScenarioTimeoutError ? STATUS.TIMEOUT : STATUS.FAIL;
-        error = { message: String(caught?.message || caught), failureType: caught?.name || "Error" };
+        error = {
+          message: String(caught?.message || caught),
+          failureType: caught?.name || "Error",
+          stack: caught?.stack ? String(caught.stack) : null,
+        };
         throw caught;
       } finally {
         if (scenarioSetup?.teardown) await scenarioSetup.teardown(prepared);

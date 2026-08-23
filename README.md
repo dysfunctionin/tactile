@@ -89,7 +89,7 @@ npm run lint
 npm run build
 ```
 
-Run every test type as one dashboard history entry with `npm run test:all`.
+Run every test type as one dashboard history entry with `npm run tests:all`.
 
 The full repository gate is:
 
