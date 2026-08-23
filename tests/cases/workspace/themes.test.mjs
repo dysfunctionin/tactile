@@ -1,8 +1,6 @@
 import assert from "node:assert/strict";
+
 import { defineSuite } from "../../harness/index.mjs";
-
-const scenario = defineSuite({ type: "unit", suite: "workspace" });
-
 import {
   BUILT_IN_THEMES,
   allThemes,
@@ -10,6 +8,8 @@ import {
   resolveTheme,
   themeStyle,
 } from "../../../src/core/workspace/themes.js";
+
+const scenario = defineSuite({ type: "unit", suite: "workspace" });
 
 const requestedThemeNames = new Map([
   ["github-dark", "GitHub Dark"],

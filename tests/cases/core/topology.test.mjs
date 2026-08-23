@@ -1,8 +1,6 @@
 import assert from "node:assert/strict";
+
 import { defineSuite } from "../../harness/index.mjs";
-
-const scenario = defineSuite({ type: "unit", suite: "core" });
-
 import {
   canonicalPathForObject,
   repairObjectTopology,
@@ -15,6 +13,8 @@ import {
   createSheetObject,
   normalizeWorkspace,
 } from "../../../src/core/workspace/model.js";
+
+const scenario = defineSuite({ type: "unit", suite: "core" });
 
 function workspaceWithObjects(order = ["home", "alpha", "beta", "child"]) {
   const objects = {

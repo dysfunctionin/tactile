@@ -20,17 +20,17 @@ export const STATUS = Object.freeze({
   SKIPPED: "skipped",
 });
 
-// Deliberately generous until a full green run establishes real per-type
-// durations; tighten from the observed p95 rather than by guessing.
+// Derived from a full green run: roughly four times the observed maximum per
+// type, with a 5s floor. Setup time is reported separately and not included.
 export const DEFAULT_TIMEOUT_MS = Object.freeze({
-  unit: 600_000,
-  compatibility: 600_000,
-  platform: 600_000,
-  sites: 600_000,
-  e2e: 120_000,
-  visual: 120_000,
-  performance: 1_800_000,
-  benchmark: 1_800_000,
+  unit: 8_000,
+  compatibility: 8_000,
+  platform: 5_000,
+  sites: 5_000,
+  e2e: 323_000,
+  visual: 323_000,
+  performance: 5_000,
+  benchmark: 300_000,
 });
 
 // A scenario whose duration approaches its timeout is a flake waiting to

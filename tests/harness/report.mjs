@@ -92,6 +92,7 @@ export async function writeReport({ ratioLimit = DEFAULT_TIMEOUT_RATIO_LIMIT } =
     },
     totals,
     byType,
+    ratioLimit,
     durationMs: roundMs(durations.reduce((sum, value) => sum + value, 0)),
     slowest: [...records]
       .sort((a, b) => (b.durationMs || 0) - (a.durationMs || 0))
@@ -131,9 +132,7 @@ export function printSummary(summary) {
     `${bucket.durationMs} ms`,
   ]);
   const header = ["type", "total", "pass", "fail", "timeout", "duration"];
-  const widths = header.map((label, index) =>
-    Math.max(label.length, ...rows.map((row) => row[index].length), 0),
-  );
+  const widths = header.map((label, index) => Math.max(label.length, ...rows.map((row) => row[index].length), 0));
   const line = (cells) => cells.map((cell, index) => cell.padEnd(widths[index])).join("  ");
 
   console.log("");
@@ -146,7 +145,9 @@ export function printSummary(summary) {
   );
   if (summary.nearTimeout.length) {
     console.log("");
-    console.log(`near-timeout scenarios (ratio > limit): ${summary.nearTimeout.length}`);
+    console.log(
+      `warning: ${summary.nearTimeout.length} scenario(s) ran close to their timeout (ratio > ${summary.ratioLimit})`,
+    );
     for (const entry of summary.nearTimeout) {
       console.log(`  ${entry.type}/${entry.suite}  ${entry.scenario}  ratio ${entry.timeoutRatio}`);
     }

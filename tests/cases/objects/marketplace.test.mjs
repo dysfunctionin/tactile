@@ -4,8 +4,6 @@ import { OBJECT_TYPE_DEFINITIONS } from "../../../src/ui/objects/registry/builti
 import { workspaceFromZip, workspaceToZipBlob } from "../../../src/core/workspace/export.js";
 import { createBlankWorkspace } from "../../../src/core/workspace/model.js";
 import { defineSuite } from "../../harness/index.mjs";
-
-const scenario = defineSuite({ type: "unit", suite: "objects" });
 import {
   buildCellObjectDefinitions,
   comparePluginVersions,
@@ -21,6 +19,8 @@ import {
   sha256Hex,
   updatedPluginRecord,
 } from "../../../src/ui/objects/registry/marketplace.js";
+
+const scenario = defineSuite({ type: "unit", suite: "objects" });
 
 function response(body, options = {}) {
   const bytes = typeof body === "string" ? new TextEncoder().encode(body) : body;

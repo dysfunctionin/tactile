@@ -8,21 +8,20 @@ import { clearShards, printSummary, writeReport } from "./report.mjs";
  * Runs a test command, then merges every process shard into one report.
  * The runner's exit code wins so a failing suite still fails the gate.
  *
- * Pass --append to add to the current report instead of starting a new run,
- * so several suites can aggregate into a single result set.
+ * A run id inherited from the environment means several suites are aggregating
+ * into one report; otherwise this is a fresh run and old shards are discarded.
  */
 const argv = process.argv.slice(2);
-const append = argv[0] === "--append";
-const rest = append ? argv.slice(1) : argv;
-const typesFlag = rest[0] === "--types" ? rest[1] : null;
-const [command, ...args] = typesFlag ? rest.slice(2) : rest;
+const typesFlag = argv[0] === "--types" ? argv[1] : null;
+const [command, ...args] = typesFlag ? argv.slice(2) : argv;
 if (!command) {
-  console.error("usage: node tests/harness/run.mjs [--append] [--types a,b] <command> [args...]");
+  console.error("usage: node tests/harness/run.mjs [--types a,b] <command> [args...]");
   process.exit(2);
 }
 
-const runId = process.env.TACTILE_TEST_RUN_ID || new Date().toISOString().replace(/[:.]/g, "-");
-if (!append) await clearShards();
+const inheritedRunId = process.env.TACTILE_TEST_RUN_ID;
+const runId = inheritedRunId || new Date().toISOString().replace(/[:.]/g, "-");
+if (!inheritedRunId) await clearShards();
 
 // Only shell out for launcher scripts (npx, playwright); spawning node
 // directly avoids shell argument concatenation.

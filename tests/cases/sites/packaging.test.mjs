@@ -1,4 +1,5 @@
 import { access } from "node:fs/promises";
+
 import { defineSuite } from "../../harness/index.mjs";
 
 const scenario = defineSuite({ type: "sites", suite: "sites" });

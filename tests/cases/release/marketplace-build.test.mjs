@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 
 import { build } from "esbuild";
+
 import { defineSuite } from "../../harness/index.mjs";
 
 const scenario = defineSuite({ type: "unit", suite: "release" });

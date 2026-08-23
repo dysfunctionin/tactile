@@ -1,8 +1,6 @@
 import assert from "node:assert/strict";
+
 import { defineSuite } from "../../harness/index.mjs";
-
-const scenario = defineSuite({ type: "unit", suite: "core" });
-
 import {
   FIXED_DATASET_CHUNK_COLUMNS,
   FIXED_DATASET_CHUNK_ROWS,
@@ -11,6 +9,8 @@ import {
   SheetSnapshotDatasetStore,
   planFixedDatasetChunks,
 } from "../../../src/core/dataset/index.ts";
+
+const scenario = defineSuite({ type: "unit", suite: "core" });
 
 const descriptor = {
   id: "dataset",

@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
+
 import { defineSuite } from "../../harness/index.mjs";
-
-const scenario = defineSuite({ type: "unit", suite: "platform" });
-
 import {
   CODE_RUNTIME_PROFILE_STORAGE_KEY,
   createCodeRuntimeProfileStore,
   normalizeCodeRuntimeProfile,
 } from "../../../src/platform/code/runtimeProfiles.js";
+
+const scenario = defineSuite({ type: "unit", suite: "platform" });
 
 function memoryStorage(initialValue = null) {
   let value = initialValue;

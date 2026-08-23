@@ -1,4 +1,5 @@
 import { expect } from "@playwright/test";
+
 import { defineSuite } from "../../harness/playwright.mjs";
 
 const scenario = defineSuite({ type: "e2e", suite: "reparenting" });
@@ -118,25 +119,26 @@ async function cellValue(page, address) {
   return (await cellLocator(page, address).locator(".cell-value").textContent()).trim();
 }
 
-scenario("dragging an embedded cell to another sheet position preserves the child route and descendants", async ({
-  page,
-}) => {
-  await page.goto("/");
-  await importWorkspace(page);
+scenario(
+  "dragging an embedded cell to another sheet position preserves the child route and descendants",
+  async ({ page }) => {
+    await page.goto("/");
+    await importWorkspace(page);
 
-  await cellLocator(page, "A1").dragTo(cellLocator(page, "B1"));
-  await expect.poll(() => cellValue(page, "A1")).toBe("");
-  await expect.poll(() => cellValue(page, "B1")).toBe("Child");
+    await cellLocator(page, "A1").dragTo(cellLocator(page, "B1"));
+    await expect.poll(() => cellValue(page, "A1")).toBe("");
+    await expect.poll(() => cellValue(page, "B1")).toBe("Child");
 
-  await cellLocator(page, "B1").dblclick();
-  await expect.poll(() => new URL(page.url()).searchParams.get("in")).toBe("child");
-  await expect.poll(() => new URL(page.url()).searchParams.get("cell")).toBe("B1");
-  await expect(page.getByRole("region", { name: "Child window" }).getByLabel("Object title")).toHaveValue("Child");
+    await cellLocator(page, "B1").dblclick();
+    await expect.poll(() => new URL(page.url()).searchParams.get("in")).toBe("child");
+    await expect.poll(() => new URL(page.url()).searchParams.get("cell")).toBe("B1");
+    await expect(page.getByRole("region", { name: "Child window" }).getByLabel("Object title")).toHaveValue("Child");
 
-  await page.getByRole("button", { name: "Parent", exact: true }).click();
-  await expect(page.locator(".object-title-field input").first()).toHaveValue("Home");
-  await expect(cellLocator(page, "B1")).toHaveAttribute("aria-selected", "true");
-});
+    await page.getByRole("button", { name: "Parent", exact: true }).click();
+    await expect(page.locator(".object-title-field input").first()).toHaveValue("Home");
+    await expect(cellLocator(page, "B1")).toHaveAttribute("aria-selected", "true");
+  },
+);
 
 scenario("dragging a Files object row onto another object creates a new hierarchy location", async ({ page }) => {
   await page.goto("/");

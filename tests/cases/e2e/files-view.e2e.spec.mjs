@@ -1,4 +1,5 @@
 import { expect } from "@playwright/test";
+
 import { defineSuite } from "../../harness/playwright.mjs";
 
 const scenario = defineSuite({ type: "e2e", suite: "files-view" });
@@ -703,59 +704,60 @@ scenario("embedded sheet icons use the linked object's Files color", async ({ pa
   await expect(page.locator('.sheet-cell[data-cell-address="A1"] .embed-icon')).toHaveCSS("color", "rgb(169, 121, 45)");
 });
 
-scenario("files applies hover and focus feedback to the full nested row while keeping palette actions intact", async ({
-  page,
-}) => {
-  await page.goto("/");
-  await importWorkspace(page);
-  await page.getByRole("button", { name: "Browse files", exact: true }).click();
+scenario(
+  "files applies hover and focus feedback to the full nested row while keeping palette actions intact",
+  async ({ page }) => {
+    await page.goto("/");
+    await importWorkspace(page);
+    await page.getByRole("button", { name: "Browse files", exact: true }).click();
 
-  const homeRow = page.locator('.files-tree-row[data-object-id="home"]');
-  const childRow = page.locator('.files-tree-row[data-object-id="child"]');
-  const childRowBefore = await childRow.boundingBox();
-  if (!childRowBefore) throw new Error("Child Files row is not measurable");
+    const homeRow = page.locator('.files-tree-row[data-object-id="home"]');
+    const childRow = page.locator('.files-tree-row[data-object-id="child"]');
+    const childRowBefore = await childRow.boundingBox();
+    if (!childRowBefore) throw new Error("Child Files row is not measurable");
 
-  const defaultRowStyle = await childRow.evaluate((element) => {
-    const style = getComputedStyle(element);
-    return { backgroundColor: style.backgroundColor, boxShadow: style.boxShadow };
-  });
+    const defaultRowStyle = await childRow.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return { backgroundColor: style.backgroundColor, boxShadow: style.boxShadow };
+    });
 
-  await childRow.locator(".files-tree-open").hover();
-  const titleHoverStyle = await childRow.evaluate((element) => {
-    const style = getComputedStyle(element);
-    return { backgroundColor: style.backgroundColor, boxShadow: style.boxShadow };
-  });
-  expect(titleHoverStyle.backgroundColor).not.toBe(defaultRowStyle.backgroundColor);
-  expect(titleHoverStyle.boxShadow).not.toBe("none");
+    await childRow.locator(".files-tree-open").hover();
+    const titleHoverStyle = await childRow.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return { backgroundColor: style.backgroundColor, boxShadow: style.boxShadow };
+    });
+    expect(titleHoverStyle.backgroundColor).not.toBe(defaultRowStyle.backgroundColor);
+    expect(titleHoverStyle.boxShadow).not.toBe("none");
 
-  const iconButton = childRow.locator(".files-tree-icon-button");
-  await iconButton.hover();
-  const iconHoverStyle = await childRow.evaluate((element) => {
-    const style = getComputedStyle(element);
-    return { backgroundColor: style.backgroundColor, boxShadow: style.boxShadow };
-  });
-  expect(iconHoverStyle).toEqual(titleHoverStyle);
-  await expect(iconButton).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
-  await expect(iconButton).toHaveCSS("transform", "none");
+    const iconButton = childRow.locator(".files-tree-icon-button");
+    await iconButton.hover();
+    const iconHoverStyle = await childRow.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return { backgroundColor: style.backgroundColor, boxShadow: style.boxShadow };
+    });
+    expect(iconHoverStyle).toEqual(titleHoverStyle);
+    await expect(iconButton).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+    await expect(iconButton).toHaveCSS("transform", "none");
 
-  await childRow.focus();
-  const focusedRowStyle = await childRow.evaluate((element) => {
-    const style = getComputedStyle(element);
-    return { backgroundColor: style.backgroundColor, boxShadow: style.boxShadow };
-  });
-  expect(focusedRowStyle).toEqual(titleHoverStyle);
+    await childRow.focus();
+    const focusedRowStyle = await childRow.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return { backgroundColor: style.backgroundColor, boxShadow: style.boxShadow };
+    });
+    expect(focusedRowStyle).toEqual(titleHoverStyle);
 
-  const childRowAfter = await childRow.boundingBox();
-  if (!childRowAfter) throw new Error("Child Files row disappeared after focus");
-  expect(childRowAfter.x).toBeCloseTo(childRowBefore.x, 1);
-  expect(childRowAfter.y).toBeCloseTo(childRowBefore.y, 1);
-  expect(childRowAfter.width).toBeCloseTo(childRowBefore.width, 1);
-  expect(childRowAfter.height).toBeCloseTo(childRowBefore.height, 1);
-  expect(await homeRow.locator(".files-tree-customize").count()).toBe(1);
+    const childRowAfter = await childRow.boundingBox();
+    if (!childRowAfter) throw new Error("Child Files row disappeared after focus");
+    expect(childRowAfter.x).toBeCloseTo(childRowBefore.x, 1);
+    expect(childRowAfter.y).toBeCloseTo(childRowBefore.y, 1);
+    expect(childRowAfter.width).toBeCloseTo(childRowBefore.width, 1);
+    expect(childRowAfter.height).toBeCloseTo(childRowBefore.height, 1);
+    expect(await homeRow.locator(".files-tree-customize").count()).toBe(1);
 
-  await childRow.locator(".files-tree-customize").click();
-  await expect(page.getByRole("dialog", { name: "Customize icon for Child sheet" })).toBeVisible();
-});
+    await childRow.locator(".files-tree-customize").click();
+    await expect(page.getByRole("dialog", { name: "Customize icon for Child sheet" })).toBeVisible();
+  },
+);
 
 scenario("files rows stay separated and show the start marker before the type label", async ({ page }) => {
   await page.goto("/");

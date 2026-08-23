@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
+
 import { defineSuite } from "../../harness/index.mjs";
-
-const scenario = defineSuite({ type: "unit", suite: "sheet" });
-
 import {
   cellChangeVersion,
   cellChangesSince,
   recordCellChanges,
 } from "../../../src/ui/objects/sheet/grid/cellChangeJournal.js";
+
+const scenario = defineSuite({ type: "unit", suite: "sheet" });
 
 scenario("cell edit journal reports sparse deltas and falls back after history rolls over", () => {
   const cells = {};

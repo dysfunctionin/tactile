@@ -2,8 +2,6 @@ import assert from "node:assert/strict";
 
 import { cellId } from "../../../src/core/sheet/coordinates.js";
 import { defineSuite } from "../../harness/index.mjs";
-
-const scenario = defineSuite({ type: "unit", suite: "sheet" });
 import {
   autoRowHeight,
   autoRowHeights,
@@ -12,6 +10,8 @@ import {
   naturalColumnWidth,
   naturalRowHeight,
 } from "../../../src/core/sheet/textMeasure.js";
+
+const scenario = defineSuite({ type: "unit", suite: "sheet" });
 
 // In Node (no canvas) measureTextWidth falls back to length * fontSize * 0.58,
 // so expected values are deterministic.

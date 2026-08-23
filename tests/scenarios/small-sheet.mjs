@@ -1,5 +1,6 @@
 import { createBlankWorkspace, createMarkdownObject } from "../../src/core/workspace/model.js";
 import { defineScenarioSetup } from "../harness/scenario-setup.mjs";
+
 import { buildSheet, scenarioCounts } from "./workspace-factory.mjs";
 
 /** Everyday, human-scale workspace: a handful of sheets and notes. */

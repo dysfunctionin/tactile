@@ -1,14 +1,14 @@
 import assert from "node:assert/strict";
+
 import { defineSuite } from "../../harness/index.mjs";
-
-const scenario = defineSuite({ type: "unit", suite: "release" });
-
 import {
   compareAppVersions,
   nextAlphaVersion,
   parseAppVersion,
   windowsBundleVersion,
 } from "../../../scripts/release/app-version.mjs";
+
+const scenario = defineSuite({ type: "unit", suite: "release" });
 
 scenario("parses supported app release versions", () => {
   assert.deepEqual(parseAppVersion("v1.2.3-alpha.4"), {

@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
+
 import { defineSuite } from "../../harness/index.mjs";
-
-const scenario = defineSuite({ type: "unit", suite: "workspace" });
-
 import {
   WORKSPACE_AUTHORING_PROMPT,
   WORKSPACE_AUTHORING_PROMPT_VERSION,
 } from "../../../src/core/workspace/authoringPrompt.js";
+
+const scenario = defineSuite({ type: "unit", suite: "workspace" });
 
 scenario("workspace authoring prompt declares the current contract and core architecture", () => {
   assert.equal(WORKSPACE_AUTHORING_PROMPT_VERSION, "tactile-workspace-authoring/v2");

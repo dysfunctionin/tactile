@@ -2,8 +2,6 @@ import assert from "node:assert/strict";
 
 import { createBlankWorkspace } from "../../../src/core/model.ts";
 import { defineSuite } from "../../harness/index.mjs";
-
-const scenario = defineSuite({ type: "platform", suite: "tauri" });
 import {
   TAURI_COMMANDS,
   StaleAcknowledgementError,
@@ -11,6 +9,8 @@ import {
   TauriPersistencePort,
   TauriProtocolError,
 } from "../../../src/platform/tauri/index.ts";
+
+const scenario = defineSuite({ type: "platform", suite: "tauri" });
 
 function transaction(revision) {
   return {

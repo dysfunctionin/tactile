@@ -3,8 +3,6 @@ import assert from "node:assert/strict";
 import { createBlankWorkspace, createCellRecord } from "../../../src/core/model.ts";
 import { BrowserPersistenceAdapter } from "../../../src/platform/browser/persistence.js";
 import { defineSuite } from "../../harness/index.mjs";
-
-const scenario = defineSuite({ type: "platform", suite: "tauri" });
 import {
   TAURI_COMMANDS,
   StaleAcknowledgementError,
@@ -14,6 +12,8 @@ import {
   createPersistencePort,
   detectNativeRuntime,
 } from "../../../src/platform/tauri/index.ts";
+
+const scenario = defineSuite({ type: "platform", suite: "tauri" });
 
 function transaction(revision, operations = [], dirtyRecords = []) {
   return {

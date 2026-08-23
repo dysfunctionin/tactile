@@ -4,12 +4,12 @@ These rules apply under `tests/` in addition to root guidance.
 
 ## Layout
 
-| Path               | Holds                                                              |
-| ------------------ | ------------------------------------------------------------------ |
-| `tests/harness/`   | The templates. Generic and app-agnostic. Rarely edited.            |
-| `tests/scenarios/` | Scenario setups: the situations a test can run against.            |
-| `tests/cases/`     | The tests themselves, grouped by feature area.                     |
-| `tests/fixtures/`  | Static input data, such as the compatibility workspace JSON.       |
+| Path               | Holds                                                        |
+| ------------------ | ------------------------------------------------------------ |
+| `tests/harness/`   | The templates. Generic and app-agnostic. Rarely edited.      |
+| `tests/scenarios/` | Scenario setups: the situations a test can run against.      |
+| `tests/cases/`     | The tests themselves, grouped by feature area.               |
+| `tests/fixtures/`  | Static input data, such as the compatibility workspace JSON. |
 
 Assertions never belong in `scenarios/`. Building a workspace inline in `cases/` is wrong when a scenario already
 describes that situation.

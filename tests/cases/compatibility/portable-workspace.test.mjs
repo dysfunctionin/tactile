@@ -2,10 +2,8 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+
 import { defineSuite } from "../../harness/index.mjs";
-
-const scenario = defineSuite({ type: "compatibility", suite: "portable" });
-
 import {
   buildPortableV4Package,
   migratePortableWorkspace,
@@ -22,8 +20,10 @@ import {
   SMALL_ASSET_LIMITS,
 } from "../../fixtures/invalid-compatibility-workspaces.mjs";
 
+const scenario = defineSuite({ type: "compatibility", suite: "portable" });
+
 const here = path.dirname(fileURLToPath(import.meta.url));
-const fixtureDirectory = path.resolve(here, "../fixtures");
+const fixtureDirectory = path.resolve(here, "../../fixtures");
 
 async function readFixture(version) {
   return JSON.parse(await readFile(path.join(fixtureDirectory, `compatibility-v${version}.json`), "utf8"));

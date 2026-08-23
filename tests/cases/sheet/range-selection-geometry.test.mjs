@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
+
 import { defineSuite } from "../../harness/index.mjs";
-
-const scenario = defineSuite({ type: "unit", suite: "sheet" });
-
 import {
   boundedAxisEntries,
   canonicalSheetSelection,
   selectionCoordinates,
 } from "../../../src/ui/objects/sheet/grid/selectionGeometry.js";
+
+const scenario = defineSuite({ type: "unit", suite: "sheet" });
 
 scenario("selection coordinates and endpoints stay inside the sheet", () => {
   assert.deepEqual(selectionCoordinates("BM999", 256, 64), { row: 255, column: 63 });

@@ -1,4 +1,5 @@
 import { expect } from "@playwright/test";
+
 import { defineSuite } from "../../harness/playwright.mjs";
 
 const scenario = defineSuite({ type: "e2e", suite: "tooltip-boundary" });

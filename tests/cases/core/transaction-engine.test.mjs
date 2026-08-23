@@ -2,14 +2,14 @@ import assert from "node:assert/strict";
 
 import { createBlankWorkspace, createObjectForType } from "../../../src/core/model.ts";
 import { defineSuite } from "../../harness/index.mjs";
-
-const scenario = defineSuite({ type: "unit", suite: "core" });
 import {
   compareEngineSnapshots,
   createLegacySnapshotAdapter,
   createWorkspaceEngine,
   runDifferentialSequence,
 } from "../../../src/core/engine/index.ts";
+
+const scenario = defineSuite({ type: "unit", suite: "core" });
 
 function command(type, payload, sequence = 1, source = "keyboard") {
   return {

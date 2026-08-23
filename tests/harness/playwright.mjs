@@ -1,5 +1,6 @@
-import { test as playwrightTest } from "@playwright/test";
 import { performance } from "node:perf_hooks";
+
+import { test as playwrightTest } from "@playwright/test";
 
 import { STATUS, assertType, createRecord, roundMs, timeoutFor, typeSelected } from "./schema.mjs";
 import { appendRecord, currentRunId, repoRelative } from "./writer.mjs";
@@ -47,11 +48,11 @@ export function defineSuite({ type = "e2e", suite, setup = null }) {
       // reports the timeout first.
       playwrightTest.setTimeout(timeoutMs + 30_000);
       const startedAt = new Date().toISOString();
-      const started = performance.now();
       let status = STATUS.PASS;
       let error = null;
       let setupSummary = null;
       let prepared = null;
+      let bodyStarted = performance.now();
 
       try {
         if (scenarioSetup) {
@@ -59,6 +60,8 @@ export function defineSuite({ type = "e2e", suite, setup = null }) {
           prepared = result.context;
           setupSummary = result.summary;
         }
+        // Timed from here so the recorded duration matches what the timeout guards.
+        bodyStarted = performance.now();
         await withTimeout(
           Promise.resolve(body({ page, context, browserName, ...prepared, testInfo, scenario: name })),
           timeoutMs,
@@ -77,7 +80,7 @@ export function defineSuite({ type = "e2e", suite, setup = null }) {
             scenario: name,
             file: file || repoRelative(testInfo?.file),
             status,
-            durationMs: roundMs(performance.now() - started),
+            durationMs: roundMs(performance.now() - bodyStarted),
             timeoutMs,
             setup: setupSummary,
             metrics: options.metrics ?? null,

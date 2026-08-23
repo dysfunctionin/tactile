@@ -2,6 +2,7 @@ import nodeTest from "node:test";
 import { performance } from "node:perf_hooks";
 
 import { blankApp } from "../scenarios/blank-app.mjs";
+
 import { STATUS, assertType, createRecord, roundMs, timeoutFor, typeSelected } from "./schema.mjs";
 import { appendRecord, currentRunId, repoRelative } from "./writer.mjs";
 import { callerFile } from "./caller.mjs";
@@ -46,11 +47,11 @@ export function defineSuite({ type, suite, setup: suiteSetup = blankApp }) {
     // the runner's own limit stays slack so ours reports first.
     return nodeTest(name, { timeout: timeoutMs * 2, skip: options.skip }, async (t) => {
       const startedAt = new Date().toISOString();
-      const started = performance.now();
       let status = STATUS.PASS;
       let error = null;
       let setupSummary = null;
       let prepared = null;
+      let bodyStarted = performance.now();
 
       try {
         if (setup) {
@@ -58,6 +59,8 @@ export function defineSuite({ type, suite, setup: suiteSetup = blankApp }) {
           prepared = result.context;
           setupSummary = result.summary;
         }
+        // Timed from here so the recorded duration matches what the timeout guards.
+        bodyStarted = performance.now();
         const outcome = await withTimeout(Promise.resolve(body({ ...prepared, t, scenario: name })), timeoutMs);
         if (outcome && typeof outcome === "object" && outcome.metrics) options.metrics = outcome.metrics;
       } catch (caught) {
@@ -74,7 +77,7 @@ export function defineSuite({ type, suite, setup: suiteSetup = blankApp }) {
             scenario: name,
             file,
             status,
-            durationMs: roundMs(performance.now() - started),
+            durationMs: roundMs(performance.now() - bodyStarted),
             timeoutMs,
             setup: setupSummary,
             metrics: options.metrics ?? null,

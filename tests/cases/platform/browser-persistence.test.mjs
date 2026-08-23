@@ -2,8 +2,6 @@ import assert from "node:assert/strict";
 
 import { createBlankWorkspace, createCellRecord } from "../../../src/core/workspace/model.js";
 import { defineSuite } from "../../harness/index.mjs";
-
-const scenario = defineSuite({ type: "platform", suite: "browser" });
 import {
   BrowserPersistenceAdapter,
   AssetUrlRegistry,
@@ -11,6 +9,8 @@ import {
   LEGACY_WORKSPACE_KEY,
   STORE_NAMES,
 } from "../../../src/platform/browser/index.js";
+
+const scenario = defineSuite({ type: "platform", suite: "browser" });
 
 class MemoryRequest {
   constructor(transaction = null) {

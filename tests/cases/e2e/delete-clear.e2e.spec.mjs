@@ -55,24 +55,25 @@ async function cellValue(page, address) {
   return (await cellLocator(page, address).locator(".cell-value").textContent()).trim();
 }
 
-scenario("delete clears a selected range, including an embedded source cell, without deleting its object", async ({
-  page,
-}) => {
-  await page.goto("/");
-  await importWorkspace(page);
+scenario(
+  "delete clears a selected range, including an embedded source cell, without deleting its object",
+  async ({ page }) => {
+    await page.goto("/");
+    await importWorkspace(page);
 
-  await cellLocator(page, "A1").click();
-  await cellLocator(page, "B3").click({ modifiers: ["Shift"] });
-  await expect(page.locator(".active-cell-status code")).toHaveText("A1:B3");
+    await cellLocator(page, "A1").click();
+    await cellLocator(page, "B3").click({ modifiers: ["Shift"] });
+    await expect(page.locator(".active-cell-status code")).toHaveText("A1:B3");
 
-  await page.keyboard.press("Delete");
+    await page.keyboard.press("Delete");
 
-  for (const address of ["A1", "B1", "A2", "B2", "A3"]) {
-    await expect.poll(() => cellValue(page, address)).toBe("");
-  }
-  await page.getByRole("button", { name: "Browse files", exact: true }).click();
-  await expect(page.locator('.files-tree-row[data-object-id="notes"]')).toBeVisible();
-});
+    for (const address of ["A1", "B1", "A2", "B2", "A3"]) {
+      await expect.poll(() => cellValue(page, address)).toBe("");
+    }
+    await page.getByRole("button", { name: "Browse files", exact: true }).click();
+    await expect(page.locator('.files-tree-row[data-object-id="notes"]')).toBeVisible();
+  },
+);
 
 scenario("backspace clears a focused cell and a selected range", async ({ page }) => {
   await page.goto("/");

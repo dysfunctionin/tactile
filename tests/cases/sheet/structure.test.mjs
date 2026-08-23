@@ -1,8 +1,6 @@
 import assert from "node:assert/strict";
+
 import { defineSuite } from "../../harness/index.mjs";
-
-const scenario = defineSuite({ type: "unit", suite: "sheet" });
-
 import {
   adjustAxisGroups,
   adjustColumnFilters,
@@ -10,6 +8,8 @@ import {
   adjustFormulaForAxis,
   reorderFormulaForAxis,
 } from "../../../src/core/sheet/structure.js";
+
+const scenario = defineSuite({ type: "unit", suite: "sheet" });
 
 scenario("row and column insertion adjusts formula references", () => {
   assert.equal(adjustFormulaForAxis("=SUM(A2:$B$4)", "row", 1, "insert"), "=SUM(A3:$B$5)");
