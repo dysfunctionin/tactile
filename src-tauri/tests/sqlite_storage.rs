@@ -126,3 +126,38 @@ fn sqlite_cache_rebuild_preserves_opaque_portable_files_after_deletion() {
     assert_eq!(rebuilt.table().expect("rebuilt record table"), expected);
     assert_eq!(rebuilt.journal().expect("rebuilt journal").len(), 1);
 }
+
+#[test]
+fn prefix_scan_returns_only_one_objects_chunk_keys() {
+    let root = TempDir::new("prefix");
+    let mut storage = SqliteStorage::open(root.path()).expect("open sqlite storage");
+    let mut transaction = Transaction::default();
+    for key in [
+        "workspace-1/sheet-1/0:0",
+        "workspace-1/sheet-1/1:0",
+        "workspace-1/sheet-10/0:0",
+        "workspace-1/sheet-2/0:0",
+        "workspace-2/sheet-1/0:0",
+    ] {
+        transaction.put("cell-chunk", key, b"{}".to_vec()).expect("put");
+    }
+    storage.commit(transaction).expect("commit");
+
+    // "sheet-1" must not reach into "sheet-10", so the separator has to be part
+    // of the prefix rather than only between the components.
+    let keys = storage
+        .keys_with_prefix("cell-chunk", "workspace-1/sheet-1/")
+        .expect("prefix scan");
+    assert_eq!(
+        keys,
+        vec![
+            "workspace-1/sheet-1/0:0".to_owned(),
+            "workspace-1/sheet-1/1:0".to_owned()
+        ]
+    );
+
+    let missing = storage
+        .keys_with_prefix("cell-chunk", "workspace-3/")
+        .expect("prefix scan");
+    assert!(missing.is_empty());
+}

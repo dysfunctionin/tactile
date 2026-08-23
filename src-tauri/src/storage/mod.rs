@@ -8,10 +8,14 @@
 //! the same recovery contract for the portable-file cache and recovery tests.
 #![allow(dead_code)]
 
+// `tauri::generate_handler!` resolves hidden items beside each command, so the
+// module has to be reachable by path rather than only through re-exports.
+pub mod chunks;
 mod error;
 mod records;
 mod sqlite;
 
+pub use chunks::ChunkStoreState;
 pub use error::{StorageError, StorageErrorCode, StorageResult};
 pub use records::{RecordKey, RecordMutation, RecordTable, Transaction};
 #[allow(unused_imports)]

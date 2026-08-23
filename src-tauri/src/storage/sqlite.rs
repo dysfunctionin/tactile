@@ -124,6 +124,32 @@ impl SqliteStorage {
             .map_err(|_| StorageError::io("sqlite-read"))
     }
 
+    /// Keys in one table sharing a prefix, in key order.
+    ///
+    /// Chunk keys embed workspace and object identity, so a prefix scan is how
+    /// a caller enumerates one object without loading every record's value.
+    pub fn keys_with_prefix(&self, table: &str, prefix: &str) -> StorageResult<Vec<String>> {
+        let mut statement = self
+            .connection
+            .prepare(
+                "SELECT record_key FROM tactile_records
+                 WHERE table_name = ?1 AND record_key >= ?2 AND record_key < ?3
+                 ORDER BY record_key",
+            )
+            .map_err(|_| StorageError::io("sqlite-prefix-read"))?;
+        // `\u{10FFFF}` is above every scalar value a key can contain, so it
+        // bounds the prefix range without a LIKE scan or escaping.
+        let upper = format!("{prefix}\u{10FFFF}");
+        let rows = statement
+            .query_map(params![table, prefix, upper], |row| row.get::<_, String>(0))
+            .map_err(|_| StorageError::io("sqlite-prefix-read"))?;
+        let mut keys = Vec::new();
+        for row in rows {
+            keys.push(row.map_err(|_| StorageError::io("sqlite-prefix-read"))?);
+        }
+        Ok(keys)
+    }
+
     /// Reconstructs the record-oriented view from SQLite without exposing
     /// the connection or raw database rows to callers.
     pub fn table(&self) -> StorageResult<RecordTable> {

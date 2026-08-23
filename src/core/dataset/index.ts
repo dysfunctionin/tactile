@@ -1,5 +1,6 @@
 export * from "./contracts.ts";
 export * from "./aggregateQueue.ts";
+export * from "./chunkStore.js";
 export * from "./eagerStore.ts";
 export * from "./fixedChunks.ts";
 export * from "./sheetSnapshotStore.ts";

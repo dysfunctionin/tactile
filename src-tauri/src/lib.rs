@@ -991,6 +991,7 @@ async fn download_and_install_update(app: tauri::AppHandle) -> Result<(), String
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(storage::ChunkStoreState::default())
         .invoke_handler(tauri::generate_handler![
             workspace_choose_directory,
             workspace_prepare_directory,
@@ -1005,6 +1006,11 @@ pub fn run() {
             workspace_discover_code_runtimes,
             workspace_probe_code_runtime,
             workspace_run_code,
+            storage::chunks::chunk_store_status,
+            storage::chunks::chunk_store_read,
+            storage::chunks::chunk_store_list,
+            storage::chunks::chunk_store_write,
+            storage::chunks::chunk_store_drop_object,
             get_update_channel,
             set_update_channel,
             check_for_update,
