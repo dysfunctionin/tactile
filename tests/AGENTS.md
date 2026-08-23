@@ -140,7 +140,7 @@ separately under `setup.durationMs`. Runs write `test-results/results.ndjson` an
 three stay out of commits.
 
 ```bash
-npm test                 # unit scenarios
+npm run test:all         # build, run every test type, and write one aggregate history entry
 npm run test:unit        # unit + compatibility
 npm run test:platform    # browser and Tauri adapters
 npm run test:sites       # worker and packaging (run npm run build first)

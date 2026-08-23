@@ -243,9 +243,17 @@ function renderSidebar() {
   const aside = h("aside", "sidebar");
 
   const brand = h("div", "brand");
-  brand.append(h("strong", null, "Tactile"));
-  brand.append(h("span", "brand-sub", "performance"));
+  const brandMark = h("img", "brand-mark");
+  brandMark.src = "./assets/tactile-icon.png";
+  brandMark.alt = "";
+  brand.append(brandMark);
+  const brandCopy = h("span", "brand-copy");
+  brandCopy.append(h("strong", null, "Tactile"));
+  brandCopy.append(h("span", "brand-sub", "Test telemetry"));
+  brand.append(brandCopy);
   aside.append(brand);
+
+  aside.append(h("p", "nav-label", "Workspace"));
 
   const overview = h("a", "nav-home", "Overview");
   overview.href = "#/";
@@ -257,6 +265,9 @@ function renderSidebar() {
   if (window.location.hash === "#/graph") graph.classList.add("is-active");
   aside.append(graph);
 
+  const scenarioNav = h("details", "scenario-nav");
+  scenarioNav.open = !window.matchMedia("(max-width: 700px)").matches;
+  scenarioNav.append(h("summary", "scenario-nav-summary", "Scenarios"));
   const search = h("input", "nav-search");
   search.type = "search";
   search.placeholder = "Filter scenarios";
@@ -265,8 +276,9 @@ function renderSidebar() {
     state.filter = search.value;
     aside.querySelector(".nav-groups").replaceWith(buildNavGroups());
   });
-  aside.append(search);
-  aside.append(buildNavGroups());
+  scenarioNav.append(search);
+  scenarioNav.append(buildNavGroups());
+  aside.append(scenarioNav);
 
   return aside;
 }
@@ -469,19 +481,19 @@ function renderGraph(main) {
 
   const scoped = state.graphType ? state.entries.filter(([, entry]) => entry.type === state.graphType) : state.entries;
 
-  const compare = section(
-    "Cost comparison",
-    `${scoped.length} scenario${scoped.length === 1 ? "" : "s"} in scope. Bars show the most recent duration for each, with the change against its previous run.`,
-  );
-  compare.append(compareBars(scoped));
-  main.append(compare);
-
   const trend = section(
     "Movement across runs",
     "Each line is indexed to that scenario's oldest retained run, so scenarios of very different cost can be compared on one axis. Above 100% is slower than its baseline.",
   );
   trend.append(relativeTrend(scoped));
   main.append(trend);
+
+  const compare = section(
+    "Cost comparison",
+    `${scoped.length} scenario${scoped.length === 1 ? "" : "s"} in scope. Bars show the most recent duration for each, with the change against its previous run.`,
+  );
+  compare.append(compareBars(scoped));
+  main.append(compare);
 }
 
 function route() {

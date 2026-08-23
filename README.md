@@ -83,11 +83,13 @@ Native build and platform notes live in [`src-tauri/README.md`](src-tauri/README
 Start narrow while iterating, then run the relevant broader checks:
 
 ```bash
-npm test
+npm run test:unit
 npm run typecheck
 npm run lint
 npm run build
 ```
+
+Run every test type as one dashboard history entry with `npm run test:all`.
 
 The full repository gate is:
 

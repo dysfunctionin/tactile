@@ -6,6 +6,7 @@ dist/
 !src-tauri/icons/*.png
 !src-tauri/icons-alpha/*.png
 !images/*.png
+!test-dashboard/assets/tactile-icon.png
 *.xlsx
 audits/
 .cache/

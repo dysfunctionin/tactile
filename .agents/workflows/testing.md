@@ -7,6 +7,8 @@ Reproduce failures before editing when practical. Prefer checks in this order:
 3. Typecheck/lint/build for the touched surface.
 4. Broader suite matching the change risk.
 
-`npm test` runs only `tests/*.test.mjs`; nested compatibility, platform, native, performance, visual, component, and E2E suites require explicit commands. Do not weaken assertions or budgets without evidence. Use Playwright for rendered interaction and screenshot evidence where layout matters. Report unrelated existing failures separately.
+`npm run test:unit` runs unit and compatibility scenarios. `npm run test:all` builds once, runs every test type, and
+aggregates them under one dashboard history entry. Do not weaken assertions or budgets without evidence. Use Playwright
+for rendered interaction and screenshot evidence where layout matters. Report unrelated existing failures separately.
 
 See local `tests/AGENTS.md` for suite routing.
