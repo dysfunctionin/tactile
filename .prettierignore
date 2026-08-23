@@ -13,7 +13,7 @@ src/**/*.jsx
 *.xlsx
 index.html
 README.md
-src/styles.css
+src/ui/styles/styles.css
 tests/unit/workspace/portable-format.test.mjs
 tests/unit/sheet/formulas.test.mjs
 tests/unit/sheet/ranges.test.mjs

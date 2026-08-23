@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { projectAutoRowHeights } from "../../../src/objects/sheet/grid/autoRowHeightProjection.js";
-import { recordCellChanges, recordStructureChange } from "../../../src/objects/sheet/grid/cellChangeJournal.js";
+import { projectAutoRowHeights } from "../../../src/ui/objects/sheet/grid/autoRowHeightProjection.js";
+import { recordCellChanges, recordStructureChange } from "../../../src/ui/objects/sheet/grid/cellChangeJournal.js";
 
 function sheet(cells) {
   return { id: "sheet", type: "sheet", rows: 100, columns: 10, cells };

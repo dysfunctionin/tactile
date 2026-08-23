@@ -5,7 +5,7 @@ import {
   cellChangeVersion,
   cellChangesSince,
   recordCellChanges,
-} from "../../../src/objects/sheet/grid/cellChangeJournal.js";
+} from "../../../src/ui/objects/sheet/grid/cellChangeJournal.js";
 
 test("cell edit journal reports sparse deltas and falls back after history rolls over", () => {
   const cells = {};

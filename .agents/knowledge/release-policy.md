@@ -53,7 +53,7 @@ machine-local channels in Settings:
 - `scripts/release/promote-updater-channel.mjs` owns monotonic nightly promotion decisions.
 - `src-tauri/src/lib.rs` owns runtime checking, download, signature verification through the Tauri updater plugin,
   installation, and restart. `src-tauri/src/updater.rs` owns channel persistence, endpoints, and candidate filtering.
-  `src/platform/tauri/updater.js` and `src/components/SettingsPanel.jsx` expose the manual Settings flow; there is no
+  `src/platform/tauri/updater.js` and `src/ui/components/SettingsPanel.jsx` expose the manual Settings flow; there is no
   startup or background poll.
 
 Stable accepts only newer stable versions. Nightly accepts only newer alpha or RC versions. Switching channels never

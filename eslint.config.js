@@ -40,7 +40,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["*.js", "*.mjs", "config/**/*.mjs", "scripts/**/*.mjs", "tests/**/*.mjs", "src/compat/**/*.js"],
+    files: ["*.js", "*.mjs", "config/**/*.mjs", "scripts/**/*.mjs", "tests/**/*.mjs", "src/core/compat/**/*.js"],
     languageOptions: {
       ecmaVersion: "latest",
       sourceType: "module",

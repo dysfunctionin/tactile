@@ -4,7 +4,7 @@ import test from "node:test";
 import {
   WORKSPACE_AUTHORING_PROMPT,
   WORKSPACE_AUTHORING_PROMPT_VERSION,
-} from "../../../src/workspaceAuthoringPrompt.js";
+} from "../../../src/core/workspace/authoringPrompt.js";
 
 test("workspace authoring prompt declares the current contract and core architecture", () => {
   assert.equal(WORKSPACE_AUTHORING_PROMPT_VERSION, "tactile-workspace-authoring/v2");

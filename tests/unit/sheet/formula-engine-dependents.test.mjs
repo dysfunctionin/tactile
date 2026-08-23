@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createCellRecord, createSheetObject } from "../../../src/model.js";
-import { createFormulaEngine } from "../../../src/sheet/formulas.js";
+import { createCellRecord, createSheetObject } from "../../../src/core/workspace/model.js";
+import { createFormulaEngine } from "../../../src/core/sheet/formulas.js";
 
 function sheetWithRanges() {
   const sheet = createSheetObject({ id: "ranges", rows: 2500, columns: 20 });

@@ -106,7 +106,10 @@ cargo test --manifest-path src-tauri/Cargo.toml
 ## Repository map
 
 ```text
-src/             React application, object model, shell, and browser platform
+src/app/         Application entry point and composition root
+src/core/        Headless domain: engine, sheet math, workspace, compatibility, workers
+src/ui/          React components, object renderers, shell, and styles
+src/platform/    Browser, Tauri, and code-runtime adapters
 src-tauri/       Tauri/Rust shell, native persistence, packaging, and platform tests
 marketplace/     Independently compiled optional object packages and generated catalog
 tests/           Unit, compatibility, platform, sites, browser, visual, and performance suites

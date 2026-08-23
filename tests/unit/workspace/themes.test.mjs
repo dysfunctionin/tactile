@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { BUILT_IN_THEMES, allThemes, normalizeTheme, resolveTheme, themeStyle } from "../../../src/themes.js";
+import {
+  BUILT_IN_THEMES,
+  allThemes,
+  normalizeTheme,
+  resolveTheme,
+  themeStyle,
+} from "../../../src/core/workspace/themes.js";
 
 const requestedThemeNames = new Map([
   ["github-dark", "GitHub Dark"],

@@ -28,11 +28,11 @@ The shell owns workspace identity, navigation, start-object metadata, commands, 
 
 ## Primary implementation
 
-- Composition: `src/App.jsx`, `src/hooks/`, `src/shell/`
-- Domain/topology: `src/core/`, `src/model.js`
-- Registry/objects: `src/objects/registry/`, `src/objects/`
-- Browser persistence: `src/platform/browser/`, `src/storage.js`
+- Composition: `src/app/`, `src/ui/hooks/`, `src/ui/shell/`
+- Domain/topology: `src/core/`, `src/core/workspace/model.js`
+- Registry/objects: `src/ui/objects/registry/`, `src/ui/objects/`
+- Browser persistence: `src/platform/browser/`, `src/platform/browser/storage.js`
 - Native contracts/cache: `src/platform/tauri/`, `src-tauri/src/`
-- Portable import/export: `src/export.js`, `src/compat/`, `src-tauri/src/portable/`
+- Portable import/export: `src/core/workspace/export.js`, `src/core/compat/`, `src-tauri/src/portable/`
 
 Create or supersede an ADR when changing a durable boundary, serialized contract, trust assumption, or recovery guarantee.

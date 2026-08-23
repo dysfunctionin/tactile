@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { OBJECT_TYPE_DEFINITIONS } from "../../../src/objects/registry/builtins.js";
-import { workspaceFromZip, workspaceToZipBlob } from "../../../src/export.js";
-import { createBlankWorkspace } from "../../../src/model.js";
+import { OBJECT_TYPE_DEFINITIONS } from "../../../src/ui/objects/registry/builtins.js";
+import { workspaceFromZip, workspaceToZipBlob } from "../../../src/core/workspace/export.js";
+import { createBlankWorkspace } from "../../../src/core/workspace/model.js";
 import {
   buildCellObjectDefinitions,
   comparePluginVersions,
@@ -18,7 +18,7 @@ import {
   marketplaceCatalogUrl,
   sha256Hex,
   updatedPluginRecord,
-} from "../../../src/objects/registry/marketplace.js";
+} from "../../../src/ui/objects/registry/marketplace.js";
 
 function response(body, options = {}) {
   const bytes = typeof body === "string" ? new TextEncoder().encode(body) : body;

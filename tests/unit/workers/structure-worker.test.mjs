@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { remapSheetAxisResult } from "../../../src/workers/structure/index.js";
+import { remapSheetAxisResult } from "../../../src/core/workers/structure/index.js";
 
 function sheet() {
   return {

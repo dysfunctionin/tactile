@@ -11,7 +11,7 @@ import {
   createEmbeddedObject,
   isBareUrlValue,
   usedSheetBounds,
-} from "../../../src/model.js";
+} from "../../../src/core/workspace/model.js";
 import {
   createTactileLink,
   parseCsv,
@@ -19,8 +19,8 @@ import {
   parseTactileLink,
   serializeSheetCsv,
   stringifyCsv,
-} from "../../../src/format/csv.js";
-import { buildPortablePackage, workspaceFromZip } from "../../../src/export.js";
+} from "../../../src/core/format/csv.js";
+import { buildPortablePackage, workspaceFromZip } from "../../../src/core/workspace/export.js";
 
 test("CSV codec preserves commas, quotes, and line breaks", () => {
   const rows = [["plain", "comma, value", 'a "quote"', "two\nlines"]];

@@ -7,7 +7,12 @@ import {
   routeFromLinkIds,
   validateNavigationRoute,
 } from "../../../src/core/topology.js";
-import { createBlankWorkspace, createCellRecord, createSheetObject, normalizeWorkspace } from "../../../src/model.js";
+import {
+  createBlankWorkspace,
+  createCellRecord,
+  createSheetObject,
+  normalizeWorkspace,
+} from "../../../src/core/workspace/model.js";
 
 function workspaceWithObjects(order = ["home", "alpha", "beta", "child"]) {
   const objects = {

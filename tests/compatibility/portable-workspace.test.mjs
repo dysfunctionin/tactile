@@ -10,7 +10,7 @@ import {
   portablePackageToZip,
   readPortableV4Package,
   validatePortableWorkspace,
-} from "../../src/compat/index.js";
+} from "../../src/core/compat/index.js";
 import {
   makeDanglingReferenceFixture,
   makeDuplicateObjectIdFixture,

@@ -1,13 +1,17 @@
 import { createPerformanceWorkspace } from "../generate-fixture.mjs";
-import { normalizeWorkspace } from "../../../../src/model.js";
-import { createFormulaEngine } from "../../../../src/sheet/formulas.js";
-import { cellAddress } from "../../../../src/sheet/coordinates.js";
-import { removeSheetAxisCells, reorderSheetAxis, shiftCells } from "../../../../src/sheet/axisCells.js";
-import { autoRowHeightsIncremental } from "../../../../src/sheet/textMeasure.js";
+import { normalizeWorkspace } from "../../../../src/core/workspace/model.js";
+import { createFormulaEngine } from "../../../../src/core/sheet/formulas.js";
+import { cellAddress } from "../../../../src/core/sheet/coordinates.js";
+import { removeSheetAxisCells, reorderSheetAxis, shiftCells } from "../../../../src/core/sheet/axisCells.js";
+import { autoRowHeightsIncremental } from "../../../../src/core/sheet/textMeasure.js";
 import { cloneHistoryWorkspace } from "../../../../src/core/history/snapshot.js";
 import { repairWorkspaceTopology } from "../../../../src/core/topology.js";
-import { recordCellChanges } from "../../../../src/objects/sheet/grid/cellChangeJournal.js";
-import { buildAxisGeometry, buildVirtualRange, rangeContains } from "../../../../src/objects/sheet/useVirtualSheet.js";
+import { recordCellChanges } from "../../../../src/ui/objects/sheet/grid/cellChangeJournal.js";
+import {
+  buildAxisGeometry,
+  buildVirtualRange,
+  rangeContains,
+} from "../../../../src/ui/objects/sheet/useVirtualSheet.js";
 
 const ROOT_SHEET_ID = "perf-root-sheet";
 

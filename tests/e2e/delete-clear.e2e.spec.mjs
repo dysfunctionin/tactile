@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { createBlankWorkspace, createCellRecord, createMarkdownObject } from "../../src/model.js";
+import { createBlankWorkspace, createCellRecord, createMarkdownObject } from "../../src/core/workspace/model.js";
 
 const cellLocator = (page, address) => page.locator(`[data-object-id="home"][data-cell-address="${address}"]`).first();
 

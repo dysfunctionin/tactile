@@ -1,7 +1,7 @@
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
 
-import { FormulaEngine } from "../../../src/sheet/formulas.js";
+import { FormulaEngine } from "../../../src/core/sheet/formulas.js";
 
 import { FIXTURE_SPEC, createPerformanceWorkspace } from "./generate-fixture.mjs";
 

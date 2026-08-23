@@ -1,7 +1,7 @@
-import { createBlankWorkspace, normalizeWorkspace } from "../../model.js";
-import { readPortableV4Package } from "../../compat/portable.js";
-import { buildPortableV4Package, portablePackageToZip } from "../../compat/portable.js";
-import { buildPortablePackage } from "../../export.js";
+import { createBlankWorkspace, normalizeWorkspace } from "../../core/workspace/model.js";
+import { readPortableV4Package } from "../../core/compat/portable.js";
+import { buildPortableV4Package, portablePackageToZip } from "../../core/compat/portable.js";
+import { buildPortablePackage } from "../../core/workspace/export.js";
 import {
   BROWSER_DATABASE_NAME,
   BROWSER_DATABASE_VERSION,

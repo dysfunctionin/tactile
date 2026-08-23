@@ -7,11 +7,11 @@ import {
   createMarkdownObject,
   createSheetObject,
   normalizeWorkspace,
-} from "../../../src/model.js";
+} from "../../../src/core/workspace/model.js";
 import { reparentWorkspace, REPARENT_REASONS } from "../../../src/core/reparenting.js";
 import { canonicalPathForObject, validateNavigationRoute } from "../../../src/core/topology.js";
-import { buildFilesIndex } from "../../../src/shell/filesIndex.js";
-import { historyStackFromState, HISTORY_KIND } from "../../../src/shell/inOut.js";
+import { buildFilesIndex } from "../../../src/ui/shell/filesIndex.js";
+import { historyStackFromState, HISTORY_KIND } from "../../../src/ui/shell/inOut.js";
 
 function embeddedCell(row, column, object, linkId, relation = "containment") {
   return createCellRecord(row, column, {

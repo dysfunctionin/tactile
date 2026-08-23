@@ -8,12 +8,12 @@ import {
   directionalOverscan,
   expandedRange,
   rangeContains,
-} from "../../../src/objects/sheet/useVirtualSheet.js";
+} from "../../../src/ui/objects/sheet/useVirtualSheet.js";
 import {
   compileConditionalRules,
   conditionalToneForCoordinates,
-} from "../../../src/objects/sheet/grid/conditionalRuleProjection.js";
-import { numericRangeContains } from "../../../src/objects/sheet/grid/cellSlotProjection.js";
+} from "../../../src/ui/objects/sheet/grid/conditionalRuleProjection.js";
+import { numericRangeContains } from "../../../src/ui/objects/sheet/grid/cellSlotProjection.js";
 
 function fixtureGeometry() {
   const rows = Array.from({ length: 256 }, (_, index) => index);
@@ -239,12 +239,15 @@ test("conditional-format ranges compile once and preserve decimal sign values", 
 
 test("empty cells stay sparse and embedded timers do not live in ordinary SheetCell", async () => {
   const canvasSource = await readFile(
-    new URL("../../../src/objects/sheet/grid/SheetGridCanvas.jsx", import.meta.url),
+    new URL("../../../src/ui/objects/sheet/grid/SheetGridCanvas.jsx", import.meta.url),
     "utf8",
   );
-  const sheetCellSource = await readFile(new URL("../../../src/objects/sheet/SheetCell.jsx", import.meta.url), "utf8");
+  const sheetCellSource = await readFile(
+    new URL("../../../src/ui/objects/sheet/SheetCell.jsx", import.meta.url),
+    "utf8",
+  );
   const embeddedSource = await readFile(
-    new URL("../../../src/objects/sheet/grid/embeddedCellOpen.js", import.meta.url),
+    new URL("../../../src/ui/objects/sheet/grid/embeddedCellOpen.js", import.meta.url),
     "utf8",
   );
 

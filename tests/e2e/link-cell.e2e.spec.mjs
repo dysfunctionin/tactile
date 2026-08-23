@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { createBlankWorkspace, createCellRecord } from "../../src/model.js";
+import { createBlankWorkspace, createCellRecord } from "../../src/core/workspace/model.js";
 
 function linkWorkspace() {
   const workspace = createBlankWorkspace({ id: "link-cell-e2e", name: "Link cell" });

@@ -1,5 +1,5 @@
-import { migratePortableWorkspace } from "../../compat/migrations.js";
-import { clonePortableValue } from "../../compat/schema.js";
+import { migratePortableWorkspace } from "../../core/compat/migrations.js";
+import { clonePortableValue } from "../../core/compat/schema.js";
 import {
   LEGACY_CACHE_KEY,
   LEGACY_DATABASE_NAME,

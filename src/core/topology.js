@@ -3,7 +3,7 @@ import {
   cellId,
   coordinatesFromAddress,
   coordinatesFromCellId,
-} from "../sheet/coordinates.js";
+} from "./sheet/coordinates.js";
 
 export const EMBED_RELATIONS = Object.freeze({
   CONTAINMENT: "containment",

@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { createBlankWorkspace, createCellRecord, createSheetObject } from "../../src/model.js";
+import { createBlankWorkspace, createCellRecord, createSheetObject } from "../../src/core/workspace/model.js";
 
 function objectHeaderWorkspace() {
   const workspace = createBlankWorkspace({ id: "object-header-e2e", name: "Object header" });

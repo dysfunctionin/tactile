@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { normalizeWorkspace } from "../../../src/model.js";
-import { counterPlugin } from "../../../src/objects/registry/template/counterPlugin.js";
+import { normalizeWorkspace } from "../../../src/core/workspace/model.js";
+import { counterPlugin } from "../../../src/ui/objects/registry/template/counterPlugin.js";
 import {
   getObjectTypeDefinition,
   listObjectTypeDefinitions,
@@ -10,8 +10,8 @@ import {
   projectObjectCell,
   registerObjectTypeDefinition,
   subscribeObjectTypeDefinitions,
-} from "../../../src/objects/registry/index.js";
-import { buildPluginSettingsContributions } from "../../../src/objects/registry/settingsContributions.js";
+} from "../../../src/ui/objects/registry/index.js";
+import { buildPluginSettingsContributions } from "../../../src/ui/objects/registry/settingsContributions.js";
 
 test("built-in cell objects implement expanded UI and cell projection contracts", () => {
   for (const definition of listObjectTypeDefinitions()) {

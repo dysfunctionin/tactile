@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { mermaidCacheKey, mermaidConfig } from "../../../src/objects/markdown/capabilities/mermaidRenderer.js";
-import { parseInlineMarkdown, parseMarkdownBlocks } from "../../../src/objects/markdown/markdownParse.js";
+import { mermaidCacheKey, mermaidConfig } from "../../../src/ui/objects/markdown/capabilities/mermaidRenderer.js";
+import { parseInlineMarkdown, parseMarkdownBlocks } from "../../../src/ui/objects/markdown/markdownParse.js";
 
 test("parses built-in Markdown formatting without interpreting protected math", () => {
   const nodes = parseInlineMarkdown("**Bold** `cost $5$` [math $x$](https://example.test/$x$) and $E=mc^2$");

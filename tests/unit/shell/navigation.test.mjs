@@ -1,8 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createBlankWorkspace, createCellRecord, createSheetObject, normalizeWorkspace } from "../../../src/model.js";
-import { deriveObjectPath, homeStackFromWorkspace, resolveHomePath } from "../../../src/shell/inOut.js";
+import {
+  createBlankWorkspace,
+  createCellRecord,
+  createSheetObject,
+  normalizeWorkspace,
+} from "../../../src/core/workspace/model.js";
+import { deriveObjectPath, homeStackFromWorkspace, resolveHomePath } from "../../../src/ui/shell/inOut.js";
 
 function nestedWorkspace() {
   const workspace = createBlankWorkspace({ id: "navigation-test" });

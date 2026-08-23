@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { cellsForMutation, cloneHistoryWorkspace } from "../../../src/core/history/snapshot.js";
-import { createCellRecord, createSheetObject } from "../../../src/model.js";
+import { createCellRecord, createSheetObject } from "../../../src/core/workspace/model.js";
 
 function workspaceWithCell(value) {
   const sheet = createSheetObject({ id: "sheet", title: "Sheet" });

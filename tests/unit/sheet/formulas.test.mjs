@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createCellRecord, createSheetObject } from "../../../src/model.js";
-import { evaluateCell, formatFormulaResult } from "../../../src/sheet/formulas.js";
+import { createCellRecord, createSheetObject } from "../../../src/core/workspace/model.js";
+import { evaluateCell, formatFormulaResult } from "../../../src/core/sheet/formulas.js";
 
 function formulaSheet() {
   const sheet = createSheetObject({ id: "sheet", title: "Formula test" });

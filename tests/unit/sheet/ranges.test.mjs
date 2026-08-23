@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createCellRecord, createSheetObject } from "../../../src/model.js";
+import { createCellRecord, createSheetObject } from "../../../src/core/workspace/model.js";
 import {
   fillChanges,
   normalizeRange,
@@ -9,10 +9,10 @@ import {
   rangeLabel,
   serializeRange,
   shiftFormulaReferences,
-} from "../../../src/sheet/ranges.js";
-import { formatCellValue } from "../../../src/sheet/formatting.js";
-import { conditionalToneForCell } from "../../../src/sheet/conditionalFormatting.js";
-import { sortRangeChanges } from "../../../src/sheet/sort.js";
+} from "../../../src/core/sheet/ranges.js";
+import { formatCellValue } from "../../../src/core/sheet/formatting.js";
+import { conditionalToneForCell } from "../../../src/core/sheet/conditionalFormatting.js";
+import { sortRangeChanges } from "../../../src/core/sheet/sort.js";
 
 test("sheet ranges normalize in either drag direction", () => {
   const range = normalizeRange("C4", "A2");

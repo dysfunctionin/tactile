@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { getObjectTypeDefinition, listObjectTypeDefinitions } from "../../../src/objects/registry/index.js";
+import { getObjectTypeDefinition, listObjectTypeDefinitions } from "../../../src/ui/objects/registry/index.js";
 
 const EXPECTED_TYPES = ["sheet", "markdown", "link"];
 

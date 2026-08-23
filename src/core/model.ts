@@ -15,7 +15,7 @@ import {
   normalizeIconEmoji as normalizeIconEmojiRuntime,
   normalizeWorkspace as normalizeWorkspaceRuntime,
   usedSheetBounds as usedSheetBoundsRuntime,
-} from "../model.js";
+} from "./workspace/model.js";
 import type { CellPatch, CellRecord, SheetObject, WorkspaceObject, WorkspaceSnapshot } from "./domain.ts";
 import { asCellId, asObjectId, asObjectTypeKey, asRowIndex, asColumnIndex } from "./ids.ts";
 import type { CellId, ColumnIndex, ObjectTypeKey, RowIndex } from "./ids.ts";

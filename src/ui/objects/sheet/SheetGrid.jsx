@@ -1,0 +1,240 @@
+import { useCallback, useMemo, useRef, useState } from "react";
+import { SheetGridCanvas } from "./grid/SheetGridCanvas.jsx";
+import { SheetGridContextMenu } from "./grid/SheetGridContextMenu.jsx";
+import { useSheetGridContextMenu } from "./grid/useSheetGridContextMenu.js";
+import { useSheetGridGestures } from "./grid/useSheetGridGestures.js";
+import { useSheetGridProjection } from "./grid/useSheetGridProjection.js";
+import { cellDisplayText } from "./cellDisplay.js";
+import { cellIdsInRange } from "../../../core/sheet/ranges.js";
+import {
+  isObjectDragEvent,
+  readObjectDragData,
+} from "../../shell/objectDrag.js";
+
+function useLatestCallback(callback) {
+  const callbackRef = useRef(callback);
+  callbackRef.current = callback;
+  return useCallback((...args) => callbackRef.current?.(...args), []);
+}
+
+export function SheetGrid({
+  objectHandle,
+  workspaceObjectsHandle,
+  selectedAddress,
+  selectionRange,
+  multiSelectedAddresses = [],
+  formulaEditingCellId,
+  inlineEditingCellId,
+  onSelect,
+  onSelectRange,
+  onToggleMultiSelect,
+  onToggleAxisSelection,
+  onDeleteSelectedText,
+  onFocusFormulaBar,
+  onCellChange,
+  onCellsChange,
+  onUpdateObject,
+  onOpenObject,
+  onReparentObject,
+  onCreateEmbedded,
+  onInsertAxis,
+  onDeleteAxis,
+  onMoveAxis,
+  sheetMetrics,
+  onCreateFile,
+}) {
+  const object = objectHandle.current;
+  const [fillTarget, setFillTarget] = useState(null);
+  const [dropTargetAddress, setDropTargetAddress] = useState("");
+  const [resizePreview, setResizePreview] = useState(null);
+  const multiSelectedAddressSet = useMemo(() => new Set(multiSelectedAddresses), [multiSelectedAddresses]);
+  const stableOnSelect = useLatestCallback(onSelect);
+  const stableOnSelectRange = useLatestCallback(onSelectRange);
+  const stableOnToggleMultiSelect = useLatestCallback(onToggleMultiSelect);
+  const stableOnToggleAxisSelection = useLatestCallback(onToggleAxisSelection);
+  const stableOnDeleteSelectedText = useLatestCallback(onDeleteSelectedText);
+  const stableOnFocusFormulaBar = useLatestCallback(onFocusFormulaBar);
+  const stableOnCellChange = useLatestCallback(onCellChange);
+  const stableOnCellsChange = useLatestCallback(onCellsChange);
+  const stableOnUpdateObject = useLatestCallback(onUpdateObject);
+  const stableOnOpenObject = useLatestCallback(onOpenObject);
+  const stableOnReparentObject = useLatestCallback(onReparentObject);
+  const stableOnCreateFile = useLatestCallback(onCreateFile);
+  const stableOnMoveAxis = useLatestCallback(onMoveAxis);
+  const handleObjectDragOver = useCallback((event, address) => {
+    if (!isObjectDragEvent(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = "move";
+    setDropTargetAddress(address);
+  }, []);
+  const handleObjectDragLeave = useCallback((event) => {
+    if (event.currentTarget.contains(event.relatedTarget)) return;
+    setDropTargetAddress("");
+  }, []);
+  const handleObjectDrop = useCallback((event, address) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const payload = readObjectDragData(event);
+    setDropTargetAddress("");
+    if (payload) stableOnReparentObject?.(payload, { parentObjectId: object.id, address });
+  }, [object.id, stableOnReparentObject]);
+  const projection = useSheetGridProjection({
+    object,
+    selectedAddress,
+    selectionRange,
+    formulaEditingCellId,
+    fillTarget,
+    sheetMetrics,
+    resizePreview,
+  });
+  const displayForCell = useCallback(
+    (cell, row, column) => cellDisplayText(cell, { row, column }, projection.formulaValues, object, workspaceObjectsHandle.current),
+    [object, projection.formulaValues, workspaceObjectsHandle],
+  );
+  const gestures = useSheetGridGestures({
+    object,
+    selectedAddress: projection.selectedAddress,
+    selectionRange: projection.normalizedSelection,
+    formulaEditingCellId,
+    selectedCoordinates: projection.selectedCoordinates,
+    normalizedSelection: projection.normalizedSelection,
+    scrollRef: projection.scrollRef,
+    metrics: projection.metrics,
+    rowIndexMap: projection.rowIndexMap,
+    columnIndexMap: projection.columnIndexMap,
+    formulaValues: projection.formulaValues,
+    displayForCell,
+    columnPositionForIndex: projection.columnPositionForIndex,
+    columnOffsetForPosition: projection.columnOffsetForPosition,
+    columnSizeForPosition: projection.columnSizeForPosition,
+    columnSizeForIndex: projection.columnSizeForIndex,
+    rowPositionForIndex: projection.rowPositionForIndex,
+    rowOffsetForPosition: projection.rowOffsetForPosition,
+    rowSizeForPosition: projection.rowSizeForPosition,
+    rowSizeForIndex: projection.rowSizeForIndex,
+    onSelect: stableOnSelect,
+    onSelectRange: stableOnSelectRange,
+    onToggleMultiSelect: stableOnToggleMultiSelect,
+    onCellChange: stableOnCellChange,
+    onCellsChange: stableOnCellsChange,
+    onUpdateObject: stableOnUpdateObject,
+    onMoveAxis: stableOnMoveAxis,
+    fillTarget,
+    setFillTarget,
+    onResizePreview: setResizePreview,
+  });
+const contextMenu = useSheetGridContextMenu({
+    object,
+    normalizedSelection: projection.normalizedSelection,
+    onCellsChange: stableOnCellsChange,
+    onSelectRange: stableOnSelectRange,
+    onCreateFile: stableOnCreateFile,
+  });
+  const wrapEnabled = Boolean(contextMenu.menu?.cell?.style?.wrap);
+  const handleToggleWrap = useCallback(() => {
+    const next = !wrapEnabled;
+    const ids = cellIdsInRange(projection.normalizedSelection);
+    const changes = ids.map((targetCellId) => {
+      const currentStyle = object.cells?.[targetCellId]?.style || {};
+      return { cellId: targetCellId, patch: { style: { ...currentStyle, wrap: next } } };
+    });
+    if (changes.length) stableOnCellsChange?.(changes, "format");
+  }, [object.cells, projection.normalizedSelection, stableOnCellsChange, wrapEnabled]);
+
+  return (
+    <div className="sheet-grid-shell">
+      <input
+        ref={contextMenu.fileInputRef}
+        className="native-file-input"
+        type="file"
+        accept=".pdf,.md,.markdown,.html,.htm,.svg,image/*,video/*,application/pdf,text/html,text/markdown"
+        tabIndex={-1}
+        aria-hidden="true"
+        onChange={contextMenu.handleFileChange}
+      />
+      <SheetGridCanvas
+        objectHandle={objectHandle}
+        workspaceObjectsHandle={workspaceObjectsHandle}
+        selectedAddress={projection.selectedAddress}
+        normalizedSelection={projection.normalizedSelection}
+        multiSelectedAddresses={multiSelectedAddressSet}
+        fillPreviewRange={projection.fillPreviewRange}
+        formulaValues={projection.formulaValues}
+        rowGroups={projection.rowGroups}
+        columnGroups={projection.columnGroups}
+        rowGroupByStart={projection.rowGroupByStart}
+        columnGroupByStart={projection.columnGroupByStart}
+        visibleRows={projection.visibleRows}
+        visibleColumns={projection.visibleColumns}
+        viewportCells={projection.viewportCells}
+        viewport={projection.viewport}
+        canvasSize={projection.canvasSize}
+        metrics={projection.metrics}
+        scrollRef={projection.scrollRef}
+        scrollFallbackRef={projection.scrollFallbackRef}
+        rowOffsetForPosition={projection.rowOffsetForPosition}
+        rowSizeForPosition={projection.rowSizeForPosition}
+        columnOffsetForPosition={projection.columnOffsetForPosition}
+        columnSizeForPosition={projection.columnSizeForPosition}
+        showActiveRowContext={projection.showActiveRowContext}
+        showActiveColumnContext={projection.showActiveColumnContext}
+        selectedCoordinates={projection.selectedCoordinates}
+        formulaEditingCellId={formulaEditingCellId}
+        inlineEditingCellId={inlineEditingCellId}
+        formulaReferenceRange={gestures.formulaReferenceRange}
+        onSelect={stableOnSelect}
+        onSelectRange={stableOnSelectRange}
+        onToggleAxisSelection={stableOnToggleAxisSelection}
+        onDeleteSelectedText={stableOnDeleteSelectedText}
+        onSelectionStart={gestures.startSelection}
+        onSelectionMove={gestures.moveSelectionGesture}
+        onFormulaReferenceStart={gestures.startFormulaReference}
+        onFormulaReferenceMove={gestures.moveFormulaReference}
+        onFillStart={gestures.startFill}
+        onFocusFormulaBar={stableOnFocusFormulaBar}
+        onOpenObject={stableOnOpenObject}
+        dropTargetAddress={dropTargetAddress}
+        onObjectDragOver={handleObjectDragOver}
+        onObjectDragLeave={handleObjectDragLeave}
+        onObjectDrop={handleObjectDrop}
+        onContextMenu={contextMenu.openContextMenu}
+        onStartAxisDrag={gestures.startAxisDrag}
+        onStartCornerSelection={gestures.startCornerSelection}
+        onStartResize={gestures.startResize}
+        onResizeAxisWithKeyboard={gestures.resizeAxisWithKeyboard}
+        onResetAxisSize={gestures.resetAxisSize}
+        onAutoFitAxisSize={gestures.autoFitAxisSize}
+        onRestoreSelectionScroll={gestures.restoreSelectionScroll}
+        onToggleRowGroup={(groupId) => gestures.toggleRowGroup(groupId, projection.rowGroups)}
+        onToggleColumnGroup={(groupId) => gestures.toggleColumnGroup(groupId, projection.columnGroups)}
+      />
+      <SheetGridContextMenu
+        menu={contextMenu.menu}
+        setMenu={contextMenu.setMenu}
+        normalizedSelection={projection.normalizedSelection}
+        objectHandle={objectHandle}
+        workspaceObjectsHandle={workspaceObjectsHandle}
+        formulaValues={projection.formulaValues}
+        rowGroups={projection.rowGroups}
+        columnGroups={projection.columnGroups}
+        filters={projection.filters}
+        onCreateEmbedded={onCreateEmbedded}
+        onCellsChange={onCellsChange}
+        onSelect={onSelect}
+        onSelectRange={onSelectRange}
+        onUpdateObject={onUpdateObject}
+        onInsertAxis={onInsertAxis}
+        onDeleteAxis={onDeleteAxis}
+        onOpenObject={onOpenObject}
+        onAttachFile={contextMenu.attachFile}
+        onCopy={contextMenu.copyCell}
+        onPaste={contextMenu.pasteCell}
+        canCopy={contextMenu.canCopy}
+        canPaste={contextMenu.canPaste}
+        wrapEnabled={wrapEnabled}
+        onToggleWrap={handleToggleWrap}
+      />
+    </div>
+  );
+}

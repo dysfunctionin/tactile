@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import { buildPortablePackage } from "../../../../src/export.js";
+import { buildPortablePackage } from "../../../../src/core/workspace/export.js";
 import { createPerformanceWorkspace } from "../generate-fixture.mjs";
 
 import { createLowStressWorkspace } from "./profiles.mjs";

@@ -5,7 +5,7 @@ import {
   boundedAxisEntries,
   canonicalSheetSelection,
   selectionCoordinates,
-} from "../../../src/objects/sheet/grid/selectionGeometry.js";
+} from "../../../src/ui/objects/sheet/grid/selectionGeometry.js";
 
 test("selection coordinates and endpoints stay inside the sheet", () => {
   assert.deepEqual(selectionCoordinates("BM999", 256, 64), { row: 255, column: 63 });

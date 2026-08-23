@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildFilesIndex, normalizeSearchText, validateObjectTitle } from "../../../src/shell/filesIndex.js";
+import { buildFilesIndex, normalizeSearchText, validateObjectTitle } from "../../../src/ui/shell/filesIndex.js";
 import {
   createBlankWorkspace,
   createCellRecord,
@@ -9,7 +9,7 @@ import {
   createSheetObject,
   deleteObjectFromWorkspace,
   normalizeWorkspace,
-} from "../../../src/model.js";
+} from "../../../src/core/workspace/model.js";
 import { validateNavigationRoute } from "../../../src/core/topology.js";
 
 function filesWorkspace() {

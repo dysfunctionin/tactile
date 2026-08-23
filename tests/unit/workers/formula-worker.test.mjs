@@ -8,10 +8,10 @@ import {
   formatFormulaResult,
   getCachedNumberFormatter,
   getFormulaCacheStats,
-} from "../../../src/sheet/formulas.js";
-import { FormulaWorkerClient } from "../../../src/workers/formula/client.js";
-import { FormulaWorkerRuntime } from "../../../src/workers/formula/runtime.js";
-import { FORMULA_WORKER_PROTOCOL } from "../../../src/workers/formula/protocol.js";
+} from "../../../src/core/sheet/formulas.js";
+import { FormulaWorkerClient } from "../../../src/core/workers/formula/client.js";
+import { FormulaWorkerRuntime } from "../../../src/core/workers/formula/runtime.js";
+import { FORMULA_WORKER_PROTOCOL } from "../../../src/core/workers/formula/protocol.js";
 
 function smallSheet() {
   return {

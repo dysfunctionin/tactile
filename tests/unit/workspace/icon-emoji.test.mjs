@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { normalizeIconEmoji } from "../../../src/iconEmoji.js";
-import { createBlankWorkspace, normalizeWorkspace } from "../../../src/model.js";
+import { normalizeIconEmoji } from "../../../src/core/workspace/iconEmoji.js";
+import { createBlankWorkspace, normalizeWorkspace } from "../../../src/core/workspace/model.js";
 
 test("normalizes custom icons to the first emoji grapheme", () => {
   assert.equal(normalizeIconEmoji("🎵✌️fbvf"), "🎵");

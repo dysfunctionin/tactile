@@ -12,7 +12,17 @@ import type {
   WorkspaceId,
 } from "./ids.ts";
 
-export const KNOWN_OBJECT_TYPES = ["sheet", "markdown", "document", "code", "pdf", "image", "video", "html", "svg"] as const;
+export const KNOWN_OBJECT_TYPES = [
+  "sheet",
+  "markdown",
+  "document",
+  "code",
+  "pdf",
+  "image",
+  "video",
+  "html",
+  "svg",
+] as const;
 
 export type KnownObjectType = (typeof KNOWN_OBJECT_TYPES)[number];
 export type FileObjectType = Exclude<KnownObjectType, "sheet" | "markdown" | "document" | "code">;

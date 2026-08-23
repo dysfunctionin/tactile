@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { createBlankWorkspace, createCellRecord, createMarkdownObject } from "../../src/model.js";
+import { createBlankWorkspace, createCellRecord, createMarkdownObject } from "../../src/core/workspace/model.js";
 
 const RICH_MARKDOWN_SAMPLE = `# Project architecture
 

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createBlankWorkspace, createCellRecord, normalizeWorkspace } from "../../../src/model.js";
+import { createBlankWorkspace, createCellRecord, normalizeWorkspace } from "../../../src/core/workspace/model.js";
 import { commandsForWorkspaceTransition, createWave2Shadow } from "../../../src/core/engine/shadow.js";
 
 function workspaceWithCell(workspace, cellId, patch) {

@@ -1,5 +1,5 @@
 import { createBrowserPersistence } from "../../platform/browser/persistence.js";
-import { createFormulaWorker } from "../../workers/formula/index.js";
+import { createFormulaWorker } from "../workers/formula/index.js";
 import { createTransactionEngine, compareEngineSnapshots } from "./index.ts";
 import { normalizeWorkspace } from "../model.ts";
 

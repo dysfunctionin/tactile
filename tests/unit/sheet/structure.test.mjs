@@ -7,7 +7,7 @@ import {
   adjustConditionalFormats,
   adjustFormulaForAxis,
   reorderFormulaForAxis,
-} from "../../../src/sheet/structure.js";
+} from "../../../src/core/sheet/structure.js";
 
 test("row and column insertion adjusts formula references", () => {
   assert.equal(adjustFormulaForAxis("=SUM(A2:$B$4)", "row", 1, "insert"), "=SUM(A3:$B$5)");
