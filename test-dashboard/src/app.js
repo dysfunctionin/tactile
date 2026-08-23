@@ -1,11 +1,19 @@
 import { config } from "./config.js";
 import { describeFailure, loadResults, readSource, writeSource } from "./data.js";
-import { durationChart, stepBars } from "./charts.js";
+import { compareBars, durationChart, relativeTrend, stepBars } from "./charts.js";
 import { formatMs, formatPercent, scenarioMetrics, stepComparison, trendClass, verdict } from "./metrics.js";
 
 const root = document.querySelector("#app");
 let themes = [];
-let state = { source: readSource(), history: null, summary: null, entries: [], latestRunId: null, filter: "" };
+let state = {
+  source: readSource(),
+  history: null,
+  summary: null,
+  entries: [],
+  latestRunId: null,
+  filter: "",
+  graphType: null,
+};
 
 function h(tag, className, text) {
   const node = document.createElement(tag);
@@ -244,6 +252,11 @@ function renderSidebar() {
   if (!window.location.hash || window.location.hash === "#/") overview.classList.add("is-active");
   aside.append(overview);
 
+  const graph = h("a", "nav-home", "Scenario graph");
+  graph.href = "#/graph";
+  if (window.location.hash === "#/graph") graph.classList.add("is-active");
+  aside.append(graph);
+
   const search = h("input", "nav-search");
   search.type = "search";
   search.placeholder = "Filter scenarios";
@@ -423,6 +436,54 @@ function renderScenario(main, key) {
   main.append(detailSection);
 }
 
+function renderGraph(main) {
+  const header = h("header", "page-header");
+  const title = h("div", "page-title");
+  title.append(h("h1", null, "Scenario graph"));
+  title.append(
+    h("p", "page-subtitle", "Compare scenarios against each other and watch them move across the retained runs."),
+  );
+  header.append(title);
+  header.append(renderControls());
+  main.append(header);
+
+  const types = [...new Set(state.entries.map(([, entry]) => entry.type))].sort();
+  const filters = h("div", "graph-filters");
+  const allButton = h("button", `chip${state.graphType ? "" : " is-active"}`, "all types");
+  allButton.type = "button";
+  allButton.addEventListener("click", () => {
+    state.graphType = null;
+    route();
+  });
+  filters.append(allButton);
+  for (const type of types) {
+    const chip = h("button", `chip${state.graphType === type ? " is-active" : ""}`, type);
+    chip.type = "button";
+    chip.addEventListener("click", () => {
+      state.graphType = type;
+      route();
+    });
+    filters.append(chip);
+  }
+  main.append(filters);
+
+  const scoped = state.graphType ? state.entries.filter(([, entry]) => entry.type === state.graphType) : state.entries;
+
+  const compare = section(
+    "Cost comparison",
+    `${scoped.length} scenario${scoped.length === 1 ? "" : "s"} in scope. Bars show the most recent duration for each, with the change against its previous run.`,
+  );
+  compare.append(compareBars(scoped));
+  main.append(compare);
+
+  const trend = section(
+    "Movement across runs",
+    "Each line is indexed to that scenario's oldest retained run, so scenarios of very different cost can be compared on one axis. Above 100% is slower than its baseline.",
+  );
+  trend.append(relativeTrend(scoped));
+  main.append(trend);
+}
+
 function route() {
   if (!state.history) return;
   root.replaceChildren();
@@ -430,6 +491,7 @@ function route() {
   const main = h("main", "content");
   const match = window.location.hash.match(/^#\/scenario\/(.+)$/);
   if (match) renderScenario(main, decodeURIComponent(match[1]));
+  else if (window.location.hash === "#/graph") renderGraph(main);
   else renderOverview(main);
   root.append(main);
   window.scrollTo(0, 0);
