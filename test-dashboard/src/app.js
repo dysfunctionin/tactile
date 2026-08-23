@@ -5,7 +5,7 @@ import { formatMs, formatPercent, scenarioMetrics, stepComparison, trendClass, v
 
 const root = document.querySelector("#app");
 let themes = [];
-let state = { source: readSource(), history: null, summary: null };
+let state = { source: readSource(), history: null, summary: null, entries: [], latestRunId: null, filter: "" };
 
 function h(tag, className, text) {
   const node = document.createElement(tag);
@@ -32,6 +32,11 @@ function matchesHotTopic(entry) {
   return config.hotTopic.match.some((needle) => haystack.includes(needle.toLowerCase()));
 }
 
+/** A scenario is only current if its newest record came from the latest run. */
+function isCurrent(entry) {
+  return entry.runs[0]?.runId === state.latestRunId;
+}
+
 function statusPill(status) {
   return h("span", `pill status-${status}`, status);
 }
@@ -43,17 +48,15 @@ function metricBlock(label, value, tone, hint) {
   return block;
 }
 
-function scenarioSummaryLine(metrics) {
-  const parts = [
-    `${metrics.runCount} run${metrics.runCount === 1 ? "" : "s"} retained`,
-    `best ${formatMs(metrics.min)}`,
-    `worst ${formatMs(metrics.max)}`,
-    `average ${formatMs(metrics.average)}`,
-  ];
-  return parts.join(" · ");
+function stalenessNote(entry) {
+  if (isCurrent(entry)) return null;
+  const note = h("span", "pill stale", "not in latest run");
+  note.title = `Newest record is from run ${entry.runs[0]?.runId}`;
+  return note;
 }
 
-function buildDetail(entry, metrics) {
+function scenarioDetail(entry) {
+  const metrics = scenarioMetrics(entry);
   const detail = h("div", "detail");
 
   const metricRow = h("div", "metrics");
@@ -75,7 +78,7 @@ function buildDetail(entry, metrics) {
       "Spread",
       `${formatMs(metrics.min)} – ${formatMs(metrics.max)}`,
       "",
-      `average ${formatMs(metrics.average)}`,
+      `average ${formatMs(metrics.average)} over ${metrics.runCount} run${metrics.runCount === 1 ? "" : "s"}`,
     ),
   );
   detail.append(metricRow);
@@ -91,7 +94,6 @@ function buildDetail(entry, metrics) {
     for (const label of ["Action", "Status", "Latest", "Previous", "Change"]) headRow.append(h("th", null, label));
     head.append(headRow);
     table.append(head);
-
     const body = h("tbody");
     for (const step of steps) {
       const row = h("tr");
@@ -111,13 +113,14 @@ function buildDetail(entry, metrics) {
   const runs = h("table", "runs");
   const runHead = h("thead");
   const runHeadRow = h("tr");
-  for (const label of ["Run", "Finished", "Status", "Duration", "Timeout ratio"])
+  for (const label of ["Run", "Finished", "Status", "Duration", "Timeout ratio"]) {
     runHeadRow.append(h("th", null, label));
+  }
   runHead.append(runHeadRow);
   runs.append(runHead);
   const runBody = h("tbody");
   for (const run of entry.runs) {
-    const row = h("tr");
+    const row = h("tr", run.runId === state.latestRunId ? "is-latest" : null);
     row.append(h("td", "step-name", run.runId));
     row.append(h("td", null, new Date(run.finishedAt).toLocaleString()));
     const status = h("td");
@@ -133,13 +136,17 @@ function buildDetail(entry, metrics) {
   return detail;
 }
 
-function scenarioCard(entry, { expanded }) {
+function scenarioCard(entry, key, { expanded }) {
   const metrics = scenarioMetrics(entry);
-  const card = h("article", `card status-${metrics.status}`);
+  const card = h("article", `card status-${metrics.status}${isCurrent(entry) ? "" : " is-stale"}`);
 
   const header = h("header", "card-header");
   const heading = h("div", "card-heading");
-  heading.append(h("h3", null, entry.scenario));
+  const title = h("h3");
+  const link = h("a", "card-link", entry.scenario);
+  link.href = `#/scenario/${encodeURIComponent(key)}`;
+  title.append(link);
+  heading.append(title);
   heading.append(h("p", "card-path", `${entry.type} · ${entry.suite} · ${entry.file}`));
   header.append(heading);
 
@@ -147,37 +154,18 @@ function scenarioCard(entry, { expanded }) {
   badges.append(statusPill(metrics.status));
   badges.append(h("span", "pill neutral", formatMs(metrics.current)));
   const change = h("span", `pill ${trendClass(metrics.deltaVsPrevious)}`, formatPercent(metrics.deltaVsPrevious));
-  change.title = "Change against the previous run";
+  change.title = "Change against the previous recorded run";
   badges.append(change);
   if (metrics.isBest) badges.append(h("span", "pill better", "best yet"));
   if (metrics.isWorst && metrics.runCount > 1) badges.append(h("span", "pill worse", "slowest yet"));
+  const stale = stalenessNote(entry);
+  if (stale) badges.append(stale);
   header.append(badges);
   card.append(header);
 
   card.append(h("p", "card-verdict", verdict(metrics)));
-  card.append(h("p", "card-meta", scenarioSummaryLine(metrics)));
 
-  if (expanded) {
-    card.append(buildDetail(entry, metrics));
-  } else {
-    const toggle = h("button", "toggle", "Show trend and actions");
-    toggle.type = "button";
-    let detail = null;
-    toggle.addEventListener("click", () => {
-      if (!detail) {
-        // Charts are built on demand so 350 scenarios stay cheap to render.
-        detail = buildDetail(entry, metrics);
-        card.append(detail);
-        toggle.textContent = "Hide trend and actions";
-        return;
-      }
-      const hidden = detail.hasAttribute("hidden");
-      detail.toggleAttribute("hidden", !hidden);
-      toggle.textContent = hidden ? "Hide trend and actions" : "Show trend and actions";
-    });
-    card.append(toggle);
-  }
-
+  if (expanded) card.append(scenarioDetail(entry));
   return card;
 }
 
@@ -190,24 +178,87 @@ function section(title, subtitle) {
   return node;
 }
 
-function renderHeader(container) {
-  const history = state.history;
-  const latest = history.runs?.[0];
-  const header = h("header", "page-header");
+function buildNavGroups() {
+  const container = h("div", "nav-groups");
+  const needle = state.filter.trim().toLowerCase();
+  const active = decodeURIComponent((window.location.hash.match(/^#\/scenario\/(.+)$/) || [])[1] || "");
 
-  const title = h("div", "page-title");
-  title.append(h("h1", null, "Tactile performance"));
-  title.append(
-    h(
-      "p",
-      "page-subtitle",
-      latest
-        ? `Run ${latest.runId} · ${latest.branch}@${latest.commit} · ${new Date(latest.finishedAt).toLocaleString()}`
-        : "No runs recorded yet",
-    ),
-  );
-  header.append(title);
+  const byType = new Map();
+  for (const [key, entry] of state.entries) {
+    const haystack = `${entry.type} ${entry.suite} ${entry.scenario}`.toLowerCase();
+    if (needle && !haystack.includes(needle)) continue;
+    if (!byType.has(entry.type)) byType.set(entry.type, new Map());
+    const suites = byType.get(entry.type);
+    if (!suites.has(entry.suite)) suites.set(entry.suite, []);
+    suites.get(entry.suite).push([key, entry]);
+  }
 
+  if (!byType.size) {
+    container.append(h("p", "nav-empty", "No scenarios match that filter."));
+    return container;
+  }
+
+  const ordered = [...byType.keys()].sort((a, b) => {
+    const rank = (type) => (config.timedTypes.includes(type) ? 0 : 1);
+    return rank(a) - rank(b) || a.localeCompare(b);
+  });
+
+  for (const type of ordered) {
+    const suites = byType.get(type);
+    const count = [...suites.values()].reduce((sum, list) => sum + list.length, 0);
+    const group = h("details", "nav-group");
+    group.open = Boolean(needle) || config.timedTypes.includes(type);
+    group.append(h("summary", null, `${type} (${count})`));
+
+    for (const [suite, list] of [...suites.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+      const suiteBlock = h("div", "nav-suite");
+      suiteBlock.append(h("p", "nav-suite-label", suite));
+      const sorted = list.sort((a, b) => (b[1].runs[0]?.durationMs || 0) - (a[1].runs[0]?.durationMs || 0));
+      for (const [key, entry] of sorted) {
+        const link = h("a", "nav-link");
+        link.href = `#/scenario/${encodeURIComponent(key)}`;
+        if (key === active) link.classList.add("is-active");
+        link.append(h("span", `dot status-${entry.runs[0]?.status || "unknown"}`));
+        link.append(h("span", "nav-link-text", entry.scenario));
+        link.append(h("span", "nav-link-time", formatMs(entry.runs[0]?.durationMs)));
+        suiteBlock.append(link);
+      }
+      group.append(suiteBlock);
+    }
+    container.append(group);
+  }
+
+  return container;
+}
+
+function renderSidebar() {
+  const aside = h("aside", "sidebar");
+
+  const brand = h("div", "brand");
+  brand.append(h("strong", null, "Tactile"));
+  brand.append(h("span", "brand-sub", "performance"));
+  aside.append(brand);
+
+  const overview = h("a", "nav-home", "Overview");
+  overview.href = "#/";
+  if (!window.location.hash || window.location.hash === "#/") overview.classList.add("is-active");
+  aside.append(overview);
+
+  const search = h("input", "nav-search");
+  search.type = "search";
+  search.placeholder = "Filter scenarios";
+  search.value = state.filter;
+  search.addEventListener("input", () => {
+    state.filter = search.value;
+    aside.querySelector(".nav-groups").replaceWith(buildNavGroups());
+  });
+  aside.append(search);
+  aside.append(buildNavGroups());
+
+  return aside;
+}
+
+function renderControls() {
   const controls = h("div", "controls");
 
   const themeLabel = h("label", "control");
@@ -248,96 +299,148 @@ function renderHeader(container) {
   sourceLabel.append(sourceInput);
   controls.append(sourceLabel);
 
-  header.append(controls);
+  return controls;
+}
+
+function renderOverview(main) {
+  const latest = state.history.runs?.[0];
+  const header = h("header", "page-header");
+  const title = h("div", "page-title");
+  title.append(h("h1", null, "Overview"));
+  title.append(
+    h(
+      "p",
+      "page-subtitle",
+      latest
+        ? `Latest run ${latest.runId} · ${latest.branch}@${latest.commit} · ${new Date(latest.finishedAt).toLocaleString()}`
+        : "No runs recorded yet",
+    ),
+  );
+  header.append(title);
+  header.append(renderControls());
 
   if (latest) {
     const totals = h("div", "totals");
-    const entries = [
-      ["Scenarios", latest.totals.total, "neutral"],
+    for (const [label, value, tone] of [
+      ["Scenarios in run", latest.totals.total, "neutral"],
       ["Passed", latest.totals.pass, "better"],
       ["Failed", latest.totals.fail, latest.totals.fail ? "worse" : "neutral"],
       ["Timed out", latest.totals.timeout, latest.totals.timeout ? "worse" : "neutral"],
-      ["Skipped", latest.totals.skipped, "neutral"],
-    ];
-    for (const [label, value, tone] of entries) totals.append(metricBlock(label, String(value), tone));
+      ["Retained overall", state.entries.length, "neutral"],
+    ]) {
+      totals.append(metricBlock(label, String(value), tone));
+    }
     header.append(totals);
+
+    const notInRun = state.entries.filter(([, entry]) => !isCurrent(entry)).length;
+    if (notInRun) {
+      header.append(
+        h(
+          "p",
+          "coverage-note",
+          `The latest run covered ${latest.totals.total} of ${state.entries.length} retained scenarios. ` +
+            `${notInRun} kept results from an earlier run and are marked "not in latest run".`,
+        ),
+      );
+    }
   }
+  main.append(header);
 
-  container.append(header);
-}
-
-function renderHotTopic(container, entries) {
-  const hot = entries.filter(matchesHotTopic);
-  const node = section(
+  const hot = state.entries.filter(([, entry]) => matchesHotTopic(entry));
+  const hotSection = section(
     `Hot topic — ${config.hotTopic.title}`,
     `${config.hotTopic.subtitle}. ${hot.length} scenario${hot.length === 1 ? "" : "s"} matched, shown in full.`,
   );
   if (!hot.length) {
-    node.append(h("p", "empty", `Nothing matched ${config.hotTopic.match.join(", ")} in the retained runs.`));
+    hotSection.append(h("p", "empty", `Nothing matched ${config.hotTopic.match.join(", ")} in the retained runs.`));
   }
-  const grid = h("div", "grid");
-  for (const entry of hot.sort((a, b) => (b.runs[0]?.durationMs || 0) - (a.runs[0]?.durationMs || 0))) {
-    grid.append(scenarioCard(entry, { expanded: true }));
-  }
-  node.append(grid);
-  container.append(node);
+  const hotGrid = h("div", "grid");
+  const hotSorted = hot.sort((a, b) => (b[1].runs[0]?.durationMs || 0) - (a[1].runs[0]?.durationMs || 0));
+  for (const [key, entry] of hotSorted) hotGrid.append(scenarioCard(entry, key, { expanded: true }));
+  hotSection.append(hotGrid);
+  main.append(hotSection);
+
+  const failingNow = state.entries.filter(([, entry]) => isCurrent(entry) && entry.runs[0].status !== "pass");
+  const failingEarlier = state.entries.filter(([, entry]) => !isCurrent(entry) && entry.runs[0].status !== "pass");
+
+  const failSection = section(
+    "Failures",
+    "Separated by whether the failure comes from the latest run or from an earlier run that has not been repeated.",
+  );
+  failSection.append(h("h3", "sub-heading", `Failing in the latest run (${failingNow.length})`));
+  if (!failingNow.length) failSection.append(h("p", "empty", "Nothing failed in the latest run."));
+  const nowGrid = h("div", "grid");
+  for (const [key, entry] of failingNow) nowGrid.append(scenarioCard(entry, key, { expanded: false }));
+  failSection.append(nowGrid);
+
+  failSection.append(h("h3", "sub-heading", `Failing when last run (${failingEarlier.length})`));
+  if (!failingEarlier.length) failSection.append(h("p", "empty", "No stale failures."));
+  const earlierGrid = h("div", "grid");
+  for (const [key, entry] of failingEarlier) earlierGrid.append(scenarioCard(entry, key, { expanded: false }));
+  failSection.append(earlierGrid);
+
+  main.append(failSection);
 }
 
-function renderFailures(container, entries) {
-  const failing = entries.filter((entry) => entry.runs[0] && entry.runs[0].status !== "pass");
-  const node = section("Failures", failing.length ? "Scenarios whose latest run did not pass." : "");
-  if (!failing.length) {
-    node.append(h("p", "empty", "Every scenario passed in the latest run."));
+function renderScenario(main, key) {
+  const found = state.entries.find(([candidate]) => candidate === key);
+  if (!found) {
+    const missing = section("Scenario not found", "It may have been renamed, or dropped out of the retained runs.");
+    const back = h("a", "toggle", "Back to overview");
+    back.href = "#/";
+    missing.append(back);
+    main.append(missing);
+    return;
   }
-  const grid = h("div", "grid");
-  for (const entry of failing) grid.append(scenarioCard(entry, { expanded: false }));
-  node.append(grid);
-  container.append(node);
+
+  const [, entry] = found;
+  const metrics = scenarioMetrics(entry);
+
+  const header = h("header", "page-header");
+  const title = h("div", "page-title");
+  const crumb = h("p", "breadcrumb");
+  const back = h("a", null, "Overview");
+  back.href = "#/";
+  crumb.append(back, document.createTextNode(` / ${entry.type} / ${entry.suite}`));
+  title.append(crumb);
+  title.append(h("h1", null, entry.scenario));
+  title.append(h("p", "page-subtitle", entry.file));
+  header.append(title);
+  header.append(renderControls());
+
+  const badges = h("div", "card-badges");
+  badges.append(statusPill(metrics.status));
+  if (metrics.isBest) badges.append(h("span", "pill better", "best yet"));
+  if (metrics.isWorst && metrics.runCount > 1) badges.append(h("span", "pill worse", "slowest yet"));
+  const stale = stalenessNote(entry);
+  if (stale) badges.append(stale);
+  header.append(badges);
+  header.append(h("p", "card-verdict", verdict(metrics)));
+  main.append(header);
+
+  const detailSection = section("Latency detail", "Every retained run, with per-action timings where recorded.");
+  detailSection.append(scenarioDetail(entry));
+  main.append(detailSection);
 }
 
-function renderGroups(container, entries) {
-  const byType = new Map();
-  for (const entry of entries) {
-    if (!byType.has(entry.type)) byType.set(entry.type, new Map());
-    const suites = byType.get(entry.type);
-    if (!suites.has(entry.suite)) suites.set(entry.suite, []);
-    suites.get(entry.suite).push(entry);
-  }
-
-  const ordered = [...byType.keys()].sort((a, b) => {
-    const rank = (type) => (config.timedTypes.includes(type) ? 0 : 1);
-    return rank(a) - rank(b) || a.localeCompare(b);
-  });
-
-  const node = section("All scenarios", "Grouped by type and suite. Expand a scenario to build its trend chart.");
-  for (const type of ordered) {
-    const suites = byType.get(type);
-    const count = [...suites.values()].reduce((sum, list) => sum + list.length, 0);
-    const typeBlock = h("details", "group");
-    if (config.timedTypes.includes(type)) typeBlock.open = true;
-    const typeSummary = h("summary", null, `${type} — ${count} scenario${count === 1 ? "" : "s"}`);
-    typeBlock.append(typeSummary);
-
-    for (const [suite, list] of [...suites.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
-      const suiteBlock = h("details", "group group-suite");
-      suiteBlock.append(h("summary", null, `${suite} — ${list.length}`));
-      const grid = h("div", "grid");
-      for (const entry of list.sort((a, b) => (b.runs[0]?.durationMs || 0) - (a.runs[0]?.durationMs || 0))) {
-        grid.append(scenarioCard(entry, { expanded: false }));
-      }
-      suiteBlock.append(grid);
-      typeBlock.append(suiteBlock);
-    }
-    node.append(typeBlock);
-  }
-  container.append(node);
+function route() {
+  if (!state.history) return;
+  root.replaceChildren();
+  root.append(renderSidebar());
+  const main = h("main", "content");
+  const match = window.location.hash.match(/^#\/scenario\/(.+)$/);
+  if (match) renderScenario(main, decodeURIComponent(match[1]));
+  else renderOverview(main);
+  root.append(main);
+  window.scrollTo(0, 0);
 }
 
 function renderError(lines) {
   root.replaceChildren();
-  const node = h("section", "section");
-  node.append(h("h2", null, "No results loaded"));
-  for (const line of lines) node.append(h("p", "empty", line));
+  const node = h("main", "content");
+  const block = section("No results loaded");
+  for (const line of lines) block.append(h("p", "empty", line));
+  node.append(block);
   root.append(node);
 }
 
@@ -345,13 +448,14 @@ async function start() {
   root.replaceChildren(h("p", "empty", "Loading results…"));
   try {
     const { history, summary } = await loadResults(state.source);
-    state = { ...state, history, summary };
-    const entries = Object.values(history.scenarios || {});
-    root.replaceChildren();
-    renderHeader(root);
-    renderHotTopic(root, entries);
-    renderFailures(root, entries);
-    renderGroups(root, entries);
+    state = {
+      ...state,
+      history,
+      summary,
+      latestRunId: history.runs?.[0]?.runId ?? null,
+      entries: Object.entries(history.scenarios || {}),
+    };
+    route();
   } catch (error) {
     renderError(describeFailure(error, state.source));
   }
@@ -366,6 +470,7 @@ async function boot() {
     /* storage unavailable */
   }
   applyTheme(themes.find((theme) => theme.id === storedTheme) || themes[0]);
+  window.addEventListener("hashchange", route);
   await start();
 }
 
