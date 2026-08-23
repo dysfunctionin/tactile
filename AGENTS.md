@@ -24,7 +24,7 @@ Resolve ownership here before searching.
 | `src/platform/` | Browser, Tauri, and code-runtime adapters                              |
 | `src-tauri/`    | Rust shell, native persistence, packaging                              |
 | `marketplace/`  | Plugin packages, host SDK, generated catalog                           |
-| `tests/`        | `unit/` runs by default; every other suite is explicit                 |
+| `tests/`        | `harness/` templates, `scenarios/` setup, `cases/` tests               |
 | `scripts/`      | Build, marketplace, and release automation                             |
 
 Headless logic belongs in `src/core/`; React belongs in `src/ui/`. Choose the folder before loading callers.

@@ -85,6 +85,14 @@ jobs:
       - name: Run unit tests
         if: steps.source-changes.outputs.changed == 'true'
         run: npm run test:unit
+      - name: Upload unit test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tactile-test-results-quality-${{ github.sha }}
+          path: test-results
+          if-no-files-found: ignore
+          retention-days: 1
 
   web:
     name: Web build and browser tests
@@ -102,10 +110,17 @@ jobs:
         run: npx playwright install --with-deps chromium
       - run: npm run build
       - run: npm run test:sites
-      - run: npm run test:component
       - name: Run end-to-end tests
         if: needs.quality.outputs.source-changed == 'true'
         run: npm run test:e2e
+      - name: Upload browser test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tactile-test-results-web-${{ github.sha }}
+          path: test-results
+          if-no-files-found: ignore
+          retention-days: 1
       - name: Upload alpha web build
         if: github.event_name == 'push' && github.ref == 'refs/heads/alpha'
         uses: actions/upload-artifact@v4

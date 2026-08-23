@@ -28,4 +28,4 @@ Never classify Tactile using generic backend/database categories: browser persis
 Use the code map in root `AGENTS.md` first, then load the nearest local `AGENTS.md`:
 `src/core/AGENTS.md`, `src/ui/AGENTS.md`, `src-tauri/AGENTS.md`, `marketplace/AGENTS.md`, `tests/AGENTS.md`.
 
-A behavior change usually touches one of these pairs: `src/core/` plus `tests/unit/<area>/`, `src/ui/` plus `tests/e2e/`, `src/platform/` plus `tests/platform/`, or `marketplace/` plus `tests/unit/objects/`.
+A behavior change usually touches one of these pairs: `src/core/` plus `tests/cases/<feature>/`, `src/ui/` plus `tests/cases/e2e/`, `src/platform/` plus `tests/cases/platform/`, or `marketplace/` plus `tests/cases/objects/`.

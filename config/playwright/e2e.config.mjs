@@ -29,7 +29,10 @@ async function waitForAppReady() {
 }
 
 export default defineConfig({
-  testDir: "../../tests/e2e",
+  testDir: "../../tests/cases/e2e",
+  // Playwright wipes its output directory on start, so keep it beneath the
+  // harness results rather than at test-results/ itself.
+  outputDir: "../../test-results/playwright",
   testMatch: /.*\.e2e\.spec\.[cm]?[jt]s$/,
   timeout: 120_000,
   fullyParallel: false,

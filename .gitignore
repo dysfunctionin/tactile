@@ -14,7 +14,6 @@ test-results-*/
 *.tsbuildinfo
 test-results/
 tmp/
-evidence/performance/playwright-results.json
 
 # Local dev server log written by the Tauri dev runner.
 /tauri-dev.log

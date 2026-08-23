@@ -112,12 +112,12 @@ src/ui/          React components, object renderers, shell, and styles
 src/platform/    Browser, Tauri, and code-runtime adapters
 src-tauri/       Tauri/Rust shell, native persistence, packaging, and platform tests
 marketplace/     Independently compiled optional object packages and generated catalog
-tests/           Unit, compatibility, platform, sites, browser, visual, and performance suites
+tests/           Harness templates, scenario setups, and feature-grouped cases
 scripts/         Build, marketplace, release, checksum, and inventory automation
 config/          Tool configuration that does not require root-level discovery
 .agents/         Vendor-neutral project routing, domain knowledge, and decisions
 images/          Repository artwork and visual documentation
-evidence/        Performance results, SBOMs, and third-party inventory snapshots
+evidence/        SBOMs and third-party inventory snapshots
 ```
 
 Development work targets the protected `alpha` integration branch. Production-ready changes are promoted to protected `main` through a release pull request. Read [`CONTRIBUTING.md`](CONTRIBUTING.md) before opening a PR; coding agents should begin with [`AGENTS.md`](AGENTS.md).
