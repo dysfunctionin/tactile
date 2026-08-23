@@ -12,6 +12,23 @@ Tactile is a React/Vite local-first workspace with a Tauri/Rust native shell and
 
 Do not scan all Markdown, source, tests, or history. Expand context one concrete dependency at a time.
 
+## Code map
+
+Resolve ownership here before searching.
+
+| Path            | Owns                                                                   |
+| --------------- | ---------------------------------------------------------------------- |
+| `src/app/`      | Entry point and composition root                                       |
+| `src/core/`     | Headless domain: engine, sheet math, workspace, compatibility, workers |
+| `src/ui/`       | React components, object renderers, shell, styles                      |
+| `src/platform/` | Browser, Tauri, and code-runtime adapters                              |
+| `src-tauri/`    | Rust shell, native persistence, packaging                              |
+| `marketplace/`  | Plugin packages, host SDK, generated catalog                           |
+| `tests/`        | `unit/` runs by default; every other suite is explicit                 |
+| `scripts/`      | Build, marketplace, and release automation                             |
+
+Headless logic belongs in `src/core/`; React belongs in `src/ui/`. Choose the folder before loading callers.
+
 ## Precedence
 
 Explicit user requirements override repository guidance. Within the repository, the nearest applicable `AGENTS.md` overrides this file; selected workflow/domain guidance overrides general guidance. Source and executable tests are authoritative for current behavior. If guidance is stale, fix it with the implementation.

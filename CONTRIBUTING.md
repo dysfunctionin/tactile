@@ -66,7 +66,7 @@ For a plugin-only change, bump the package version and compile only that package
 
 ```text
 npm run marketplace:build -- tactile.image
-node --test tests/marketplace-build.test.mjs tests/marketplace.test.mjs tests/plugins.test.mjs
+node --test tests/unit/release/marketplace-build.test.mjs tests/unit/objects/marketplace.test.mjs tests/unit/objects/plugins.test.mjs
 ```
 
 Commit the package source and regenerated `marketplace/dist` artifacts. Do not require `npm run build` or a new Tactile release for an ordinary plugin release. A full application build is required only when changing the host SDK, loader, core app, or shared compiler infrastructure.
