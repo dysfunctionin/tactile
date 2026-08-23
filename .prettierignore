@@ -14,8 +14,8 @@ src/**/*.jsx
 index.html
 README.md
 src/styles.css
-tests/format.test.mjs
-tests/formulas.test.mjs
-tests/ranges.test.mjs
-tests/structure.test.mjs
+tests/unit/workspace/portable-format.test.mjs
+tests/unit/sheet/formulas.test.mjs
+tests/unit/sheet/ranges.test.mjs
+tests/unit/sheet/structure.test.mjs
 WORKFLOW.md

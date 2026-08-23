@@ -86,7 +86,9 @@ async function installMarketplacePlugin(page, name) {
   await page.getByRole("tab", { name: "Plugins" }).click();
   const marketplace = page.getByRole("region", { name: "Marketplace" });
   await marketplace.getByRole("button", { name: `Install ${name}` }).click();
-  await expect(page.getByRole("region", { name: "Cell Objects" }).getByRole("switch", { name: `Disable ${name}` })).toBeVisible();
+  await expect(
+    page.getByRole("region", { name: "Cell Objects" }).getByRole("switch", { name: `Disable ${name}` }),
+  ).toBeVisible();
   await page.getByRole("button", { name: "Close settings" }).click();
 }
 

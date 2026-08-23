@@ -1,9 +1,15 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { writeProfileFixture } from "./profiles.mjs";
-import { formulaAddAction, addRowsAction, addColumnsAction, importFixture } from "./scenarios.mjs";
 import { spawn } from "node:child_process";
 import { access } from "node:fs/promises";
+
+import { createMeasurementInitScript } from "../../measurement.mjs";
+
+import { formulaAddAction, addRowsAction, addColumnsAction, importFixture } from "./scenarios.mjs";
+import { writeProfileFixture } from "./profiles.mjs";
+
+// Temporarily patch x1 by calling insert once directly
+import * as scen from "./scenarios.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 async function exists(p) {
@@ -49,9 +55,11 @@ async function loadPlaywright() {
   }
   throw new Error("playwright missing");
 }
-import { createMeasurementInitScript } from "../../measurement.mjs";
 
-const fixture = await writeProfileFixture("low", path.join(ROOT, "tests/performance/benchmarks/.generated/tactile-low-suite"));
+const fixture = await writeProfileFixture(
+  "low",
+  path.join(ROOT, "tests/performance/benchmarks/.generated/tactile-low-suite"),
+);
 console.log(
   `low fixture ${fixture.fingerprint.slice(0, 12)} ${JSON.stringify(fixture.validation.counts)} path=${fixture.path}`,
 );
@@ -129,9 +137,6 @@ const diag2 = await page.evaluate(() => {
 });
 console.log("DIAG2 after 800ms", JSON.stringify(diag2, null, 2));
 console.log("running 3 scenarios x1...");
-
-// Temporarily patch x1 by calling insert once directly
-import * as scen from "./scenarios.mjs";
 for (const [name, fn] of [
   ["formula-add", (p) => scen.formulaAddAction(p, "low")],
   ["add-row", (p) => scen.addRowsAction(p, "low", 1)],

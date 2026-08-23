@@ -96,7 +96,7 @@ test("walks one cell at a time and extends the range only with Shift", async ({ 
       status: "D2",
       inRangeCount: 0,
       windowScrollTop: 0,
-  });
+    });
 });
 
 test("Ctrl-click adds and removes individual tiles from the selection", async ({ page }) => {

@@ -208,7 +208,9 @@ test("renders a Markdown document with visible LaTeX and Mermaid output", async 
   const math = surface.locator(".markdown-math-rendered .katex");
   await expect(math).toHaveCount(2);
   await expect(surface.locator(".markdown-math annotation[encoding='application/x-tex']")).toHaveCount(2);
-  expect(await math.evaluateAll((elements) => elements.every((element) => element.getBoundingClientRect().width > 0))).toBe(true);
+  expect(
+    await math.evaluateAll((elements) => elements.every((element) => element.getBoundingClientRect().width > 0)),
+  ).toBe(true);
 
   const diagram = surface.locator(".markdown-mermaid img[alt='Mermaid diagram']");
   await expect(diagram).toBeVisible({ timeout: 60_000 });
@@ -291,7 +293,10 @@ test("loads Mermaid near the viewport and reuses isolated session renders", asyn
   await expect(diagrams.locator("svg, script, [onclick]")).toHaveCount(0);
   await expect(surface.locator(".markdown-mermaid[data-cache-hit='true']")).toHaveCount(1);
 
-  const svg = await diagrams.first().locator("img").evaluate(async (image) => fetch(image.src).then((response) => response.text()));
+  const svg = await diagrams
+    .first()
+    .locator("img")
+    .evaluate(async (image) => fetch(image.src).then((response) => response.text()));
   expect(svg.trim()).toMatch(/^<svg[\s>]/i);
   expect(svg).not.toMatch(/<script[\s>]|\son[a-z]+\s*=|javascript:/i);
 });

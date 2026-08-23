@@ -9,7 +9,6 @@ import {
   validatePerformanceWorkspace,
   writePerformanceFixture,
 } from "./benchmarks/generate-fixture.mjs";
-
 import { measureBundle } from "./bundle.mjs";
 import {
   createMeasurementInitScript,

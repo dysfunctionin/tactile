@@ -5,6 +5,8 @@ import process from "node:process";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 
+import { createMeasurementInitScript, percentile, summarizeInstrumentation } from "../../measurement.mjs";
+
 import { freeMemMB, machineSnapshot, prepareEnvironment, sampleProcessTree } from "./env-guard.mjs";
 import { powershell } from "./powershell.mjs";
 import { ensureNativeBinary, killNativeApp, launchNativeApp, sampleNativeProcesses } from "./native.mjs";
@@ -22,11 +24,6 @@ import {
   scrollVerticalAction,
   typingBurstAction,
 } from "./scenarios.mjs";
-import {
-  createMeasurementInitScript,
-  percentile,
-  summarizeInstrumentation,
-} from "../../measurement.mjs";
 
 const SUITE_SCHEMA_VERSION = 1;
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");

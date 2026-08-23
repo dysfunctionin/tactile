@@ -109,7 +109,7 @@ cargo test --manifest-path src-tauri/Cargo.toml
 src/             React application, object model, shell, and browser platform
 src-tauri/       Tauri/Rust shell, native persistence, packaging, and platform tests
 marketplace/     Independently compiled optional object packages and generated catalog
-tests/           Unit, compatibility, browser, native, visual, and performance tests
+tests/           Unit, compatibility, platform, sites, browser, visual, and performance suites
 scripts/         Build, marketplace, release, checksum, and inventory automation
 config/          Tool configuration that does not require root-level discovery
 .agents/         Vendor-neutral project routing, domain knowledge, and decisions

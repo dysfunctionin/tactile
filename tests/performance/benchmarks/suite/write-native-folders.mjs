@@ -2,8 +2,9 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { buildPortablePackage } from "../../../../src/export.js";
-import { createLowStressWorkspace } from "./profiles.mjs";
 import { createPerformanceWorkspace } from "../generate-fixture.mjs";
+
+import { createLowStressWorkspace } from "./profiles.mjs";
 
 async function writeFolder(workspace, outDir) {
   const pkg = buildPortablePackage(workspace);
