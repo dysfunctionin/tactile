@@ -1,0 +1,272 @@
+[
+  {
+    "id": "paper-public",
+    "name": "Tactile Day",
+    "description": "Warm ivory, rust focus, Public Sans and Lilex.",
+    "colorScheme": "light",
+    "tokens": {
+      "paper": "#fbfaf6",
+      "paperElevated": "#fffefa",
+      "ink": "#181816",
+      "defaultInk": "#2c2925",
+      "accent": "#b34d35",
+      "accentSoft": "rgba(179, 77, 53, 0.18)",
+      "line": "#d8d3ca",
+      "lineStrong": "#c7c0b5",
+      "elevationShadow": "rgba(49,41,32,.18)",
+      "surfaceHighlight": "rgba(255,255,255,.82)"
+    }
+  },
+  {
+    "id": "paper-slate",
+    "name": "Slate Paper",
+    "description": "A cool technical paper with a quiet blue focus.",
+    "colorScheme": "light",
+    "tokens": {
+      "paper": "#f7f8f6",
+      "paperElevated": "#fcfdfb",
+      "ink": "#192022",
+      "defaultInk": "#192022",
+      "accent": "#476d82",
+      "accentSoft": "rgba(71,109,130,.17)",
+      "line": "#cfd6d5",
+      "lineStrong": "#bac5c5",
+      "elevationShadow": "rgba(49,41,32,.18)",
+      "surfaceHighlight": "rgba(255,255,255,.82)"
+    }
+  },
+  {
+    "id": "paper-moss",
+    "name": "Moss Paper",
+    "description": "Soft archival stock with an olive working accent.",
+    "colorScheme": "light",
+    "tokens": {
+      "paper": "#faf9ef",
+      "paperElevated": "#fffef5",
+      "ink": "#202019",
+      "defaultInk": "#202019",
+      "accent": "#69734b",
+      "accentSoft": "rgba(105,115,75,.18)",
+      "line": "#d5d2c2",
+      "lineStrong": "#c3bfab",
+      "elevationShadow": "rgba(49,41,32,.18)",
+      "surfaceHighlight": "rgba(255,255,255,.82)"
+    }
+  },
+  {
+    "id": "paper-plum",
+    "name": "Plum Paper",
+    "description": "Neutral paper warmed by a restrained editorial plum.",
+    "colorScheme": "light",
+    "tokens": {
+      "paper": "#faf7f7",
+      "paperElevated": "#fffdfd",
+      "ink": "#211c1e",
+      "defaultInk": "#211c1e",
+      "accent": "#7d5264",
+      "accentSoft": "rgba(125,82,100,.18)",
+      "line": "#d9ced1",
+      "lineStrong": "#c7b9bd",
+      "elevationShadow": "rgba(49,41,32,.18)",
+      "surfaceHighlight": "rgba(255,255,255,.82)"
+    }
+  },
+  {
+    "id": "github-dark",
+    "name": "GitHub Dark",
+    "description": "GitHub Primer's dark canvas and clear blue interaction color.",
+    "colorScheme": "dark",
+    "tokens": {
+      "paper": "#0d1117",
+      "paperElevated": "#161b22",
+      "ink": "#e6edf3",
+      "defaultInk": "#e6edf3",
+      "accent": "#2f81f7",
+      "accentSoft": "rgba(47,129,247,.22)",
+      "line": "#21262d",
+      "lineStrong": "#30363d",
+      "elevationShadow": "rgba(0,0,0,.42)",
+      "surfaceHighlight": "rgba(255,255,255,.06)"
+    }
+  },
+  {
+    "id": "catppuccin-dark",
+    "name": "Catppuccin Dark",
+    "description": "Catppuccin Mocha's cozy base with soft pastel blue focus.",
+    "colorScheme": "dark",
+    "tokens": {
+      "paper": "#1e1e2e",
+      "paperElevated": "#313244",
+      "ink": "#cdd6f4",
+      "defaultInk": "#cdd6f4",
+      "accent": "#89b4fa",
+      "accentSoft": "rgba(137,180,250,.22)",
+      "line": "#313244",
+      "lineStrong": "#45475a",
+      "elevationShadow": "rgba(0,0,0,.42)",
+      "surfaceHighlight": "rgba(255,255,255,.06)"
+    }
+  },
+  {
+    "id": "flexoki-light",
+    "name": "Flexoki Light",
+    "description": "Warm digital paper with Flexoki's inky, high-contrast palette.",
+    "colorScheme": "light",
+    "tokens": {
+      "paper": "#fffcf0",
+      "paperElevated": "#fffef7",
+      "ink": "#100f0f",
+      "defaultInk": "#100f0f",
+      "accent": "#24837b",
+      "accentSoft": "rgba(36,131,123,.18)",
+      "line": "#e6e4d9",
+      "lineStrong": "#dad8ce",
+      "elevationShadow": "rgba(49,41,32,.18)",
+      "surfaceHighlight": "rgba(255,255,255,.82)"
+    }
+  },
+  {
+    "id": "flexoki-dark",
+    "name": "Flexoki Dark",
+    "description": "Warm black ink reversed into Flexoki's low-glare dark paper.",
+    "colorScheme": "dark",
+    "tokens": {
+      "paper": "#1c1b1a",
+      "paperElevated": "#282726",
+      "ink": "#cecdc3",
+      "defaultInk": "#cecdc3",
+      "accent": "#3aa99f",
+      "accentSoft": "rgba(58,169,159,.2)",
+      "line": "#282726",
+      "lineStrong": "#403e3c",
+      "elevationShadow": "rgba(0,0,0,.42)",
+      "surfaceHighlight": "rgba(255,255,255,.06)"
+    }
+  },
+  {
+    "id": "one-dark",
+    "name": "Tactile Night",
+    "description": "Atom's graphite workspace with the familiar One Dark blue.",
+    "colorScheme": "dark",
+    "tokens": {
+      "paper": "#282c34",
+      "paperElevated": "#2c313c",
+      "ink": "#abb2bf",
+      "defaultInk": "#abb2bf",
+      "accent": "#61afef",
+      "accentSoft": "rgba(97,175,239,.2)",
+      "line": "#3e4451",
+      "lineStrong": "#4b5263",
+      "elevationShadow": "rgba(0,0,0,.42)",
+      "surfaceHighlight": "rgba(255,255,255,.06)"
+    }
+  },
+  {
+    "id": "nord-dark",
+    "name": "Nord Dark",
+    "description": "Nord's Polar Night surfaces with a crisp Frost accent.",
+    "colorScheme": "dark",
+    "tokens": {
+      "paper": "#3b4252",
+      "paperElevated": "#434c5e",
+      "ink": "#eceff4",
+      "defaultInk": "#eceff4",
+      "accent": "#88c0d0",
+      "accentSoft": "rgba(136,192,208,.2)",
+      "line": "#434c5e",
+      "lineStrong": "#4c566a",
+      "elevationShadow": "rgba(0,0,0,.42)",
+      "surfaceHighlight": "rgba(255,255,255,.06)"
+    }
+  },
+  {
+    "id": "vscode-dark",
+    "name": "VSCode Dark",
+    "description": "Visual Studio Code's focused charcoal workspace and blue accent.",
+    "colorScheme": "dark",
+    "tokens": {
+      "paper": "#1e1e1e",
+      "paperElevated": "#252526",
+      "ink": "#cccccc",
+      "defaultInk": "#cccccc",
+      "accent": "#007acc",
+      "accentSoft": "rgba(0,122,204,.24)",
+      "line": "#2b2b2b",
+      "lineStrong": "#3c3c3c",
+      "elevationShadow": "rgba(0,0,0,.42)",
+      "surfaceHighlight": "rgba(255,255,255,.06)"
+    }
+  },
+  {
+    "id": "macos-light",
+    "name": "macOS Light",
+    "description": "A bright system-like canvas with layered neutral surfaces.",
+    "colorScheme": "light",
+    "tokens": {
+      "paper": "#ffffff",
+      "paperElevated": "#ffffff",
+      "ink": "#1c1c1e",
+      "defaultInk": "#1c1c1e",
+      "accent": "#007aff",
+      "accentSoft": "rgba(0,122,255,.16)",
+      "line": "#d1d1d6",
+      "lineStrong": "#aeaeb2",
+      "elevationShadow": "rgba(49,41,32,.18)",
+      "surfaceHighlight": "rgba(255,255,255,.82)"
+    }
+  },
+  {
+    "id": "macos-dark",
+    "name": "macOS Dark",
+    "description": "A layered system-like dark appearance with luminous blue focus.",
+    "colorScheme": "dark",
+    "tokens": {
+      "paper": "#1c1c1e",
+      "paperElevated": "#2c2c2e",
+      "ink": "#f2f2f7",
+      "defaultInk": "#f2f2f7",
+      "accent": "#0a84ff",
+      "accentSoft": "rgba(10,132,255,.23)",
+      "line": "#38383a",
+      "lineStrong": "#48484a",
+      "elevationShadow": "rgba(0,0,0,.42)",
+      "surfaceHighlight": "rgba(255,255,255,.06)"
+    }
+  },
+  {
+    "id": "notion-light",
+    "name": "Notion Light",
+    "description": "A quiet white workspace with warm graphite text and soft rules.",
+    "colorScheme": "light",
+    "tokens": {
+      "paper": "#ffffff",
+      "paperElevated": "#ffffff",
+      "ink": "#37352f",
+      "defaultInk": "#37352f",
+      "accent": "#2383e2",
+      "accentSoft": "rgba(35,131,226,.14)",
+      "line": "#e9e9e7",
+      "lineStrong": "#d3d3d0",
+      "elevationShadow": "rgba(49,41,32,.18)",
+      "surfaceHighlight": "rgba(255,255,255,.82)"
+    }
+  },
+  {
+    "id": "notion-dark",
+    "name": "Notion Dark",
+    "description": "A calm near-black workspace with restrained Notion-like contrast.",
+    "colorScheme": "dark",
+    "tokens": {
+      "paper": "#191919",
+      "paperElevated": "#252525",
+      "ink": "#f2f2f2",
+      "defaultInk": "#f2f2f2",
+      "accent": "#529cca",
+      "accentSoft": "rgba(82,156,202,.22)",
+      "line": "#2f2f2f",
+      "lineStrong": "#434343",
+      "elevationShadow": "rgba(0,0,0,.42)",
+      "surfaceHighlight": "rgba(255,255,255,.06)"
+    }
+  }
+]

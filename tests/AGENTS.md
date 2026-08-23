@@ -89,6 +89,13 @@ npm run test:failures                        # failures with their first error l
 Running `npx playwright` directly does not clear shards, so stale results from earlier attempts are merged into the
 next report. Use `npm run test:e2e` or `node tests/harness/run.mjs ...` when the numbers matter.
 
+## Dashboard
+
+`npm run dashboard` serves `test-dashboard/` and charts the retained runs: latest duration, change against the previous
+run, change against the best previous run, and per-action bars. Its hot-topic section is configured in
+`test-dashboard/src/config.js`; point it at whatever is being optimised. The dashboard reads only `history.json` and
+`summary.json`, so it also accepts a remote base URL and can be lifted into its own repository unchanged.
+
 Browser tests are the same apart from the import and the `*.e2e.spec.mjs` suffix:
 
 ```js

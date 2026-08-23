@@ -113,6 +113,7 @@ src/platform/    Browser, Tauri, and code-runtime adapters
 src-tauri/       Tauri/Rust shell, native persistence, packaging, and platform tests
 marketplace/     Independently compiled optional object packages and generated catalog
 tests/           Harness templates, scenario setups, and feature-grouped cases
+test-dashboard/  Static dashboard charting scenario latency across retained runs
 scripts/         Build, marketplace, release, checksum, and inventory automation
 config/          Tool configuration that does not require root-level discovery
 .agents/         Vendor-neutral project routing, domain knowledge, and decisions
