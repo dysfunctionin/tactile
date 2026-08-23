@@ -15,6 +15,19 @@ export function cellKey(workspaceId, objectId, cellId) {
   return [String(workspaceId), String(objectId), String(cellId)];
 }
 
+export function cellChunkKey(workspaceId, objectId, chunkKey) {
+  return [String(workspaceId), String(objectId), String(chunkKey)];
+}
+
+export function cellChunkRecord(workspaceId, objectId, chunkKey, cells) {
+  return {
+    workspaceId: String(workspaceId),
+    objectId: String(objectId),
+    chunkKey: String(chunkKey),
+    cells: cells || {},
+  };
+}
+
 export function assetKey(workspaceId, assetId) {
   return [String(workspaceId), String(assetId)];
 }

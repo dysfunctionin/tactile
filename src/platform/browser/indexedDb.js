@@ -20,6 +20,9 @@ export function ensureRecordStores(database) {
   if (!database.objectStoreNames.contains(STORE_NAMES.cells)) {
     database.createObjectStore(STORE_NAMES.cells, { keyPath: ["workspaceId", "objectId", "cellId"] });
   }
+  if (!database.objectStoreNames.contains(STORE_NAMES.cellChunks)) {
+    database.createObjectStore(STORE_NAMES.cellChunks, { keyPath: ["workspaceId", "objectId", "chunkKey"] });
+  }
   if (!database.objectStoreNames.contains(STORE_NAMES.assets)) {
     database.createObjectStore(STORE_NAMES.assets, { keyPath: ["workspaceId", "assetId"] });
   }
@@ -83,6 +86,43 @@ export async function readAllRecords(database, storeName) {
   const records = await requestResult(request);
   await completed;
   return records || [];
+}
+
+// Every compound keyPath here starts with workspaceId, and an array sorts after
+// any string, so `[id, []]` is an exclusive upper bound for one workspace.
+function keyRange() {
+  const range = typeof globalThis === "undefined" ? null : globalThis.IDBKeyRange;
+  if (!range) throw new Error("IDBKeyRange is unavailable.");
+  return range;
+}
+
+export function workspaceKeyRange(workspaceId) {
+  return keyRange().bound([String(workspaceId)], [String(workspaceId), []]);
+}
+
+export function objectKeyRange(workspaceId, objectId) {
+  return keyRange().bound(
+    [String(workspaceId), String(objectId)],
+    [String(workspaceId), String(objectId), []],
+  );
+}
+
+export async function readWorkspaceRecords(database, storeName, workspaceId) {
+  const transaction = database.transaction([storeName], "readonly");
+  const completed = transactionResult(transaction);
+  const request = transaction.objectStore(storeName).getAll(workspaceKeyRange(workspaceId));
+  const records = await requestResult(request);
+  await completed;
+  return records || [];
+}
+
+export async function hasWorkspaceRecords(database, storeName, workspaceId) {
+  const transaction = database.transaction([storeName], "readonly");
+  const completed = transactionResult(transaction);
+  const request = transaction.objectStore(storeName).getAllKeys(workspaceKeyRange(workspaceId), 1);
+  const keys = await requestResult(request);
+  await completed;
+  return (keys || []).length > 0;
 }
 
 export async function readRecord(database, storeName, key) {

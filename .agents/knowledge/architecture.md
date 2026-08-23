@@ -24,6 +24,9 @@ The shell owns workspace identity, navigation, start-object metadata, commands, 
 - Portable workspace/object normalization is v4. Native cache schema is private and rebuildable.
 - Browser/native persistence uses forward deltas and revision acknowledgements; inverse patches stay in the engine.
 - Portable files are the user recovery authority. Native SQLite/WAL is an optimization, not the only copy.
+- Cells persist as fixed 64 x 64 chunks, the shared unit of storage and caching across backends. See ADR 0002.
+- A changed `workspace.id` is a new workspace: persistence writes a full snapshot and re-anchors, never patches.
+- Navigation history is keyed by workspace id, so a workspace restored under a stale id silently loses its layer stack.
 - Unknown fields and future/plugin state round-trip without coercion.
 
 ## Primary implementation
@@ -31,6 +34,7 @@ The shell owns workspace identity, navigation, start-object metadata, commands, 
 - Composition: `src/app/`, `src/ui/hooks/`, `src/ui/shell/`
 - Domain/topology: `src/core/`, `src/core/workspace/model.js`
 - Registry/objects: `src/ui/objects/registry/`, `src/ui/objects/`
+- Chunk layout and dataset ports: `src/core/dataset/`
 - Browser persistence: `src/platform/browser/`, `src/platform/browser/storage.js`
 - Native contracts/cache: `src/platform/tauri/`, `src-tauri/src/`
 - Portable import/export: `src/core/workspace/export.js`, `src/core/compat/`, `src-tauri/src/portable/`

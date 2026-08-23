@@ -96,9 +96,10 @@ export function useLocalWorkspace() {
     loadWorkspace().then(async (stored) => {
       if (cancelled) return;
       const initial = normalizeWorkspace(stored || initialWorkspace());
-      const controller = createWave2Shadow(initial, {
-        useInitialSnapshot: true,
-      });
+      // A selected native folder is canonical, so the shell keeps seeding from
+      // it. Only the browser restores from the record store, whose boot cache
+      // silently drops workspaces over the 5 MB localStorage cap.
+      const controller = createWave2Shadow(initial, { useInitialSnapshot: isTauriRuntime() });
       wave2ShadowRef.current = controller;
       const resolved = await controller.ready;
       if (cancelled) {

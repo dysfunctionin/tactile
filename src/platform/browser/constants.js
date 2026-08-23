@@ -1,5 +1,7 @@
 export const BROWSER_DATABASE_NAME = "tactile-local-workspace-records";
-export const BROWSER_DATABASE_VERSION = 1;
+// v2 adds the chunked cell store; the v1 per-cell store stays readable so an
+// existing workspace migrates on its next write instead of on upgrade.
+export const BROWSER_DATABASE_VERSION = 2;
 
 export const LEGACY_DATABASE_NAME = "tactile-local-workspace";
 export const LEGACY_DATABASE_VERSION = 3;
@@ -14,6 +16,7 @@ export const STORE_NAMES = Object.freeze({
   workspaceMeta: "workspaceMeta",
   objects: "objects",
   cells: "cells",
+  cellChunks: "cellChunks",
   assets: "assets",
   themes: "themes",
 });

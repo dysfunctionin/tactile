@@ -278,14 +278,14 @@ export function createWave2Shadow(initialWorkspace, options = {}) {
 
   const ready = (async () => {
     try {
-      const stored = useInitialSnapshot
-        ? null
-        : await persistence.open({ workspaceId: previous.id });
-      if (stored) {
+      // Boot resolves through the record store's own active pointer; forcing the
+      // caller's id here would miss a workspace too large for the boot cache.
+      const stored = useInitialSnapshot ? null : await persistence.open();
+      if (stored && persistence.lastOpenSource && persistence.lastOpenSource !== "blank") {
         previous = normalizeWorkspace(stored);
         engine = createTransactionEngine(previous, { initialRevision: "0" });
       } else {
-        await persistence.open({ workspaceId: previous.id });
+        if (useInitialSnapshot) await persistence.open({ workspaceId: previous.id });
         await persistence.writeSnapshot(previous, { revision: "0", activate: true });
       }
       state.persistence = "active";
@@ -361,7 +361,12 @@ export function createWave2Shadow(initialWorkspace, options = {}) {
       const transition = commandsForWorkspaceTransition(prior, next, commandSequence);
       commandSequence += transition.commands.length + 1;
 
-      if (transition.unsupported) {
+      // A new id is a different workspace, not an edit to the open one. Patching
+      // would file it under the previous id, so anything keyed to the workspace
+      // (navigation history) stops resolving after a reload.
+      const reidentified = String(prior?.id || "") !== String(next.id || "");
+
+      if (transition.unsupported || reidentified) {
         try {
           await resetTo(next);
         } catch (error) {

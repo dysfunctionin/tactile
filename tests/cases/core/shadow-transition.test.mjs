@@ -61,6 +61,25 @@ scenario("shadow transition maps a cell edit to one normalized transaction and p
   shadow.dispose();
 });
 
+scenario("importing a workspace re-anchors persistence to the imported id", async () => {
+  const initial = createBlankWorkspace({ id: "workspace-before-import" });
+  const imported = workspaceWithCell(createBlankWorkspace({ id: "workspace-after-import" }), "A1", { value: "42" });
+
+  const persistence = fakePersistence();
+  const shadow = createWave2Shadow(initial, { persistence });
+  await shadow.ready;
+  persistence.calls.length = 0;
+  await shadow.reconcile(imported);
+
+  // Patching instead would leave the import filed under the previous id, so
+  // anything keyed to the workspace stops resolving after a reload.
+  assert.equal(persistence.calls.filter((call) => call.type === "commit").length, 0);
+  const snapshot = persistence.calls.find((call) => call.type === "snapshot");
+  assert.equal(snapshot.snapshot.id, "workspace-after-import");
+  assert.equal(snapshot.options.activate, true);
+  shadow.dispose();
+});
+
 scenario("the normalized transaction engine is the only runtime mode", () => {
   const initial = createBlankWorkspace({ id: "workspace-wave3-default" });
   const defaultEngine = createWave2Shadow(initial, { persistence: fakePersistence() });

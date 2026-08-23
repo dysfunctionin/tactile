@@ -36,6 +36,77 @@ function keyFor(key) {
   return JSON.stringify(key);
 }
 
+// IndexedDB orders number < date < string < array, and compares arrays
+// element-wise, treating a shorter prefix as smaller.
+function keyTypeRank(value) {
+  if (Array.isArray(value)) return 4;
+  if (typeof value === "string") return 3;
+  if (value instanceof Date) return 2;
+  return 1;
+}
+
+function compareKeys(left, right) {
+  const leftRank = keyTypeRank(left);
+  const rightRank = keyTypeRank(right);
+  if (leftRank !== rightRank) return leftRank < rightRank ? -1 : 1;
+  if (leftRank === 4) {
+    const shared = Math.min(left.length, right.length);
+    for (let index = 0; index < shared; index += 1) {
+      const result = compareKeys(left[index], right[index]);
+      if (result !== 0) return result;
+    }
+    if (left.length === right.length) return 0;
+    return left.length < right.length ? -1 : 1;
+  }
+  if (left === right) return 0;
+  return left < right ? -1 : 1;
+}
+
+class MemoryKeyRange {
+  constructor(lower, upper, lowerOpen = false, upperOpen = false) {
+    this.lower = lower;
+    this.upper = upper;
+    this.lowerOpen = lowerOpen;
+    this.upperOpen = upperOpen;
+  }
+
+  static bound(lower, upper, lowerOpen = false, upperOpen = false) {
+    return new MemoryKeyRange(lower, upper, lowerOpen, upperOpen);
+  }
+
+  includes(key) {
+    if (this.lower !== undefined) {
+      const result = compareKeys(key, this.lower);
+      if (result < 0 || (result === 0 && this.lowerOpen)) return false;
+    }
+    if (this.upper !== undefined) {
+      const result = compareKeys(key, this.upper);
+      if (result > 0 || (result === 0 && this.upperOpen)) return false;
+    }
+    return true;
+  }
+}
+
+globalThis.IDBKeyRange ||= MemoryKeyRange;
+
+function matchesQuery(query, storedKey) {
+  if (query === undefined || query === null) return true;
+  if (query instanceof MemoryKeyRange) return query.includes(JSON.parse(storedKey));
+  return storedKey === keyFor(query);
+}
+
+function selectRecords(records, query) {
+  return [...records.entries()]
+    .filter(([storedKey]) => matchesQuery(query, storedKey))
+    .sort(([left], [right]) => compareKeys(JSON.parse(left), JSON.parse(right)));
+}
+
+function deleteMatching(records, query) {
+  if (!(query instanceof MemoryKeyRange)) return records.delete(keyFor(query));
+  selectRecords(records, query).forEach(([storedKey]) => records.delete(storedKey));
+  return undefined;
+}
+
 function keyFromPath(record, keyPath) {
   return Array.isArray(keyPath) ? keyPath.map((part) => record[part]) : record[keyPath];
 }
@@ -122,12 +193,19 @@ class MemoryObjectStore {
     });
   }
 
-  getAll() {
-    return this.request(() => [...this.records.values()].map((value) => structuredClone(value)));
+  getAll(query) {
+    return this.request(() => selectRecords(this.records, query).map(([, value]) => structuredClone(value)));
   }
 
-  delete(key) {
-    return this.request(() => this.records.delete(keyFor(key)));
+  getAllKeys(query, count) {
+    return this.request(() => {
+      const keys = selectRecords(this.records, query).map(([storedKey]) => JSON.parse(storedKey));
+      return count === undefined ? keys : keys.slice(0, count);
+    });
+  }
+
+  delete(query) {
+    return this.request(() => deleteMatching(this.records, query));
   }
 }
 
@@ -178,12 +256,21 @@ class TransactionObjectStore {
     });
   }
 
-  getAll() {
-    return this.transaction.enqueue(() => [...this.store.records.values()].map((value) => structuredClone(value)));
+  getAll(query) {
+    return this.transaction.enqueue(() => (
+      selectRecords(this.store.records, query).map(([, value]) => structuredClone(value))
+    ));
   }
 
-  delete(key) {
-    return this.transaction.enqueue(() => this.store.records.delete(keyFor(key)));
+  getAllKeys(query, count) {
+    return this.transaction.enqueue(() => {
+      const keys = selectRecords(this.store.records, query).map(([storedKey]) => JSON.parse(storedKey));
+      return count === undefined ? keys : keys.slice(0, count);
+    });
+  }
+
+  delete(query) {
+    return this.transaction.enqueue(() => deleteMatching(this.store.records, query));
   }
 }
 

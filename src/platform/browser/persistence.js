@@ -18,9 +18,9 @@ import {
   assetFromRecord,
   assetKey,
   assetRecord,
+  cellChunkKey,
+  cellChunkRecord,
   cellFromRecord,
-  cellKey,
-  cellRecord,
   objectFromRecord,
   objectKey,
   objectRecord,
@@ -32,12 +32,17 @@ import {
   workspaceMetaRecord,
 } from "./records.js";
 import {
+  hasWorkspaceRecords,
   indexedDbFor,
+  objectKeyRange,
   openRecordDatabase,
   readAllRecords,
   readRecord,
+  readWorkspaceRecords,
   runRecordTransaction,
+  workspaceKeyRange,
 } from "./indexedDb.js";
+import { chunkKeyForCellId, groupCellsIntoChunks } from "../../core/dataset/cellChunks.js";
 import { migrateLegacyWorkspace, readLegacyWorkspace } from "./migration.js";
 
 function now() {
@@ -52,10 +57,6 @@ function objectStoreRecord(workspaceId, object) {
   return objectRecord(workspaceId, object);
 }
 
-function cellStoreRecord(workspaceId, objectId, cell) {
-  return cellRecord(workspaceId, objectId, cell);
-}
-
 function assetStoreRecord(workspaceId, assetId, asset) {
   const blob = toNativeBlob(asset?.blob || asset?.data || asset?.dataUrl, asset?.mime);
   return assetRecord(workspaceId, assetId, asset, blob);
@@ -67,43 +68,36 @@ function themeStoreRecord(workspaceId, theme) {
 
 function putWorkspaceRecords(transaction, workspace, revision, storageState = "active") {
   const workspaceId = String(workspace.id);
+  const range = workspaceKeyRange(workspaceId);
   const metaStore = transaction.objectStore(STORE_NAMES.workspaceMeta);
   const objectStore = transaction.objectStore(STORE_NAMES.objects);
   const cellStore = transaction.objectStore(STORE_NAMES.cells);
+  const chunkStore = transaction.objectStore(STORE_NAMES.cellChunks);
   const assetStore = transaction.objectStore(STORE_NAMES.assets);
   const themeStore = transaction.objectStore(STORE_NAMES.themes);
 
-  const stores = [
-    {
-      store: objectStore,
-      records: "objects",
-      key: (record) => objectKey(record.workspaceId, record.objectId),
-    },
-    {
-      store: cellStore,
-      records: "cells",
-      key: (record) => cellKey(record.workspaceId, record.objectId, record.cellId),
-    },
-    {
-      store: assetStore,
-      records: "assets",
-      key: (record) => assetKey(record.workspaceId, record.assetId),
-    },
-    {
-      store: themeStore,
-      records: "themes",
-      key: (record) => themeKey(record.workspaceId, record.themeId),
-    },
-  ];
+  // Assets are the only store whose previous rows are still needed: the caller
+  // can hand back metadata without the blob it was saved with. Everything else
+  // is replaced wholesale by one range delete rather than a row-by-row sweep.
   const previousAssets = new Map();
-  let pendingReads = stores.length;
+  const readAssets = assetStore.getAll(range);
 
-  const writeRecords = () => {
+  objectStore.delete(range);
+  cellStore.delete(range);
+  chunkStore.delete(range);
+  themeStore.delete(range);
+
+  readAssets.onsuccess = () => {
+    (readAssets.result || []).forEach((record) => {
+      if (record.assetId) previousAssets.set(String(record.assetId), record);
+    });
+    assetStore.delete(range);
+
     metaStore.put(workspaceMetaRecord(workspace, revision, storageState));
     Object.values(workspace.objects || {}).forEach((object) => {
       objectStore.put(objectStoreRecord(workspaceId, object));
-      Object.values(object.cells || {}).forEach((cell) => {
-        cellStore.put(cellStoreRecord(workspaceId, object.id, cell));
+      groupCellsIntoChunks(object.cells).forEach((chunk) => {
+        chunkStore.put(cellChunkRecord(workspaceId, object.id, chunk.chunkKey, chunk.cells));
       });
     });
     Object.values(workspace.assets || {}).forEach((asset) => {
@@ -119,43 +113,70 @@ function putWorkspaceRecords(transaction, workspace, revision, storageState = "a
       if (themeId) themeStore.put(themeStoreRecord(workspaceId, theme));
     });
   };
-
-  stores.forEach(({ store, records, key }) => {
-    const read = store.getAll();
-    read.onsuccess = () => {
-      (read.result || []).forEach((record) => {
-        if (record.workspaceId !== workspaceId) return;
-        if (records === "assets" && record.assetId) previousAssets.set(String(record.assetId), record);
-        store.delete(key(record));
-      });
-      pendingReads -= 1;
-      if (pendingReads === 0) writeRecords();
-    };
-  });
 }
 
-function deleteObjectCells(transaction, workspaceId, objectId, object) {
-  if (!object?.cells) return;
-  const cells = transaction.objectStore(STORE_NAMES.cells);
-  Object.entries(object.cells).forEach(([fallbackCellId, cell]) => {
-    const cellId = String(cell?.id || fallbackCellId);
-    cells.delete(cellKey(workspaceId, objectId, cellId));
-  });
+// Cell edits are buffered per chunk and flushed once, so a paste that touches
+// thousands of cells costs one read-modify-write per 64x64 block, not per cell.
+function createChunkWriter(transaction, workspaceId) {
+  const store = transaction.objectStore(STORE_NAMES.cellChunks);
+  const pending = new Map();
+
+  const edit = (objectId, cellId, cell) => {
+    const chunk = chunkKeyForCellId(cellId);
+    const key = `${objectId}\u0000${chunk}`;
+    let entry = pending.get(key);
+    if (!entry) {
+      entry = { objectId: String(objectId), chunkKey: chunk, edits: new Map() };
+      pending.set(key, entry);
+    }
+    entry.edits.set(String(cellId), cell);
+  };
+
+  // A whole-object rewrite supersedes anything buffered for that object.
+  const dropObject = (objectId) => {
+    for (const [key, entry] of pending) {
+      if (entry.objectId === String(objectId)) pending.delete(key);
+    }
+  };
+
+  const flush = () => {
+    for (const entry of pending.values()) {
+      const key = cellChunkKey(workspaceId, entry.objectId, entry.chunkKey);
+      const read = store.get(key);
+      read.onsuccess = () => {
+        const cells = { ...(read.result?.cells || {}) };
+        entry.edits.forEach((cell, cellId) => {
+          if (cell) cells[cellId] = cell;
+          else delete cells[cellId];
+        });
+        if (Object.keys(cells).length === 0) store.delete(key);
+        else store.put(cellChunkRecord(workspaceId, entry.objectId, entry.chunkKey, cells));
+      };
+    }
+    pending.clear();
+  };
+
+  return { edit, dropObject, flush };
+}
+
+function deleteObjectCells(transaction, workspaceId, objectId) {
+  transaction.objectStore(STORE_NAMES.cells).delete(objectKeyRange(workspaceId, objectId));
+  transaction.objectStore(STORE_NAMES.cellChunks).delete(objectKeyRange(workspaceId, objectId));
 }
 
 function applyObjectOperation(transaction, workspaceId, operation) {
   const objects = transaction.objectStore(STORE_NAMES.objects);
-  const cells = transaction.objectStore(STORE_NAMES.cells);
+  const chunks = transaction.objectStore(STORE_NAMES.cellChunks);
   const key = objectKey(workspaceId, operation.objectId);
-  deleteObjectCells(transaction, workspaceId, operation.objectId, operation.before);
+  deleteObjectCells(transaction, workspaceId, operation.objectId);
   if (!operation.after) {
     objects.delete(key);
     return;
   }
   objects.put(objectStoreRecord(workspaceId, operation.after));
   if (operation.after.type === "sheet" && operation.after.cells) {
-    Object.values(operation.after.cells).forEach((cell) => {
-      cells.put(cellStoreRecord(workspaceId, operation.objectId, cell));
+    groupCellsIntoChunks(operation.after.cells).forEach((chunk) => {
+      chunks.put(cellChunkRecord(workspaceId, operation.objectId, chunk.chunkKey, chunk.cells));
     });
   }
 }
@@ -177,6 +198,7 @@ function applyAssetOperation(transaction, workspaceId, operation) {
 }
 
 function applyPatchOperations(transaction, workspaceId, operations) {
+  const chunkWriter = createChunkWriter(transaction, workspaceId);
   operations.forEach((operation) => {
     switch (operation.kind) {
       case "replace-workspace-meta":
@@ -186,15 +208,12 @@ function applyPatchOperations(transaction, workspaceId, operations) {
         });
         break;
       case "replace-object":
+        chunkWriter.dropObject(operation.objectId);
         applyObjectOperation(transaction, workspaceId, operation);
         break;
-      case "replace-cell": {
-        const store = transaction.objectStore(STORE_NAMES.cells);
-        const key = cellKey(workspaceId, operation.objectId, operation.cellId);
-        if (operation.after) store.put(cellStoreRecord(workspaceId, operation.objectId, operation.after));
-        else store.delete(key);
+      case "replace-cell":
+        chunkWriter.edit(operation.objectId, operation.cellId, operation.after || null);
         break;
-      }
       case "replace-asset":
         applyAssetOperation(transaction, workspaceId, operation);
         break;
@@ -209,6 +228,7 @@ function applyPatchOperations(transaction, workspaceId, operations) {
         throw new Error(`Unsupported persistence operation: ${String(operation.kind)}`);
     }
   });
+  chunkWriter.flush();
 }
 
 function acknowledge(transaction, workspaceId, revision) {
@@ -227,22 +247,25 @@ function acknowledge(transaction, workspaceId, revision) {
 }
 
 async function recordsForWorkspace(database, workspaceId, { includeStaged = true } = {}) {
-  const [metaRecords, objectRecords, cellRecords, assetRecords, themeRecords] = await Promise.all([
-    readAllRecords(database, STORE_NAMES.workspaceMeta),
-    readAllRecords(database, STORE_NAMES.objects),
-    readAllRecords(database, STORE_NAMES.cells),
-    readAllRecords(database, STORE_NAMES.assets),
-    readAllRecords(database, STORE_NAMES.themes),
+  const id = String(workspaceId);
+  const [meta, objectRecords, chunkRecords, assetRecords, themeRecords] = await Promise.all([
+    readRecord(database, STORE_NAMES.workspaceMeta, workspaceKey(id)),
+    readWorkspaceRecords(database, STORE_NAMES.objects, id),
+    readWorkspaceRecords(database, STORE_NAMES.cellChunks, id),
+    readWorkspaceRecords(database, STORE_NAMES.assets, id),
+    readWorkspaceRecords(database, STORE_NAMES.themes, id),
   ]);
+  // A workspace written by v1 has per-cell rows and no chunks. Reading both and
+  // letting chunks win keeps it correct until `migrateCellChunks` rewrites it.
+  const cellRecords = await readWorkspaceRecords(database, STORE_NAMES.cells, id);
   return {
-    meta: metaRecords.find((record) => (
-      record.workspaceId === String(workspaceId)
-      && (includeStaged || record.storageState !== "staged")
-    )) || null,
-    objects: objectRecords.filter((record) => record.workspaceId === String(workspaceId)),
-    cells: cellRecords.filter((record) => record.workspaceId === String(workspaceId)),
-    assets: assetRecords.filter((record) => record.workspaceId === String(workspaceId)),
-    themes: themeRecords.filter((record) => record.workspaceId === String(workspaceId)),
+    meta: meta && (includeStaged || meta.storageState !== "staged") ? meta : null,
+    objects: objectRecords,
+    chunks: chunkRecords,
+    cells: cellRecords,
+    assets: assetRecords,
+    themes: themeRecords,
+    chunked: cellRecords.length === 0,
   };
 }
 
@@ -258,6 +281,12 @@ function snapshotFromRecords(records) {
     if (!object) return;
     object.cells ||= {};
     object.cells[record.cellId] = cellFromRecord(record);
+  });
+  records.chunks.forEach((record) => {
+    const object = workspace.objects[record.objectId];
+    if (!object) return;
+    object.cells ||= {};
+    Object.assign(object.cells, record.cells || {});
   });
   records.assets.forEach((record) => {
     workspace.assets ||= {};
@@ -305,6 +334,7 @@ export class BrowserPersistenceAdapter {
     this.workspaceId = options.workspaceId || null;
     this.latestAcknowledgedRevision = null;
     this.migrationError = null;
+    this.lastOpenSource = null;
   }
 
   get activeWorkspaceId() {
@@ -338,6 +368,7 @@ export class BrowserPersistenceAdapter {
     let snapshot = workspaceId && this.indexedDB
       ? await this.readSnapshot(workspaceId, { includeStaged: false })
       : null;
+    this.lastOpenSource = snapshot ? "records" : null;
 
     if (!snapshot && this.autoMigrate) {
       try {
@@ -350,6 +381,7 @@ export class BrowserPersistenceAdapter {
         if (migration) {
           snapshot = migration.workspace;
           workspaceId = snapshot.id;
+          this.lastOpenSource = "migration";
         }
       } catch (error) {
         this.migrationError = error;
@@ -357,6 +389,7 @@ export class BrowserPersistenceAdapter {
         if (legacy) {
           snapshot = normalizeWorkspace(legacy.workspace);
           workspaceId = snapshot.id;
+          this.lastOpenSource = "legacy";
         }
       }
     }
@@ -370,12 +403,57 @@ export class BrowserPersistenceAdapter {
       if (candidate) {
         workspaceId = candidate.workspaceId;
         snapshot = await this.readSnapshot(workspaceId);
+        if (snapshot) this.lastOpenSource = "candidate";
       }
     }
 
-    snapshot ||= createBlankWorkspace();
+    if (!snapshot) {
+      snapshot = createBlankWorkspace();
+      this.lastOpenSource = "blank";
+    }
     this.workspaceId = String(workspaceId || snapshot.id);
+    await this.migrateCellChunks(this.workspaceId).catch(() => false);
     return snapshot;
+  }
+
+  // v1 stored one row per cell. Rewriting those rows as chunks is what turns a
+  // quarter-million writes into a few hundred, so it runs once per workspace.
+  async migrateCellChunks(workspaceId = this.workspaceId) {
+    if (!this.indexedDB || !workspaceId) return false;
+    const database = await this.databaseHandle();
+    if (!(await hasWorkspaceRecords(database, STORE_NAMES.cells, workspaceId))) return false;
+
+    const [cellRecords, chunkRecords] = await Promise.all([
+      readWorkspaceRecords(database, STORE_NAMES.cells, workspaceId),
+      readWorkspaceRecords(database, STORE_NAMES.cellChunks, workspaceId),
+    ]);
+    const byObject = new Map();
+    const cellsFor = (objectId) => {
+      let cells = byObject.get(String(objectId));
+      if (!cells) {
+        cells = {};
+        byObject.set(String(objectId), cells);
+      }
+      return cells;
+    };
+    cellRecords.forEach((record) => {
+      cellsFor(record.objectId)[String(record.cellId)] = cellFromRecord(record);
+    });
+    // Anything already chunked is newer than the v1 row it shadows.
+    chunkRecords.forEach((record) => {
+      Object.assign(cellsFor(record.objectId), record.cells || {});
+    });
+
+    await runRecordTransaction(database, "readwrite", (transaction) => {
+      const chunks = transaction.objectStore(STORE_NAMES.cellChunks);
+      byObject.forEach((cells, objectId) => {
+        groupCellsIntoChunks(cells).forEach((chunk) => {
+          chunks.put(cellChunkRecord(workspaceId, objectId, chunk.chunkKey, chunk.cells));
+        });
+      });
+      transaction.objectStore(STORE_NAMES.cells).delete(workspaceKeyRange(workspaceId));
+    }, [STORE_NAMES.cells, STORE_NAMES.cellChunks]);
+    return true;
   }
 
   async readSnapshot(workspaceId = this.workspaceId, options = {}) {

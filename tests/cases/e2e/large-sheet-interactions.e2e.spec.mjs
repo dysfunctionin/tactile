@@ -1,5 +1,6 @@
 import { expect } from "@playwright/test";
 
+import { BOOT_METADATA_KEY } from "../../../src/platform/browser/constants.js";
 import { defineSuite } from "../../harness/playwright.mjs";
 import { largeSheetFile } from "../../scenarios/large-sheet.mjs";
 
@@ -66,4 +67,58 @@ scenario("evaluates a formula entered on a 250k-cell sheet", async ({ page, arti
   await page.keyboard.press("Enter");
 
   await expect(target).not.toBeEmpty({ timeout: 120_000 });
+});
+
+scenario("restores a 250k-cell workspace after a reload", async ({ page, artifactPath, spec }) => {
+  await importLargeWorkspace(page, artifactPath, spec);
+
+  // The imported snapshot is durable only once the record adapter has written
+  // every chunk and switched the active pointer to it. Polling on an interval
+  // keeps the probe off the frame loop the write is competing for.
+  await page.waitForFunction(
+    ([bootKey, workspaceId]) => {
+      if (window.__TACTILE_WAVE2__?.persistence !== "active") return false;
+      const boot = JSON.parse(window.localStorage.getItem(bootKey) || "null");
+      return boot?.activeWorkspaceId === workspaceId;
+    },
+    [BOOT_METADATA_KEY, spec.workspaceId],
+    { timeout: 120_000, polling: 1000 },
+  );
+
+  const target = page.locator(`[data-object-id="${spec.rootSheetId}"][data-cell-address="B2"]`);
+  await target.dblclick();
+  await target.locator(".cell-inline-editor").fill("survives-reload");
+  await page.keyboard.press("Enter");
+  await expect(target).toContainText("survives-reload", { timeout: 120_000 });
+
+  // A commit acknowledges its revision in boot metadata only after the
+  // IndexedDB write resolves, so this is the durability signal to reload on.
+  await page.waitForFunction(
+    (bootKey) => {
+      const revision = window.__TACTILE_WAVE2__?.revision;
+      const boot = JSON.parse(window.localStorage.getItem(bootKey) || "null");
+      return Boolean(revision) && String(boot?.acknowledgedRevision ?? "") === String(revision);
+    },
+    BOOT_METADATA_KEY,
+    { timeout: 120_000, polling: 1000 },
+  );
+
+  await page.reload({ waitUntil: "domcontentloaded" });
+
+  // A workspace this size exceeds the ~5 MB boot cache, so surviving a reload
+  // proves boot read the IndexedDB record store rather than reseeding a blank.
+  await expect(page.locator(`[data-object-id="${spec.rootSheetId}"][data-cell-address="A1"]`)).toBeVisible({
+    timeout: 120_000,
+  });
+  await expect(page.locator(".object-statusbar")).toContainText(`${spec.rootRows} × ${spec.rootColumns}`, {
+    timeout: 120_000,
+  });
+  await expect(page.locator(`[data-object-id="${spec.rootSheetId}"][data-cell-address="B2"]`)).toContainText(
+    "survives-reload",
+    { timeout: 120_000 },
+  );
+
+  const mounted = await page.locator(`.sheet-cell[data-object-id="${spec.rootSheetId}"]`).count();
+  expect(mounted, "the restored root sheet must mount cells").toBeGreaterThan(0);
+  expect(mounted, "the restored sheet must stay virtualized").toBeLessThan(5_000);
 });
