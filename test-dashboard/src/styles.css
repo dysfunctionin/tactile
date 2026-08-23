@@ -777,3 +777,79 @@ svg .point.series-7,
 polyline.series {
   fill: none;
 }
+
+.legend li {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 10px;
+}
+
+.legend-toggle {
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  padding: 3px 4px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.legend-toggle:hover {
+  border-color: var(--line);
+}
+
+.legend-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.legend li.is-off .legend-label,
+.legend li.is-off .bar-delta {
+  opacity: 0.4;
+  text-decoration: line-through;
+}
+
+.legend li.is-off .swatch {
+  opacity: 0.25;
+}
+
+.legend-link {
+  font-size: 12px;
+  color: var(--steady);
+  text-decoration: none;
+  border-bottom: 1px solid var(--line-strong);
+}
+
+.legend-link:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+svg [data-series-key] {
+  transition:
+    opacity 120ms ease,
+    stroke-width 120ms ease;
+}
+
+svg [data-series-key].is-hidden {
+  display: none;
+}
+
+svg [data-series-key].is-muted {
+  opacity: 0.18;
+}
+
+svg polyline.is-emphasised {
+  stroke-width: 3.5;
+}
+
+svg circle.is-emphasised {
+  r: 6;
+}

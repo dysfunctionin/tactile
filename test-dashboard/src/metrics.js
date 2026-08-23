@@ -48,9 +48,10 @@ export function stepComparison(entry) {
   }));
 }
 
+/** Always milliseconds: mixing units makes columns of numbers easy to misread. */
 export function formatMs(value) {
   if (!Number.isFinite(value)) return "—";
-  if (value >= 1000) return `${(value / 1000).toFixed(2)} s`;
+  if (value >= 1000) return `${Math.round(value).toLocaleString("en-US")} ms`;
   if (value >= 1) return `${value.toFixed(1)} ms`;
   return `${value.toFixed(3)} ms`;
 }

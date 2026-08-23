@@ -258,7 +258,9 @@ export function relativeTrend(entries, { limit = 8, width = 860, height = 300 } 
 
   for (const line of series) {
     const points = line.points.map((value, i) => `${x(i)},${y(value)}`).join(" ");
-    svg.append(el("polyline", { points, class: `series series-${line.index}` }));
+    const path = el("polyline", { points, class: `series series-${line.index}` });
+    path.dataset.seriesKey = line.key;
+    svg.append(path);
     line.points.forEach((value, i) => {
       const marker = el("circle", {
         cx: x(i),
@@ -266,6 +268,7 @@ export function relativeTrend(entries, { limit = 8, width = 860, height = 300 } 
         r: i === line.points.length - 1 ? 5 : 3,
         class: `point series-${line.index}`,
       });
+      marker.dataset.seriesKey = line.key;
       const title = el("title");
       title.textContent = `${line.label} — ${formatMs(line.runs[i].durationMs)} (${Math.round(value)}% of baseline)`;
       marker.append(title);
@@ -281,20 +284,66 @@ export function relativeTrend(entries, { limit = 8, width = 860, height = 300 } 
 
   figure.append(svg);
 
+  const hidden = new Set();
+  let highlighted = null;
+
+  function paint() {
+    for (const node of svg.querySelectorAll("[data-series-key]")) {
+      const key = node.dataset.seriesKey;
+      node.classList.toggle("is-hidden", hidden.has(key));
+      node.classList.toggle("is-emphasised", highlighted === key);
+      node.classList.toggle("is-muted", highlighted !== null && highlighted !== key && !hidden.has(key));
+    }
+  }
+
   const legend = document.createElement("ul");
   legend.className = "legend";
   for (const line of series) {
     const item = document.createElement("li");
+
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "legend-toggle";
+    toggle.setAttribute("aria-pressed", "true");
+    toggle.title = "Show or hide this line";
     const swatch = document.createElement("span");
     swatch.className = `swatch series-${line.index}`;
-    const link = document.createElement("a");
-    link.href = `#/scenario/${encodeURIComponent(line.key)}`;
-    link.textContent = line.label;
+    const label = document.createElement("span");
+    label.className = "legend-label";
+    label.textContent = line.label;
+    toggle.append(swatch, label);
+
+    toggle.addEventListener("click", () => {
+      const nowHidden = !hidden.has(line.key);
+      if (nowHidden) hidden.add(line.key);
+      else hidden.delete(line.key);
+      toggle.setAttribute("aria-pressed", String(!nowHidden));
+      item.classList.toggle("is-off", nowHidden);
+      paint();
+    });
+    // Hovering the legend isolates one line without changing what is toggled on.
+    toggle.addEventListener("pointerenter", () => {
+      if (hidden.has(line.key)) return;
+      highlighted = line.key;
+      paint();
+    });
+    toggle.addEventListener("pointerleave", () => {
+      highlighted = null;
+      paint();
+    });
+
     const latest = line.points.at(-1);
     const change = document.createElement("span");
     change.className = `bar-delta ${latest <= 95 ? "better" : latest >= 105 ? "worse" : "steady"}`;
     change.textContent = `${Math.round(latest)}% of baseline`;
-    item.append(swatch, link, change);
+
+    const link = document.createElement("a");
+    link.className = "legend-link";
+    link.href = `#/scenario/${encodeURIComponent(line.key)}`;
+    link.textContent = "details";
+    link.title = `Open ${line.label}`;
+
+    item.append(toggle, change, link);
     legend.append(item);
   }
   figure.append(legend);
