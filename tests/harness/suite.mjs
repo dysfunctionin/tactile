@@ -3,7 +3,7 @@ import { performance } from "node:perf_hooks";
 
 import { blankApp } from "../scenarios/blank-app.mjs";
 
-import { STATUS, assertType, createRecord, roundMs, timeoutFor, typeSelected } from "./schema.mjs";
+import { STATUS, assertType, createRecord, createStepRecorder, roundMs, timeoutFor, typeSelected } from "./schema.mjs";
 import { appendRecord, currentRunId, repoRelative } from "./writer.mjs";
 import { callerFile } from "./caller.mjs";
 
@@ -52,6 +52,7 @@ export function defineSuite({ type, suite, setup: suiteSetup = blankApp }) {
       let setupSummary = null;
       let prepared = null;
       let bodyStarted = performance.now();
+      const { step, steps } = createStepRecorder();
 
       try {
         if (setup) {
@@ -61,7 +62,7 @@ export function defineSuite({ type, suite, setup: suiteSetup = blankApp }) {
         }
         // Timed from here so the recorded duration matches what the timeout guards.
         bodyStarted = performance.now();
-        const outcome = await withTimeout(Promise.resolve(body({ ...prepared, t, scenario: name })), timeoutMs);
+        const outcome = await withTimeout(Promise.resolve(body({ ...prepared, step, t, scenario: name })), timeoutMs);
         if (outcome && typeof outcome === "object" && outcome.metrics) options.metrics = outcome.metrics;
       } catch (caught) {
         status = caught instanceof ScenarioTimeoutError ? STATUS.TIMEOUT : STATUS.FAIL;
@@ -80,6 +81,7 @@ export function defineSuite({ type, suite, setup: suiteSetup = blankApp }) {
             durationMs: roundMs(performance.now() - bodyStarted),
             timeoutMs,
             setup: setupSummary,
+            steps: steps.length ? steps : null,
             metrics: options.metrics ?? null,
             error,
             startedAt,

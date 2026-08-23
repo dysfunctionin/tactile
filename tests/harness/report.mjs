@@ -98,6 +98,10 @@ export async function writeReport({ ratioLimit = DEFAULT_TIMEOUT_RATIO_LIMIT } =
       .sort((a, b) => (b.durationMs || 0) - (a.durationMs || 0))
       .slice(0, 10)
       .map(({ type, suite, scenario, durationMs }) => ({ type, suite, scenario, durationMs })),
+    slowestSteps: records
+      .flatMap((record) => (record.steps || []).map((entry) => ({ ...entry, scenario: record.scenario })))
+      .sort((a, b) => (b.durationMs || 0) - (a.durationMs || 0))
+      .slice(0, 10),
     nearTimeout: records
       .filter((record) => Number.isFinite(record.timeoutRatio) && record.timeoutRatio > ratioLimit)
       .map(({ type, suite, scenario, durationMs, timeoutMs, timeoutRatio }) => ({
@@ -176,6 +180,7 @@ async function writeHistory(summary, records) {
         durationMs: record.durationMs,
         timeoutMs: record.timeoutMs,
         timeoutRatio: record.timeoutRatio,
+        steps: record.steps || null,
       },
       ...entry.runs,
     ].slice(0, HISTORY_LIMIT);

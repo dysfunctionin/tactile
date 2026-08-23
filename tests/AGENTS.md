@@ -42,6 +42,22 @@ scenario("large sheet keeps an edit bounded", { setup: largeSheet, timeoutMs: 12
 `type` is one of `unit`, `compatibility`, `platform`, `sites`, `e2e`, `visual`, `performance`, `benchmark`. `suite` is
 the feature area. Both are explicit so results group correctly without depending on folder names.
 
+## Timing individual actions
+
+A scenario reports one duration for its body. When the per-action cost matters, wrap each action in `step`, which
+records its own name, status, and duration:
+
+```js
+scenario("row edits stay responsive", { setup: largeSheet }, async ({ rootSheet, step }) => {
+  const engine = await step("build formula engine", () => new FormulaEngine(rootSheet));
+  await step("insert a row", () => shiftCells(rootSheet, "row", 10));
+  await step("delete a row", () => removeSheetAxisCells(rootSheet, "row", 10));
+});
+```
+
+Steps appear on the record under `steps` and are retained per run in `history.json`, so a dashboard can graph a single
+action over time instead of only the scenario total.
+
 Browser tests are the same apart from the import and the `*.e2e.spec.mjs` suffix:
 
 ```js

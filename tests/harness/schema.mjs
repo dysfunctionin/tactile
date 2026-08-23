@@ -1,4 +1,5 @@
 import process from "node:process";
+import { performance } from "node:perf_hooks";
 
 export const SCHEMA_VERSION = 1;
 
@@ -49,6 +50,27 @@ export function timeoutFor(type, override) {
   return DEFAULT_TIMEOUT_MS[type] ?? DEFAULT_TIMEOUT_MS.unit;
 }
 
+/**
+ * Times named actions inside a scenario so a run reports each operation, not
+ * just the total. Failures still record the elapsed time before rethrowing.
+ */
+export function createStepRecorder() {
+  const steps = [];
+  async function step(name, action) {
+    const started = performance.now();
+    let status = STATUS.PASS;
+    try {
+      return await action();
+    } catch (error) {
+      status = STATUS.FAIL;
+      throw error;
+    } finally {
+      steps.push({ name, status, durationMs: roundMs(performance.now() - started) });
+    }
+  }
+  return { step, steps };
+}
+
 export function assertType(type) {
   if (!TEST_TYPES.includes(type)) {
     throw new TypeError(`Unknown test type "${type}". Expected one of: ${TEST_TYPES.join(", ")}`);
@@ -78,6 +100,7 @@ export function createRecord({
   durationMs,
   timeoutMs,
   setup = null,
+  steps = null,
   metrics = null,
   error = null,
   startedAt,
@@ -95,6 +118,7 @@ export function createRecord({
     timeoutMs,
     timeoutRatio: timeoutMs > 0 && duration !== null ? roundMs(duration / timeoutMs) : null,
     setup,
+    steps,
     metrics,
     error,
     startedAt,

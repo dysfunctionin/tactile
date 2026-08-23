@@ -2,7 +2,7 @@ import { performance } from "node:perf_hooks";
 
 import { test as playwrightTest } from "@playwright/test";
 
-import { STATUS, assertType, createRecord, roundMs, timeoutFor, typeSelected } from "./schema.mjs";
+import { STATUS, assertType, createRecord, createStepRecorder, roundMs, timeoutFor, typeSelected } from "./schema.mjs";
 import { appendRecord, currentRunId, repoRelative } from "./writer.mjs";
 import { callerFile } from "./caller.mjs";
 
@@ -53,6 +53,7 @@ export function defineSuite({ type = "e2e", suite, setup = null }) {
       let setupSummary = null;
       let prepared = null;
       let bodyStarted = performance.now();
+      const { step, steps } = createStepRecorder();
 
       try {
         if (scenarioSetup) {
@@ -63,7 +64,7 @@ export function defineSuite({ type = "e2e", suite, setup = null }) {
         // Timed from here so the recorded duration matches what the timeout guards.
         bodyStarted = performance.now();
         await withTimeout(
-          Promise.resolve(body({ page, context, browserName, ...prepared, testInfo, scenario: name })),
+          Promise.resolve(body({ page, context, browserName, ...prepared, step, testInfo, scenario: name })),
           timeoutMs,
         );
       } catch (caught) {
@@ -83,6 +84,7 @@ export function defineSuite({ type = "e2e", suite, setup = null }) {
             durationMs: roundMs(performance.now() - bodyStarted),
             timeoutMs,
             setup: setupSummary,
+            steps: steps.length ? steps : null,
             metrics: options.metrics ?? null,
             error,
             startedAt,
