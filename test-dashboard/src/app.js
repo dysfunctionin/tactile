@@ -2,7 +2,15 @@ import { config } from "./config.js";
 import { describeFailure, loadResults, readSource, writeSource } from "./data.js";
 import { compareBars, durationChart, relativeTrend, stepBars } from "./charts.js";
 import { cleanDiagnostic, createAgentContext } from "./agent-context.js";
-import { formatMs, formatPercent, scenarioMetrics, stepComparison, trendClass, verdict } from "./metrics.js";
+import {
+  formatMs,
+  formatPercent,
+  scenarioMetrics,
+  sidebarStatus,
+  stepComparison,
+  trendClass,
+  verdict,
+} from "./metrics.js";
 
 const root = document.querySelector("#app");
 let themes = [];
@@ -355,7 +363,13 @@ function buildNavGroups() {
         const link = h("a", "nav-link");
         link.href = `#/scenario/${encodeURIComponent(key)}`;
         if (key === active) link.classList.add("is-active");
-        link.append(h("span", `dot status-${entry.runs[0]?.status || "unknown"}`));
+        const dotStatus = sidebarStatus(entry);
+        const dot = h("span", `dot status-${dotStatus}`);
+        if (dotStatus === "slower") {
+          const previousPass = entry.runs.slice(1).find((run) => run.status === "pass" && Number.isFinite(run.durationMs));
+          dot.title = `Passed, but slower than the previous pass (${formatMs(entry.runs[0].durationMs)} vs ${formatMs(previousPass.durationMs)})`;
+        }
+        link.append(dot);
         link.append(h("span", "nav-link-text", entry.scenario));
         link.append(h("span", "nav-link-time", formatMs(entry.runs[0]?.durationMs)));
         suiteBlock.append(link);

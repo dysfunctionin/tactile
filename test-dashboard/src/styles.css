@@ -12,6 +12,7 @@
 
   --better: #3f7d4f;
   --worse: #b3402f;
+  --warning: #c28a12;
   --steady: #7a7568;
 
   --radius: 8px;
@@ -27,6 +28,7 @@
 [data-color-scheme="dark"] {
   --better: #6fbf84;
   --worse: #e0705c;
+  --warning: #e2b84b;
   --steady: #9a9382;
 }
 
@@ -252,6 +254,10 @@ body {
 
 .dot.status-pass {
   background: var(--better);
+}
+
+.dot.status-slower {
+  background: var(--warning);
 }
 
 .dot.status-fail,

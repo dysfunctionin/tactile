@@ -37,6 +37,13 @@ export function percentChange(current, baseline) {
   return ((current - baseline) / baseline) * 100;
 }
 
+export function sidebarStatus(entry) {
+  const [current, ...earlier] = entry.runs || [];
+  if (current?.status !== "pass" || !Number.isFinite(current.durationMs)) return current?.status ?? "unknown";
+  const previousPass = earlier.find((run) => run.status === "pass" && Number.isFinite(run.durationMs));
+  return previousPass && current.durationMs > previousPass.durationMs ? "slower" : "pass";
+}
+
 export function stepComparison(entry) {
   const runs = entry.runs || [];
   const current = runs[0]?.steps || [];
