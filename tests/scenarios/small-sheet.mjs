@@ -76,3 +76,20 @@ export const smallSheet = defineScenarioSetup({
     };
   },
 });
+
+/** Same workspace written to disk, for tests that import it through the app. */
+export const smallSheetFile = defineScenarioSetup({
+  id: "small-sheet-file",
+  label: "small workspace written to disk",
+  profile: "small",
+  async materialize({ artifactDir, ensureArtifactDir }) {
+    const { writeFile } = await import("node:fs/promises");
+    const path = await import("node:path");
+    await ensureArtifactDir();
+    const artifactPath = path.join(artifactDir, "workspace.json");
+    await writeFile(artifactPath, JSON.stringify(createSmallWorkspace()), "utf8");
+
+    const workspace = createSmallWorkspace();
+    return { artifactPath, spec: SMALL_SHEET_SPEC, counts: scenarioCounts(workspace) };
+  },
+});

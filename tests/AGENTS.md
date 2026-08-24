@@ -72,6 +72,9 @@ Match the app rather than guessing at it:
 - Scroll through the surface: `page.locator("[data-sheet-scroll]").last().evaluate((el) => el.scrollTo({ top }))`.
 - Pair every upper bound with a lower bound. `expect(count).toBeLessThan(5_000)` alone passes when the selector is
   wrong and the count is zero.
+- Import a workspace the way a user does. `smallSheetFile` and `largeSheetFile` write one to disk and hand back
+  `artifactPath`; drive the Settings button and answer the `filechooser` event. Calling `setInputFiles` on the hidden
+  input skips the command wiring, which is how the web build shipped without a working import.
 
 Heavy scenarios materialize a ~25 MB workspace under `test-results/scenarios/`, cached across scenarios. Delete that
 folder to force a rebuild.
