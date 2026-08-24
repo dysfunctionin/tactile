@@ -67,6 +67,10 @@ export interface ShiftCellsOperation {
   // Two inserts at the same index are two separate moves, so each shift needs
   // an identity of its own or patch coalescing would merge them into one.
   token: string;
+  /** Written into the blocks once the shift lands. */
+  cells?: Record<string, CellRecord>;
+  /** What the shift takes out, so inverting it can put the cells back. */
+  removed?: Record<string, CellRecord>;
 }
 
 export type WorkspacePatchOperation =

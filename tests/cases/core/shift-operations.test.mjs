@@ -4,6 +4,7 @@ import { markPartialCells } from "../../../src/core/dataset/sheetIndex.js";
 import { createWorkspaceEngine } from "../../../src/core/engine/index.ts";
 import { invertPatch, mergePatchOperations } from "../../../src/core/history/patches.ts";
 import { createBlankWorkspace } from "../../../src/core/model.ts";
+import { cellAddress, cellId } from "../../../src/core/sheet/coordinates.js";
 import { defineSuite } from "../../harness/index.mjs";
 
 const scenario = defineSuite({ type: "unit", suite: "shift-operations" });
@@ -18,8 +19,15 @@ function command(type, payload, sequence = 1) {
   };
 }
 
-function engineWith({ partial }) {
+function cell(row, column, value) {
+  return { id: cellId(row, column), address: cellAddress(row, column), row, column, value };
+}
+
+function engineWith({ partial, cells }) {
   const workspace = createBlankWorkspace({ id: "shift-workspace", name: "Shift" });
+  if (cells) {
+    workspace.objects.home.cells = Object.fromEntries(cells.map((entry) => [entry.id, entry]));
+  }
   if (partial) markPartialCells(workspace.objects.home);
   return createWorkspaceEngine(workspace);
 }
@@ -97,4 +105,55 @@ scenario("two shifts at the same index stay two moves", () => {
   const merged = mergePatchOperations([shift("a"), shift("b")]);
 
   assert.equal(merged.length, 2);
+});
+
+scenario("a delete carries the line it takes out", async () => {
+  const engine = engineWith({ partial: true, cells: [cell(3, 0, "kept"), cell(4, 0, "gone"), cell(4, 1, "also")] });
+
+  const result = await engine.dispatch(command("delete-axis", { objectId: "home", axis: "row", index: 4 }));
+
+  const [shift] = shiftsOf(result);
+  assert.deepEqual(Object.keys(shift.removed).sort(), [cellId(4, 0), cellId(4, 1)].sort());
+  assert.equal(shift.cells, undefined);
+});
+
+scenario("undoing a delete puts the line back", () => {
+  const removed = { [cellId(4, 0)]: cell(4, 0, "gone") };
+  const forward = {
+    id: "patch-1",
+    baseRevision: "r1",
+    targetRevision: "r2",
+    operations: [
+      { kind: "shift-cells", objectId: "home", axis: "row", index: 4, operation: "delete", token: "a", removed },
+    ],
+  };
+
+  const [inverted] = invertPatch(forward).operations;
+
+  assert.equal(inverted.operation, "insert");
+  assert.deepEqual(Object.keys(inverted.cells), [cellId(4, 0)]);
+  assert.equal(inverted.removed, undefined);
+});
+
+scenario("moving a row on a partial sheet lifts it out and drops it back", async () => {
+  const engine = engineWith({ partial: true, cells: [cell(1, 0, "moved"), cell(5, 0, "settled")] });
+
+  const result = await engine.dispatch(command("move-axis", { objectId: "home", axis: "row", from: 1, to: 4 }));
+
+  const shifts = shiftsOf(result);
+  assert.equal(shifts.length, 2);
+  assert.equal(shifts[0].operation, "delete");
+  assert.equal(shifts[0].index, 1);
+  assert.deepEqual(Object.keys(shifts[0].removed), [cellId(1, 0)]);
+  assert.equal(shifts[1].operation, "insert");
+  assert.equal(shifts[1].index, 4);
+  assert.deepEqual(Object.values(shifts[1].cells).map((entry) => entry.value), ["moved"]);
+});
+
+scenario("moving a row on a complete sheet needs no stored shift", async () => {
+  const engine = engineWith({ partial: false, cells: [cell(1, 0, "moved")] });
+
+  const result = await engine.dispatch(command("move-axis", { objectId: "home", axis: "row", from: 1, to: 4 }));
+
+  assert.deepEqual(shiftsOf(result), []);
 });

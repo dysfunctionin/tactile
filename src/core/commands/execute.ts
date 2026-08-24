@@ -113,6 +113,7 @@ export class TransactionMutationBuilder {
     axis: AxisName,
     index: number,
     operation: "insert" | "delete",
+    payload: { cells?: Record<string, CellRecord>; removed?: Record<string, CellRecord> } = {},
   ): void {
     shiftSequence += 1;
     this.operations.push({
@@ -122,6 +123,8 @@ export class TransactionMutationBuilder {
       index,
       operation,
       token: `shift-${shiftSequence.toString(36)}`,
+      ...(payload.cells ? { cells: cloneValue(payload.cells) } : {}),
+      ...(payload.removed ? { removed: cloneValue(payload.removed) } : {}),
     });
   }
 
@@ -303,13 +306,21 @@ function shiftAxisSizes(
   return next;
 }
 
+/** The cells sitting on one row or column, as far as the sheet has them. */
+function axisLineCells(object: SheetObject, axis: AxisName, index: number): Record<string, CellRecord> {
+  const line: Record<string, CellRecord> = {};
+  Object.values(object.cells || {}).forEach((cell) => {
+    if ((axis === "row" ? cell.row : cell.column) === index) line[String(cell.id)] = cell;
+  });
+  return line;
+}
+
 function remapCells(
   object: SheetObject,
   axis: AxisName,
   index: number,
   operation: "insert" | "delete",
-): Record<string, CellRecord> {
-  const cells: Record<string, CellRecord> = {};
+): Record<string, CellRecord> {  const cells: Record<string, CellRecord> = {};
   Object.values(object.cells || {}).forEach((cell) => {
     if (
       operation === "delete" &&
@@ -398,7 +409,11 @@ function applyAxisDelete(
     conditionalFormats: adjustConditionalFormats(object.conditionalFormats, command.axis, index, "delete"),
   };
   builder.replaceObject(objectId, next);
-  if (isPartialCells(object)) builder.shiftCells(objectId, command.axis, index, "delete");
+  if (isPartialCells(object)) {
+    builder.shiftCells(objectId, command.axis, index, "delete", {
+      removed: axisLineCells(object, command.axis, index),
+    });
+  }
 }
 
 function applyAxisMove(
@@ -409,7 +424,16 @@ function applyAxisMove(
   const objectId = asObjectId(String(command.objectId));
   const object = store.getObject(objectId);
   if (object?.type !== "sheet") return;
-  builder.replaceObject(objectId, reorderSheetAxis(object, command.axis, command.from, command.to));
+  const moved = reorderSheetAxis(object, command.axis, command.from, command.to);
+  builder.replaceObject(objectId, moved);
+  if (!isPartialCells(object)) return;
+  // A reorder is the line lifted out at `from` and dropped back in at `to`,
+  // which is a delete shift and an insert shift with the line carried across.
+  const line = axisLineCells(object, command.axis, command.from);
+  builder.shiftCells(objectId, command.axis, command.from, "delete", { removed: line });
+  builder.shiftCells(objectId, command.axis, command.to, "insert", {
+    cells: axisLineCells(moved, command.axis, command.to),
+  });
 }
 
 function applyEmbeddedObject(

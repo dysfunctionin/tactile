@@ -44,7 +44,7 @@ import {
 } from "./indexedDb.js";
 import { chunkKeyForCellId, groupCellsIntoChunks } from "../../core/dataset/cellChunks.js";
 import { canRewriteCells } from "../../core/dataset/sheetIndex.js";
-import { shiftStoredCells } from "../../core/dataset/shiftChunks.js";
+import { shiftStoredCells, writeCellsIntoChunks } from "../../core/dataset/shiftChunks.js";
 import { chunkStoreFor } from "../chunkStore.js";
 import { migrateLegacyWorkspace, readLegacyWorkspace } from "./migration.js";
 
@@ -254,6 +254,7 @@ async function applyCellShifts(workspaceId, operations) {
       index: shift.index,
       operation: shift.operation,
     });
+    if (shift.cells) await writeCellsIntoChunks(store, shift.objectId, shift.cells);
   }
 }
 

@@ -101,3 +101,22 @@ export async function shiftStoredCells(store, objectId, { axis, index, operation
   if (removed.length) await store.writeChunks(objectId, [], removed);
   return { bands: byBand.size, written: written.size, removed: removed.length };
 }
+
+/** Merges cells into their blocks, leaving the rest of each block alone. */
+export async function writeCellsIntoChunks(store, objectId, cells) {
+  const grouped = [...groupCellsIntoChunks(cells).values()];
+  if (!grouped.length) return;
+  const existing = await store.readChunks(
+    objectId,
+    grouped.map((chunk) => chunk.chunkKey),
+  );
+  const byKey = new Map(existing.map((record) => [record.chunkKey, record.cells || {}]));
+  await store.writeChunks(
+    objectId,
+    grouped.map((chunk) => ({
+      chunkKey: chunk.chunkKey,
+      cells: { ...(byKey.get(chunk.chunkKey) || {}), ...chunk.cells },
+    })),
+    [],
+  );
+}

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { chunkKeyForCellId } from "../../../src/core/dataset/cellChunks.js";
 import { createMemoryChunkStore, seedChunks } from "../../../src/core/dataset/chunkStore.js";
 import { readAllCells } from "../../../src/core/dataset/hydrate.js";
-import { bandForIndex, bandOfChunkKey, shiftCellsForAxis, shiftStoredCells } from "../../../src/core/dataset/shiftChunks.js";
+import { bandForIndex, bandOfChunkKey, shiftCellsForAxis, shiftStoredCells, writeCellsIntoChunks } from "../../../src/core/dataset/shiftChunks.js";
 import { cellAddress, cellId } from "../../../src/core/sheet/coordinates.js";
 import { defineSuite } from "../../harness/index.mjs";
 
@@ -153,4 +153,17 @@ scenario("loose cells have no band and are left alone", async () => {
   assert.equal(bandOfChunkKey("loose", "row"), null);
   const cells = await readAllCells(store, "sheet");
   assert.equal(cells.legacy.value, "kept");
+});
+
+scenario("writing cells into blocks leaves the rest of each block alone", async () => {
+  const store = createMemoryChunkStore();
+  await seedChunks(store, "sheet", cellsAt([[0, 0, "keep"], [1, 0, "stale"]]));
+
+  await writeCellsIntoChunks(store, "sheet", cellsAt([[1, 0, "fresh"], [70, 0, "new"]]));
+
+  const cells = await readAllCells(store, "sheet");
+  assert.equal(cells[cellId(0, 0)].value, "keep");
+  assert.equal(cells[cellId(1, 0)].value, "fresh");
+  assert.equal(cells[cellId(70, 0)].value, "new");
+  assert.equal(chunkKeyForCellId(cellId(70, 0)), "1:0");
 });

@@ -75,12 +75,13 @@ export function invertOperation(operation: WorkspacePatchOperation): WorkspacePa
         after: cloneValue(operation.before),
       } satisfies ReplaceThemeOperation;
     // Undoing an insert deletes the row it added; undoing a delete reopens the
-    // gap. Cells the delete removed come back from the object before-image, so
-    // the caller has to make that line resident before deleting it.
+    // gap and puts back what the delete took out.
     case "shift-cells":
       return {
         ...operation,
         operation: operation.operation === "insert" ? "delete" : "insert",
+        cells: cloneValue(operation.removed),
+        removed: cloneValue(operation.cells),
       } satisfies ShiftCellsOperation;
     default:
       throw new Error(`Unsupported patch operation ${(operation as { kind: string }).kind}.`);
