@@ -61,6 +61,22 @@ scenario("shadow transition maps a cell edit to one normalized transaction and p
   shadow.dispose();
 });
 
+scenario("shadow transition activates a snapshot when the workspace identity changes", async () => {
+  const initial = createBlankWorkspace({ id: "workspace-before-import" });
+  const imported = createBlankWorkspace({ id: "workspace-after-import" });
+  const persistence = fakePersistence();
+  const shadow = createWave2Shadow(initial, { persistence });
+
+  await shadow.reconcile(imported);
+
+  const snapshots = persistence.calls.filter((call) => call.type === "snapshot");
+  assert.equal(snapshots.at(-1).snapshot.id, imported.id);
+  assert.equal(snapshots.at(-1).options.activate, true);
+  assert.equal(persistence.calls.some((call) => call.type === "commit"), false);
+  assert.equal(shadow.state.differential.mode, "reset");
+  shadow.dispose();
+});
+
 scenario("the normalized transaction engine is the only runtime mode", () => {
   const initial = createBlankWorkspace({ id: "workspace-wave3-default" });
   const defaultEngine = createWave2Shadow(initial, { persistence: fakePersistence() });

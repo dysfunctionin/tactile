@@ -185,6 +185,7 @@ scenario("files opens deep routes directly without replaying every ancestor tran
   await expect(page.locator(".workspace-shell")).toHaveAttribute("data-rendered-layer-count", "2");
   await expect(page.locator('[data-spatial-phase="origin"], [data-spatial-phase="floating"]')).toHaveCount(0);
   await expect(page.locator(".spatial-layer")).toHaveAttribute("data-spatial-phase", "full");
+  await expect(page.locator(".app-dock-path")).not.toHaveClass(/is-transitioning/);
   expect(
     await page.evaluate(() => {
       const state = window.history.state;
@@ -225,6 +226,7 @@ scenario("files opens deep routes directly without replaying every ancestor tran
   await expect(page.locator(".workspace-shell")).toHaveAttribute("data-logical-layer-count", "3");
   await expect(page.locator('[data-spatial-phase="origin"], [data-spatial-phase="floating"]')).toHaveCount(0);
   await expect(page.locator(".spatial-layer")).toHaveAttribute("data-spatial-phase", "full");
+  await expect(page.locator(".app-dock-path")).not.toHaveClass(/is-transitioning/);
   expect(
     await page.evaluate(() => {
       const state = window.history.state;

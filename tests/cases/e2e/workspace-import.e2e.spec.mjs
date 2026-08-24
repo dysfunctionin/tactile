@@ -8,8 +8,7 @@ const scenario = defineSuite({ type: "e2e", suite: "workspace-import", setup: sm
 
 /**
  * Import driven from the Settings panel rather than the hidden input, so the
- * command wiring is covered and not just the file reader. The two sizes run as
- * separate scenarios so the harness reports what import costs at each scale.
+ * command wiring is covered and not just the file reader.
  */
 async function importThroughSettings(page, artifactPath) {
   await page.goto("/");
@@ -30,18 +29,6 @@ scenario("imports a small workspace from Settings", async ({ page, artifactPath,
   await expect(rootCell).toContainText("Item-00");
 });
 
-scenario(
-  "imports a 250k-cell workspace from Settings",
-  { setup: largeSheetFile },
-  async ({ page, artifactPath, spec }) => {
-    await importThroughSettings(page, artifactPath);
-
-    const rootCell = page.locator(`[data-object-id="${spec.rootSheetId}"][data-cell-address="A1"]`);
-    await expect(rootCell).toBeVisible({ timeout: 120_000 });
-    await expect(rootCell).toContainText("Row-0001", { timeout: 120_000 });
-  },
-);
-
 scenario("keeps an imported small workspace after a reload", async ({ page, artifactPath, spec }) => {
   await importThroughSettings(page, artifactPath);
 
@@ -52,3 +39,23 @@ scenario("keeps an imported small workspace after a reload", async ({ page, arti
   await expect(rootCell).toBeVisible({ timeout: 120_000 });
   await expect(rootCell).toContainText("Item-00");
 });
+
+scenario(
+  "keeps an imported 250k-cell workspace after a reload",
+  { setup: largeSheetFile },
+  async ({ page, artifactPath, spec }) => {
+    await importThroughSettings(page, artifactPath);
+
+    const rootCell = page.locator(`[data-object-id="${spec.rootSheetId}"][data-cell-address="A1"]`);
+    await expect(rootCell).toBeVisible({ timeout: 120_000 });
+
+    await page.waitForFunction(
+      () => window.__TACTILE_WAVE2__?.differential?.mode === "reset",
+      null,
+      { timeout: 120_000 },
+    );
+    await page.reload();
+    await expect(rootCell).toBeVisible({ timeout: 120_000 });
+    await expect(rootCell).toContainText("Row-0001", { timeout: 120_000 });
+  },
+);
