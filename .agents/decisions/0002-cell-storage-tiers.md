@@ -49,7 +49,7 @@ Landed:
 
 Outstanding, in order:
 
-6. Structural edits. `dataset/shiftChunks.js` shifts stored blocks for a row or column insert/delete without loading the sheet, a band at a time, and needs no new store operation because a shift is a `writeChunks` put plus remove. A partial sheet's axis command emits a `shift-cells` patch operation, which persistence applies before its record transaction opens. What remains is every *other* command that rebuilds a sheet's cells map wholesale — axis move, sort, and paste among them. Each needs either a store-level equivalent or a rule that it requires a whole sheet. **This blocks 7.**
+6. Structural edits. `dataset/shiftChunks.js` shifts stored blocks for a row or column insert/delete without loading the sheet, a band at a time, and needs no new store operation because a shift is a `writeChunks` put plus remove. A partial sheet's axis command emits a `shift-cells` patch operation, which persistence applies before its record transaction opens. One command still has no partial-sheet story: `move-axis`, which reorders through a full cells remap. It decomposes into a delete shift plus an insert shift, but the moved line's own cells then have to be written at the destination, and for a partial sheet those cells exist only if that line was resident. Paste and edits go through per-cell operations and are already safe; there is no sort command. **This blocks 7.**
 7. Load path. `object.cells` is still materialized whole on open, so a virtual sheet bounds what the grid *reads*, not what the workspace *holds*. Flooring the load path is a small change to `snapshotFromRecords`, but shipping it before 6 would trade a memory cost for a correctness bug, which is the worse trade.
 
 Reassessed and dropped:
