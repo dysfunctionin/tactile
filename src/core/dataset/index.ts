@@ -8,6 +8,7 @@ export * from "./hydrate.js";
 export * from "./sheetColumns.js";
 export * from "./sheetIndex.js";
 export * from "./sheetSnapshotStore.ts";
+export * from "./shiftChunks.js";
 export * from "./storageMode.js";
 export * from "./virtualSheet.js";
 export * from "./virtualSheetStore.js";

@@ -49,7 +49,7 @@ Landed:
 
 Outstanding, in order:
 
-6. Structural edits. Row and column insert/delete rebuild the whole cells map (`commands/execute.ts`), so they shift only what is resident. A partial sheet needs the shift pushed into the store as a block-key rewrite before these commands can be trusted. **This blocks 7.**
+6. Structural edits. `dataset/shiftChunks.js` shifts stored blocks for a row or column insert/delete without loading the sheet, a band at a time, and needs no new store operation because a shift is a `writeChunks` put plus remove. What remains is routing `commands/execute.ts` through it: the commands are synchronous and the store is not, so a partial sheet's structural edits have to be sequenced rather than applied inline. **This blocks 7.**
 7. Load path. `object.cells` is still materialized whole on open, so a virtual sheet bounds what the grid *reads*, not what the workspace *holds*. Flooring the load path is a small change to `snapshotFromRecords`, but shipping it before 6 would trade a memory cost for a correctness bug, which is the worse trade.
 
 Reassessed and dropped:

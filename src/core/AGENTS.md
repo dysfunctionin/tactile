@@ -14,6 +14,7 @@ These rules apply under `src/core/` in addition to root guidance.
 - Anything that serializes a workspace goes through `dataset/hydrate.js` first, or a virtual sheet writes out only the blocks that were on screen.
 - `dataset/sheetIndex.js` keeps embedded and formula cells known while the rest of a sheet is absent. Derive it from the blocks; a copy maintained on the side drifts from what is stored.
 - Never rewrite a sheet's stored blocks from `object.cells` without checking `canRewriteCells`. A partial sheet holds a floor, and rewriting from it deletes everything else.
+- Row and column insert/delete shift cells by one, which is not a block-aligned move: the edge row of each block crosses into its neighbour. `dataset/shiftChunks.js` rewrites the stored blocks a band at a time; never rekey blocks instead.
 - `dataset/*.js` must not import `dataset/*.ts`; the node test harness loads these files with no TypeScript loader.
 - Preserve stable object/link IDs, containment/alias semantics, and unknown-field round-tripping.
 - Portable workspace v4 is a compatibility contract; private caches stay rebuildable.
