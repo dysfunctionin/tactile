@@ -39,6 +39,7 @@ Explicit user requirements override repository guidance. Within the repository, 
 - Routine work starts from `alpha`; `main` is production-only.
 - Preserve unrelated worktree changes and keep edits scoped.
 - Prefer existing boundaries and focused tests over new abstractions.
+- In browsers, each tab owns an isolated ephemeral workspace database; preserve reload reuse, fresh-tab blank state, live-tab exclusion, and orphan recovery together.
 - Edit only `version.json` for app versions; synchronize generated mirrors.
 - Never move a published tag or commit official binaries/build outputs.
 - Validate the touched slice immediately after the first edit, then broaden before handoff.

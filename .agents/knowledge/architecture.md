@@ -24,6 +24,8 @@ The shell owns workspace identity, navigation, start-object metadata, commands, 
 - Portable workspace/object normalization is v4. Native cache schema is private and rebuildable.
 - Browser/native persistence uses forward deltas and revision acknowledgements; inverse patches stay in the engine.
 - Browser workspace authority is tab-scoped and ephemeral; reload restores that tab, while a new tab starts blank. See ADR 0002.
+- Browser startup renders a blank seed only until its tab database hydrates. Hydration must preserve saved navigation history, while an interactive workspace replacement resets it.
+- Browser IndexedDB stores dense sheet cells in bounded spatial chunks. Portable JSON remains cell-oriented, and small edits still persist through forward patches.
 - Native workspace authority remains the user-selected folder and may be changed in Settings.
 - Portable files are the user recovery authority. Native SQLite/WAL is an optimization, not the only copy.
 - Unknown fields and future/plugin state round-trip without coercion.

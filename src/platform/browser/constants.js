@@ -1,5 +1,5 @@
 export const BROWSER_DATABASE_NAME = "tactile-local-workspace-records";
-export const BROWSER_DATABASE_VERSION = 1;
+export const BROWSER_DATABASE_VERSION = 2;
 
 export const LEGACY_DATABASE_NAME = "tactile-local-workspace";
 export const LEGACY_DATABASE_VERSION = 3;
@@ -14,6 +14,7 @@ export const STORE_NAMES = Object.freeze({
   workspaceMeta: "workspaceMeta",
   objects: "objects",
   cells: "cells",
+  cellChunks: "cellChunks",
   assets: "assets",
   themes: "themes",
 });

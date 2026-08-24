@@ -5,6 +5,7 @@ import { defineSuite } from "../../harness/index.mjs";
 import {
   BrowserPersistenceAdapter,
   AssetUrlRegistry,
+  cellRecord,
   LEGACY_STORE_NAME,
   LEGACY_WORKSPACE_KEY,
   STORE_NAMES,
@@ -302,6 +303,67 @@ scenario("record commits persist cells without rewriting unrelated asset blobs",
   const snapshot = await reloaded.open({ workspaceId: workspace.id });
   assert.equal(snapshot.objects.home.cells[cell.id].value, "latest");
   assert.deepEqual([...(await reloaded.readAsset({ assetId: "asset-1" }).then((result) => result.data))], [1, 2, 3]);
+});
+
+scenario("snapshot persistence batches dense cells into bounded spatial chunks", async () => {
+  const indexedDB = new MemoryIndexedDB();
+  const workspace = createBlankWorkspace({ id: "workspace-cell-chunks" });
+  for (let row = 0; row < 64; row += 1) {
+    for (let column = 0; column < 64; column += 1) {
+      const cell = createCellRecord(row, column, { value: `${row}:${column}` });
+      workspace.objects.home.cells[cell.id] = cell;
+    }
+  }
+  const adapter = new BrowserPersistenceAdapter({
+    indexedDB,
+    localStorage: new MemoryStorage(),
+    databaseName: "c02-cell-chunks",
+    autoMigrate: false,
+  });
+
+  await adapter.writeSnapshot(workspace, { revision: "r0", activate: true });
+
+  const database = await adapter.databaseHandle();
+  assert.equal(database.stores.get(STORE_NAMES.cells).records.size, 0);
+  assert.equal(database.stores.get(STORE_NAMES.cellChunks).records.size, 4);
+  const snapshot = await adapter.readSnapshot(workspace.id);
+  assert.equal(snapshot.objects.home.cells.r1c1.value, "0:0");
+  assert.equal(snapshot.objects.home.cells.r64c64.value, "63:63");
+});
+
+scenario("opening version-one cell records migrates them to chunks", async () => {
+  const indexedDB = new MemoryIndexedDB();
+  const localStorage = new MemoryStorage();
+  const workspace = createBlankWorkspace({ id: "workspace-cell-migration" });
+  const cell = createCellRecord(4, 7, { value: "legacy cell" });
+  const seed = new BrowserPersistenceAdapter({
+    indexedDB,
+    localStorage,
+    databaseName: "c02-cell-migration",
+    autoMigrate: false,
+  });
+  await seed.writeSnapshot(workspace, { revision: "r0", activate: true });
+  const database = await seed.databaseHandle();
+  database.stores.get(STORE_NAMES.cellChunks).records.clear();
+  indexedDB.seed(
+    "c02-cell-migration",
+    STORE_NAMES.cells,
+    [workspace.id, "home", cell.id],
+    cellRecord(workspace.id, "home", cell),
+  );
+  await seed.close();
+
+  const adapter = new BrowserPersistenceAdapter({
+    indexedDB,
+    localStorage,
+    databaseName: "c02-cell-migration",
+    autoMigrate: false,
+  });
+  const migrated = await adapter.open({ workspaceId: workspace.id });
+
+  assert.equal(migrated.objects.home.cells[cell.id].value, "legacy cell");
+  assert.equal(database.stores.get(STORE_NAMES.cells).records.size, 0);
+  assert.equal(database.stores.get(STORE_NAMES.cellChunks).records.size, 1);
 });
 
 scenario("snapshot replacement writes after cleanup and preserves omitted asset bytes", async () => {

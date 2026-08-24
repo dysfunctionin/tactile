@@ -12,6 +12,10 @@ Browser workspaces can exceed the small synchronous `localStorage` quota, while 
 
 Each top-level browser tab owns one ephemeral workspace session. A random session ID lives in `sessionStorage`; its full workspace lives in a dedicated IndexedDB database. Reload reuses the session ID and database. A new tab creates a new ID and starts blank, including tabs opened in the same browser context.
 
+The blank startup workspace is a render seed, not browser authority. Hydration from the tab database must preserve reload navigation state. User-driven import publishes the replacement to React after durable snapshot replacement completes; the generic patch reconciler must not process that same replacement a second time.
+
+Dense sheet cells are stored in bounded 32 x 32 spatial chunks rather than one IndexedDB record per cell. Snapshot import and structural sheet replacement therefore issue hundreds of chunk writes instead of hundreds of thousands of cell writes. Forward patches update only affected chunks. Opening a version-1 per-cell workspace atomically rewrites it in version-2 chunks; this private schema does not change portable workspace v4.
+
 Browser sessions publish only lifecycle metadata to a small `localStorage` registry. Heartbeats and a `BroadcastChannel` liveness probe exclude active tabs from recovery. A dirty session registers the browser's generic `beforeunload` confirmation. Confirmed close, unanswered close, crash, or force-close makes the session recoverable after its ownership signal and handoff grace expire. Recovery is discovered only when a new blank tab starts; existing work tabs are never interrupted.
 
 Recovery offers Restore tabs, Export all, Discard, or dismissal to continue blank. Restore claims every orphan atomically, adopts one in the current tab, and opens one tab per remaining session with one-time tokens. Failed popup opens and failed exports remain recoverable. Blank or successfully exported sessions need no warning and may be deleted after close.
@@ -21,6 +25,7 @@ Native startup and persistence remain folder-scoped. The configured workspace pa
 ## Consequences
 
 - Large browser imports survive reload without depending on `localStorage` capacity.
+- Large imports and dense structural edits avoid per-cell IndexedDB request overhead.
 - Concurrent tabs cannot read or overwrite one another's active workspaces.
 - Browser data is ephemeral by product contract but may remain physically present until a later cleanup pass; browsers cannot guarantee asynchronous IndexedDB deletion during shutdown.
 - Close protection uses browser-provided text. Custom close dialogs and automatic asynchronous export during shutdown are unsupported.
@@ -29,6 +34,6 @@ Native startup and persistence remain folder-scoped. The configured workspace pa
 
 ## Validation and rollback
 
-Platform tests cover session identity, reload reuse, copied-session collision, close outcomes, crash expiry, restore claims, and popup-block release. Playwright scenarios cover same-tab reload, fresh-tab blank state, concurrent isolation, export prompting, live-tab exclusion, orphan discovery, and multi-tab restore. Native persistence tests guard the folder-authority path.
+Platform tests cover session identity, reload reuse, copied-session collision, close outcomes, crash expiry, restore claims, popup-block release, chunked snapshot round trips, and patch persistence. Playwright scenarios cover same-tab reload, fresh-tab blank state, concurrent isolation, export prompting, live-tab exclusion, orphan discovery, multi-tab restore, large import, and dense structural edits. Native persistence tests guard the folder-authority path.
 
 Rollback removes session-specific database selection and recovery UI together; do not restore the full-workspace `localStorage` cache as browser authority.

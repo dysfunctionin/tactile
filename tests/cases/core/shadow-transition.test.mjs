@@ -131,3 +131,25 @@ scenario("shadow transition batches a rectangular edit and leaves unrelated obje
   assert.deepEqual(transition.commands[0].changes.map((change) => change.cellId).sort(), ["A1", "B1"]);
   assert.deepEqual([...transition.changedSheets.keys()], ["home"]);
 });
+
+scenario("large legacy transitions reset the shadow snapshot instead of committing per-cell patches", async () => {
+  const initial = createBlankWorkspace({ id: "workspace-wave2-large-reset" });
+  const next = normalizeWorkspace(initial);
+  for (let index = 0; index <= 20_000; index += 1) {
+    const row = Math.floor(index / 200);
+    const column = index % 200;
+    const cell = createCellRecord(row, column, { value: String(index) });
+    next.objects.home.cells[cell.id] = cell;
+  }
+  const persistence = fakePersistence();
+  const shadow = createWave2Shadow(initial, { persistence, useInitialSnapshot: true });
+  await shadow.ready;
+
+  await shadow.reconcile(next, { normalized: true });
+
+  assert.equal(persistence.calls.filter((call) => call.type === "commit").length, 0);
+  const persisted = persistence.calls.filter((call) => call.type === "snapshot").at(-1).snapshot;
+  assert.equal(persisted.id, next.id);
+  assert.equal(Object.keys(persisted.objects.home.cells).length, 20_001);
+  shadow.dispose();
+});

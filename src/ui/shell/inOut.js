@@ -273,8 +273,9 @@ export function useInOut({ workspace, workspaceRootId, workspaceHydrated = true 
 
   useEffect(() => {
     const workspaceChanged = workspaceIdRef.current !== workspace.id;
-    const becameHydrated = workspaceHydrated && !hydrationRef.current;
-    const replacingWorkspace = workspaceChanged && !becameHydrated;
+    const wasHydrated = hydrationRef.current;
+    const becameHydrated = workspaceHydrated && !wasHydrated;
+    const replacingWorkspace = workspaceChanged && wasHydrated && workspaceHydrated;
     workspaceIdRef.current = workspace.id;
     hydrationRef.current = workspaceHydrated;
     if (!workspaceChanged && !becameHydrated) return;

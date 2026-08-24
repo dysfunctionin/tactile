@@ -127,6 +127,7 @@ export function commandsForWorkspaceTransition(previous, next, sequence = 1) {
   const commands = [];
   const changedSheets = new Map();
   let unsupported = false;
+  let changedCellCount = 0;
   let commandSequence = sequence;
 
   const push = (command) => {
@@ -173,6 +174,11 @@ export function commandsForWorkspaceTransition(previous, next, sequence = 1) {
     if (before.type !== "sheet" || after.type !== "sheet") return;
     const cellIds = changedCellIds(before, after);
     if (!cellIds.length) return;
+    changedCellCount += cellIds.length;
+    if (changedCellCount > DIFFERENTIAL_MAX_CHANGED_CELLS) {
+      unsupported = true;
+      return;
+    }
     changedSheets.set(String(objectId), cellIds.map((cellId) => ({
       address: after.cells?.[cellId]?.address || before.cells?.[cellId]?.address || cellId,
       ...(after.cells?.[cellId]

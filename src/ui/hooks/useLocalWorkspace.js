@@ -113,6 +113,7 @@ export function useLocalWorkspace() {
   const historyRef = useRef({ past: [], future: [], lastKey: null, lastAt: 0 });
   const wave2ShadowRef = useRef(null);
   const workspaceMutationRef = useRef(false);
+  const replacementReconcileRef = useRef(null);
 
   const markBrowserWorkspaceDirty = useCallback((workspaceLabel) => {
     if (!browserSessionRef.current) return;
@@ -277,6 +278,11 @@ export function useLocalWorkspace() {
   useEffect(() => {
     const shadow = wave2ShadowRef.current;
     if (!hydrated || !shadow) return undefined;
+    const replacement = replacementReconcileRef.current;
+    if (replacement) {
+      replacementReconcileRef.current = null;
+      if (workspace === replacement) return undefined;
+    }
     let current = true;
     setSaveState("saving");
     Promise.resolve(measureStageAsync("shadow-reconcile", () => shadow.reconcile(workspace, { normalized: true }))).then(
@@ -377,12 +383,14 @@ export function useLocalWorkspace() {
   const replaceWorkspace = useCallback(async (nextWorkspace) => {
     const normalized = normalizeWorkspace(nextWorkspace);
     const shadow = wave2ShadowRef.current;
-    if (shadow?.state?.persistence === "active") {
-      await shadow.replaceSnapshot(normalized, { normalized: true });
-    }
+    const replacesPersistedSnapshot = shadow?.state?.persistence === "active";
     workspaceMutationRef.current = true;
     historyRef.current = { past: [], future: [], lastKey: null, lastAt: 0 };
     markBrowserWorkspaceDirty(normalized.name);
+    if (replacesPersistedSnapshot) {
+      await shadow.replaceSnapshot(normalized, { normalized: true });
+      replacementReconcileRef.current = normalized;
+    }
     setWorkspace(normalized);
     return normalized;
   }, [markBrowserWorkspaceDirty]);
