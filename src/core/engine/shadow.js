@@ -358,15 +358,6 @@ export function createWave2Shadow(initialWorkspace, options = {}) {
       await ready;
       const prior = previous;
       previous = next;
-      if (prior.id !== next.id) {
-        try {
-          await resetTo(next);
-        } catch (error) {
-          state.lastError = error?.message || String(error);
-        }
-        exposeState(state);
-        return;
-      }
       const transition = commandsForWorkspaceTransition(prior, next, commandSequence);
       commandSequence += transition.commands.length + 1;
 

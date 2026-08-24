@@ -21,14 +21,6 @@ async function importThroughSettings(page, artifactPath) {
   await (await chooser).setFiles(artifactPath);
 }
 
-scenario("imports a small workspace from Settings", async ({ page, artifactPath, spec }) => {
-  await importThroughSettings(page, artifactPath);
-
-  const rootCell = page.locator(`[data-object-id="${spec.rootSheetId}"][data-cell-address="A1"]`);
-  await expect(rootCell).toBeVisible({ timeout: 120_000 });
-  await expect(rootCell).toContainText("Item-00");
-});
-
 scenario("keeps an imported small workspace after a reload", async ({ page, artifactPath, spec }) => {
   await importThroughSettings(page, artifactPath);
 
@@ -49,11 +41,6 @@ scenario(
     const rootCell = page.locator(`[data-object-id="${spec.rootSheetId}"][data-cell-address="A1"]`);
     await expect(rootCell).toBeVisible({ timeout: 120_000 });
 
-    await page.waitForFunction(
-      () => window.__TACTILE_WAVE2__?.differential?.mode === "reset",
-      null,
-      { timeout: 300_000 },
-    );
     await page.reload();
     await expect(rootCell).toBeVisible({ timeout: 120_000 });
     await expect(rootCell).toContainText("Row-0001", { timeout: 120_000 });
