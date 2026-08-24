@@ -196,6 +196,31 @@ function failureCause(entry) {
   return panel;
 }
 
+function retainedFailureCard(entry, key) {
+  const failedRuns = entry.runs.filter((run) => run.status !== "pass");
+  const latestRun = entry.runs.find((run) => run.runId === state.latestRunId);
+  const card = h("article", "retained-failure-card");
+  const header = h("div", "retained-failure-header");
+  const title = h("a", "card-link", entry.scenario);
+  title.href = `#/scenario/${encodeURIComponent(key)}`;
+  header.append(title, h("span", "pill neutral", `${failedRuns.length}/${entry.runs.length} retained runs`));
+  card.append(header);
+
+  const latest = h("div", "retained-failure-latest");
+  latest.append(h("span", "retained-failure-label", `Latest run · ${state.latestRunId}`));
+  latest.append(statusPill(latestRun?.status || "not-run"));
+  card.append(latest);
+
+  const failed = h("div", "retained-failure-runs");
+  failed.append(h("span", "retained-failure-label", "Failed run IDs"));
+  for (const run of failedRuns) {
+    const runStatus = h("span", `pill status-${run.status}`, `${run.runId} · ${run.status}`);
+    failed.append(runStatus);
+  }
+  card.append(failed);
+  return card;
+}
+
 function scenarioDetail(entry) {
   const metrics = scenarioMetrics(entry);
   const detail = h("div", "detail");
@@ -551,6 +576,21 @@ function renderOverview(main) {
   const earlierGrid = h("div", "grid");
   for (const [key, entry] of failingEarlier) earlierGrid.append(scenarioCard(entry, key, { expanded: false }));
   failSection.append(earlierGrid);
+
+  const failedInRetainedRuns = state.entries.filter(([, entry]) =>
+    entry.runs.some((run) => run.status !== "pass"),
+  );
+  failSection.append(
+    h("h3", "sub-heading", `Failed in retained runs (${failedInRetainedRuns.length})`),
+    h(
+      "p",
+      "section-subtitle",
+      "Includes recovered intermittent failures. Run IDs identify each retained failure; latest-run status shows whether it still fails now.",
+    ),
+  );
+  const retainedGrid = h("div", "retained-failure-grid");
+  for (const [key, entry] of failedInRetainedRuns) retainedGrid.append(retainedFailureCard(entry, key));
+  failSection.append(retainedGrid);
 
   main.append(failSection);
 }

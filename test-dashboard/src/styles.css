@@ -307,6 +307,46 @@ body {
   border-style: dashed;
 }
 
+.retained-failure-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.retained-failure-card {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--warning);
+  border-radius: var(--radius);
+  background: var(--paper-elevated);
+}
+
+.retained-failure-header,
+.retained-failure-latest,
+.retained-failure-runs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.retained-failure-header {
+  justify-content: space-between;
+  font-weight: 650;
+}
+
+.retained-failure-label {
+  color: var(--steady);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.pill.status-not-run {
+  color: var(--steady);
+  border-style: dashed;
+}
+
 tr.is-latest td {
   font-weight: 600;
 }
