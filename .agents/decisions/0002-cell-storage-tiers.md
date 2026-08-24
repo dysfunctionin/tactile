@@ -44,12 +44,13 @@ Landed:
 1. Backing stores. `src-tauri/src/storage/chunks.rs` over SQLite, `src/platform/browser/chunkStore.js` over IndexedDB, one shape in `src/core/dataset/chunkStore.js`.
 2. Residency. `dataset/chunkCache.js` evicts by LRU in bytes with pinning; `dataset/virtualSheet.js` owns the ready/stale/pending states and coalesces concurrent block reads.
 3. Read path. `dataset/virtualSheetStore.js` answers the same window request as the eager store; `dataset/storageMode.js` chooses per sheet; `useDatasetViewport` feeds the grid, which dims a block that is stale or pending.
-4. Whole-map reads. `dataset/hydrate.js` fills a partial sheet back in from its blocks, and the two paths that serialize the in-memory workspace (the export command and the native folder mirror) call it before building a portable package.
+4. Whole-map reads. `dataset/hydrate.js` fills a partial sheet back in from its blocks, and the two paths that serialize the in-memory workspace (the export command and the native folder mirror) call it before building a portable package. `tests/cases/e2e/workspace-export.e2e.spec.mjs` fails if an export ever comes out short.
+5. Sparse index. `dataset/sheetIndex.js` collects the embedded and formula cells of a sheet by reading its blocks in batches, so the cells that topology and the formula engine cannot do without stay known without the sheet being whole.
 
 Outstanding, in order:
 
-5. Full-map readers. `sheet/formulas.js` registers formulas by scanning `sheet.cells`, `topology.js` finds embed relationships the same way, and `sheet/textMeasure.js` measures wrap heights that way. Each needs a persisted side index or an explicit tolerance for absence before cells can go partial.
-6. Load path. `object.cells` is still materialized whole on open, so a virtual sheet bounds what the grid *reads*, not what the workspace *holds*. The footprint win arrives only after 5.
+6. Full-map readers. `topology.js` finds embed relationships by scanning `object.cells`, and `sheet/textMeasure.js` measures wrap heights the same way. The formula engine already has a bounded mode (`rebuild({ registerOnly })`). Each remaining scan needs to move onto the index or tolerate absence.
+7. Load path. `object.cells` is still materialized whole on open, so a virtual sheet bounds what the grid *reads*, not what the workspace *holds*. The footprint win arrives only after 6.
 
 Reassessed and dropped:
 

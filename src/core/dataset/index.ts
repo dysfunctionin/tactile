@@ -6,6 +6,7 @@ export * from "./eagerStore.ts";
 export * from "./fixedChunks.ts";
 export * from "./hydrate.js";
 export * from "./sheetColumns.js";
+export * from "./sheetIndex.js";
 export * from "./sheetSnapshotStore.ts";
 export * from "./storageMode.js";
 export * from "./virtualSheet.js";

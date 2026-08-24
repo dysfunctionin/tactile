@@ -12,6 +12,7 @@ These rules apply under `src/core/` in addition to root guidance.
 - `dataset/storageMode.js` picks eager or virtual per sheet from stored cell count, and never sends a virtual sheet back to eager.
 - Do not add a range scan to `dataset/virtualSheetStore.js`. Scanning makes every block resident, which is what the virtual mode exists to avoid.
 - Anything that serializes a workspace goes through `dataset/hydrate.js` first, or a virtual sheet writes out only the blocks that were on screen.
+- `dataset/sheetIndex.js` keeps embedded and formula cells known while the rest of a sheet is absent. Derive it from the blocks; a copy maintained on the side drifts from what is stored.
 - `dataset/*.js` must not import `dataset/*.ts`; the node test harness loads these files with no TypeScript loader.
 - Preserve stable object/link IDs, containment/alias semantics, and unknown-field round-tripping.
 - Portable workspace v4 is a compatibility contract; private caches stay rebuildable.
