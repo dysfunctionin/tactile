@@ -44,6 +44,24 @@ export function sidebarStatus(entry) {
   return previousPass && current.durationMs > previousPass.durationMs ? "slower" : "pass";
 }
 
+export function aggregateRunMetrics(entries, runs) {
+  const totals = new Map();
+  for (const [, entry] of entries) {
+    for (const run of entry.runs || []) {
+      if (!Number.isFinite(run.durationMs)) continue;
+      totals.set(run.runId, (totals.get(run.runId) || 0) + run.durationMs);
+    }
+  }
+  const durations = (runs || []).map((run) => totals.get(run.runId)).filter((value) => Number.isFinite(value));
+  return {
+    current: durations[0] ?? null,
+    min: durations.length ? Math.min(...durations) : null,
+    max: durations.length ? Math.max(...durations) : null,
+    average: durations.length ? durations.reduce((sum, value) => sum + value, 0) / durations.length : null,
+    runCount: durations.length,
+  };
+}
+
 export function stepComparison(entry) {
   const runs = entry.runs || [];
   const current = runs[0]?.steps || [];

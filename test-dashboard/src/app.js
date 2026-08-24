@@ -3,6 +3,7 @@ import { describeFailure, loadResults, readSource, writeSource } from "./data.js
 import { compareBars, durationChart, relativeTrend, stepBars } from "./charts.js";
 import { cleanDiagnostic, createAgentContext } from "./agent-context.js";
 import {
+  aggregateRunMetrics,
   formatMs,
   formatPercent,
   scenarioMetrics,
@@ -472,6 +473,7 @@ function renderControls() {
 
 function renderOverview(main) {
   const latest = state.history.runs?.[0];
+  const runMetrics = aggregateRunMetrics(state.entries, state.history.runs);
   const header = h("header", "page-header");
   const title = h("div", "page-title");
   title.append(h("h1", null, "Overview"));
@@ -498,6 +500,15 @@ function renderOverview(main) {
     ]) {
       totals.append(metricBlock(label, String(value), tone));
     }
+    totals.append(
+      metricBlock("Total run time", formatMs(runMetrics.current), "", "sum of scenario durations across all types"),
+      metricBlock(
+        "Run-time spread",
+        `${formatMs(runMetrics.min)} – ${formatMs(runMetrics.max)}`,
+        "",
+        `average ${formatMs(runMetrics.average)} over ${runMetrics.runCount} retained run${runMetrics.runCount === 1 ? "" : "s"}`,
+      ),
+    );
     header.append(totals);
 
     const notInRun = state.entries.filter(([, entry]) => !isCurrent(entry)).length;
