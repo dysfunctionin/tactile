@@ -8,6 +8,7 @@ import {
   subscribeSurfaceCellDrafts,
 } from "../../../components/localEditSession.js";
 import { boundedAxisEntries, canonicalSheetSelection } from "./selectionGeometry.js";
+import { useDatasetViewport } from "./useDatasetViewport.js";
 import { useFormulaProjection } from "./useFormulaProjection.js";
 import { useVirtualSheet } from "../useVirtualSheet.js";
 
@@ -213,6 +214,8 @@ export function useSheetGridProjection({
     setPriorityBand(mountedBand);
   }, [mountedBand, setPriorityBand]);
 
+  const viewportCells = useDatasetViewport(object, visibleRows, visibleColumns);
+
   return {
     selectedCoordinates,
     selectedAddress: canonicalSelectedAddress,
@@ -229,6 +232,7 @@ export function useSheetGridProjection({
     columnGroupByStart,
     visibleRows: pinnedVisibleRows,
     visibleColumns: pinnedVisibleColumns,
+    viewportCells,
     ...virtualSheet,
   };
 }

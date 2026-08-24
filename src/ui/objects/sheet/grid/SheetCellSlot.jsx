@@ -20,6 +20,7 @@ const CellSlot = memo(function CellSlot({
   embedType,
   embedLinkId,
   linkUrl,
+  residency,
   role,
   styleBold,
   styleWrap,
@@ -56,7 +57,7 @@ const CellSlot = memo(function CellSlot({
 }) {
   return (
     <div
-      className={`virtual-cell-slot ${selected ? "is-active-cell-slot" : ""}`}
+      className={`virtual-cell-slot ${selected ? "is-active-cell-slot" : ""} ${residency && residency !== "ready" ? `is-${residency}` : ""}`}
       data-row={row}
       data-column={column}
       data-virtual-cell-address={address}

@@ -1,12 +1,19 @@
 import { useEffect, useMemo, useState } from "react";
-import {
-  FixedDatasetChunkReader,
-  SheetSnapshotDatasetStore,
-} from "../../../../core/dataset/index.ts";
-import { cellId, coordinatesFromCellId } from "../../../../core/sheet/coordinates.js";
-import { cellChangesSince, cellChangeVersion } from "./cellChangeJournal.js";
 
-const EMPTY_CELLS = new Map();
+import {
+  createStorageModePolicy,
+  createVirtualSheetDatasetStore,
+  seedChunks,
+  sheetColumnName,
+} from "../../../../core/dataset/index.ts";
+import { cellId } from "../../../../core/sheet/coordinates.js";
+import { activeChunkStore } from "../../../../platform/chunkStore.js";
+import { cellChangeVersion } from "./cellChangeJournal.js";
+
+// One policy for the session, so a sheet keeps the mode it was opened with even
+// as the user moves between it and another.
+const policy = createStorageModePolicy();
+
 const sourceIds = new WeakMap();
 let sourceSequence = 0;
 
@@ -15,88 +22,109 @@ function sourceRevision(cells) {
   return `${sourceIds.get(cells)}:${cellChangeVersion(cells)}`;
 }
 
-function axisRanges(entries, key) {
-  const values = [...new Set(entries.map((entry) => entry[key]))].sort((left, right) => left - right);
-  return values.reduce((ranges, value) => {
-    const current = ranges.at(-1);
-    if (current && value === current[1] + 1) current[1] = value;
-    else ranges.push([value, value]);
-    return ranges;
-  }, []);
+function bounds(entries, key) {
+  let low = Infinity;
+  let high = -Infinity;
+  for (const entry of entries) {
+    if (entry[key] < low) low = entry[key];
+    if (entry[key] > high) high = entry[key];
+  }
+  return high < low ? null : { low, high };
 }
 
+/**
+ * The cells the grid should paint for the current viewport.
+ *
+ * Returns `null` for an eager sheet, which is every sheet under the residency
+ * threshold. That is deliberate: the caller then reads `object.cells` exactly
+ * as it always has, so the common path gains no async hop and no second copy of
+ * the viewport.
+ *
+ * For a virtual sheet it returns a map of cell id to `{ record, state }`, where
+ * state is the residency of the block the cell came from.
+ */
 export function useDatasetViewport(object, visibleRows, visibleColumns) {
+  // Keyed on the cells reference rather than the change journal: an edit
+  // mutates that map in place, and counting its keys on every keystroke would
+  // cost more than the mode decision saves.
+  const mode = useMemo(
+    () => (policy.isVirtual(object.id) ? "virtual" : policy.modeForSheet(object)),
+    [object.id, object.cells],
+  );
+
   const runtime = useMemo(() => {
-    const revision = sourceRevision(object.cells);
-    const store = new SheetSnapshotDatasetStore(object, revision);
+    if (mode !== "virtual") return null;
+    const store = activeChunkStore();
+    if (!store) return null;
     return {
-      store,
-      reader: new FixedDatasetChunkReader(store, { maxCacheBytes: 32 * 1024 * 1024 }),
+      dataset: createVirtualSheetDatasetStore({
+        store,
+        object,
+        revision: sourceRevision(object.cells),
+      }),
+      // A sheet cannot read blocks it never wrote. Seeding once from the cells
+      // already in memory is what lets an existing workspace turn virtual.
+      seeded: seedChunks(store, object.id, object.cells),
     };
-  }, [object.id]);
+  }, [mode, object.id]);
+
   const revision = sourceRevision(object.cells);
-  runtime.store.update(object, revision);
-  const descriptor = runtime.store.descriptor();
-  const rowRanges = axisRanges(visibleRows, "row");
-  const columnRanges = axisRanges(visibleColumns, "column");
-  const viewportKey = `${rowRanges.map((range) => range.join("-")).join(",")}:${columnRanges.map((range) => range.join("-")).join(",")}`;
-  const [windowState, setWindowState] = useState(null);
+  runtime?.dataset.update(object, revision);
+
+  const rowBounds = bounds(visibleRows, "row");
+  const columnBounds = bounds(visibleColumns, "column");
+  const viewportKey = rowBounds && columnBounds
+    ? `${rowBounds.low}-${rowBounds.high}:${columnBounds.low}-${columnBounds.high}`
+    : "";
+  const [settled, setSettled] = useState(null);
 
   useEffect(() => () => {
-    runtime.reader.close();
+    runtime?.dataset.close();
   }, [runtime]);
 
   useEffect(() => {
-    if (!rowRanges.length || !columnRanges.length) return undefined;
+    if (!runtime || !viewportKey) return undefined;
     const controller = new AbortController();
-    const requests = rowRanges.flatMap(([rowStart, rowEnd]) => (
-      columnRanges.map(([columnStart, columnEnd]) => ({ rowStart, rowEnd, columnStart, columnEnd }))
-    ));
-    Promise.all(requests.map((request) => runtime.reader.read(descriptor, {
-      datasetId: descriptor.id,
-      ...request,
-      revision: descriptor.revision,
-      signal: controller.signal,
-    }).then((window) => ({ window, columnStart: request.columnStart })))).then((windows) => {
-      const cells = new Map();
-      windows.forEach(({ window, columnStart }) => {
-        window.rows.forEach((row) => {
+    const firstColumn = columnBounds.low;
+    const columnIds = [];
+    for (let column = firstColumn; column <= columnBounds.high; column += 1) {
+      columnIds.push(sheetColumnName(column));
+    }
+
+    runtime.seeded
+      .then(() => runtime.dataset.readWindow({
+        datasetId: object.id,
+        rowStart: rowBounds.low,
+        rowEnd: rowBounds.high,
+        columnIds,
+        signal: controller.signal,
+      }))
+      .then((result) => {
+        if (controller.signal.aborted) return;
+        const cells = new Map();
+        for (const row of result.rows) {
           row.cells.forEach((entry, projectionIndex) => {
-            if (entry.record) cells.set(cellId(Number(row.logicalIndex), columnStart + projectionIndex), entry.record);
+            if (!entry.record && entry.state === "ready") return;
+            cells.set(cellId(row.logicalIndex, firstColumn + projectionIndex), {
+              record: entry.record || null,
+              state: entry.state,
+            });
           });
-        });
+        }
+        setSettled({ viewportKey, cells });
+      })
+      .catch((error) => {
+        if (error?.name !== "AbortError") console.error("Unable to read the sheet viewport", error);
       });
-      setWindowState({
-        revision: descriptor.revision,
-        viewportKey,
-        source: object.cells,
-        journalVersion: cellChangeVersion(object.cells),
-        cells,
-      });
-    }).catch((error) => {
-      if (error?.name !== "AbortError") console.error("Unable to read dataset viewport", error);
-    });
+
     return () => controller.abort();
-  }, [descriptor.revision, object.cells, runtime, viewportKey]);
+  }, [object.id, revision, runtime, viewportKey]);
 
   return useMemo(() => {
-    if (!windowState || windowState.viewportKey !== viewportKey) return EMPTY_CELLS;
-    if (windowState.revision === descriptor.revision) return windowState.cells;
-    if (windowState.source !== object.cells) return EMPTY_CELLS;
-    const journal = cellChangesSince(object.cells, windowState.journalVersion);
-    if (!journal) return EMPTY_CELLS;
-    const visibleRowSet = new Set(visibleRows.map((entry) => entry.row));
-    const visibleColumnSet = new Set(visibleColumns.map((entry) => entry.column));
-    const cells = new Map(windowState.cells);
-    journal.ids.forEach((id) => {
-      const coordinates = coordinatesFromCellId(id);
-      if (!coordinates
-        || !visibleRowSet.has(coordinates.row)
-        || !visibleColumnSet.has(coordinates.column)) return;
-      const record = object.cells?.[id];
-      if (record) cells.set(id, record);
-      else cells.delete(id);
-    });
-    return cells;
-  }, [descriptor.revision, object, viewportKey, visibleColumns, visibleRows, windowState]);
+    if (!runtime) return null;
+    // Until the first window settles nothing is resident, so an empty map
+    // reports every cell as pending rather than as blank.
+    if (!settled || settled.viewportKey !== viewportKey) return new Map();
+    return settled.cells;
+  }, [runtime, settled, viewportKey]);
 }

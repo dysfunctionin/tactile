@@ -25,6 +25,7 @@ The shell owns workspace identity, navigation, start-object metadata, commands, 
 - Browser/native persistence uses forward deltas and revision acknowledgements; inverse patches stay in the engine.
 - Portable files are the user recovery authority. Native SQLite/WAL is an optimization, not the only copy.
 - Cells persist as fixed 64 x 64 chunks, the shared unit of storage and caching across backends. See ADR 0002.
+- A virtual sheet answers a read with the residency of the block behind it. Resident-and-empty and never-fetched are different answers, and merging them renders an unloaded sheet as a blank one.
 - A changed `workspace.id` is a new workspace: persistence writes a full snapshot and re-anchors, never patches.
 - Navigation history is keyed by workspace id, so a workspace restored under a stale id silently loses its layer stack.
 - Unknown fields and future/plugin state round-trip without coercion.

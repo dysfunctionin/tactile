@@ -4347,6 +4347,23 @@ kbd {
   z-index: 3;
 }
 
+/* A block whose refresh is in flight still shows its previous values, dimmed,
+   so a scroll does not flash empty on every revision. */
+.virtual-cell-slot.is-stale {
+  opacity: 0.55;
+}
+
+.virtual-cell-slot.is-pending {
+  opacity: 0.28;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .virtual-cell-slot.is-stale,
+  .virtual-cell-slot.is-pending {
+    transition: opacity 120ms ease-out;
+  }
+}
+
 .object-statusbar {
   height: 32px;
   min-height: 32px;

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-import { createMemoryChunkStore } from "../../../src/core/dataset/chunkStore.js";
+import { createMemoryChunkStore, seedChunks } from "../../../src/core/dataset/chunkStore.js";
 import { sheetColumnName } from "../../../src/core/dataset/sheetColumns.js";
 import { createVirtualSheetDatasetStore } from "../../../src/core/dataset/virtualSheetStore.js";
 import { cellId } from "../../../src/core/sheet/coordinates.js";
@@ -169,4 +169,29 @@ scenario("an aborted request never reaches the store", async () => {
 
   await assert.rejects(() => dataset.readWindow(windowRequest({ signal: controller.signal })));
   assert.deepEqual(reads, []);
+});
+
+scenario("seeding writes a sheet's cells as blocks so it can be read back", async () => {
+  const store = createMemoryChunkStore();
+
+  const seeded = await seedChunks(store, OBJECT.id, {
+    [cellId(0, 0)]: { value: "a" },
+    [cellId(200, 200)]: { value: "b" },
+  });
+
+  assert.equal(seeded, true);
+  assert.deepEqual(await store.listChunkKeys(OBJECT.id), ["0:0", "3:3"]);
+});
+
+scenario("seeding leaves existing blocks alone", async () => {
+  const store = createMemoryChunkStore();
+  await store.writeChunks(OBJECT.id, [{ chunkKey: "0:0", cells: { [cellId(0, 0)]: { value: "saved" } } }]);
+
+  // The blocks on disk are the newer copy, so a stale in-memory map must not
+  // overwrite them just because a sheet turned virtual.
+  const seeded = await seedChunks(store, OBJECT.id, { [cellId(0, 0)]: { value: "stale" } });
+
+  assert.equal(seeded, false);
+  const [block] = await store.readChunks(OBJECT.id, ["0:0"]);
+  assert.equal(block.cells[cellId(0, 0)].value, "saved");
 });

@@ -31,6 +31,11 @@ export function createStorageModePolicy({ threshold = VIRTUAL_CELL_THRESHOLD } =
       return this.modeFor(object.id, sheetCellCount(object));
     },
 
+    /** Answers without counting cells, for callers on a per-render path. */
+    isVirtual(objectId) {
+      return modes.get(String(objectId)) === "virtual";
+    },
+
     /** Called when an object is closed or deleted; the next open decides again. */
     forget(objectId) {
       modes.delete(String(objectId));

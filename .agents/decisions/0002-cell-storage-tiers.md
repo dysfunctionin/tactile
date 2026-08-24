@@ -36,3 +36,18 @@ Workspace identity is not patchable. A transition that changes `workspace.id` wr
 Browser records v2 adds `cellChunks` and leaves the v1 `cells` store readable; a workspace migrates on first open through `migrateCellChunks`, since v1 shipped in 37 tags and cannot be dropped. Rollback is per-workspace: the v1 store is only deleted once its chunks are written.
 
 Chunk layout, key ranges, and migration are covered in `tests/cases/platform/browser-persistence.test.mjs`; identity re-anchoring in `tests/cases/core/shadow-transition.test.mjs`; restore-after-reload at size in `tests/cases/e2e/large-sheet-interactions.e2e.spec.mjs`.
+
+## Implementation status
+
+Landed:
+
+1. Backing stores. `src-tauri/src/storage/chunks.rs` over SQLite, `src/platform/browser/chunkStore.js` over IndexedDB, one shape in `src/core/dataset/chunkStore.js`.
+2. Residency. `dataset/chunkCache.js` evicts by LRU in bytes with pinning; `dataset/virtualSheet.js` owns the ready/stale/pending states and coalesces concurrent block reads.
+3. Read path. `dataset/virtualSheetStore.js` answers the same window request as the eager store; `dataset/storageMode.js` chooses per sheet; `useDatasetViewport` feeds the grid, which dims a block that is stale or pending.
+
+Outstanding, in order:
+
+4. Aggregate pushdown. `virtualSheetStore` deliberately has no `aggregate()`, and the formula engine still scans `sheet.cells`.
+5. Undo. Visible undo still clones workspaces in `useLocalWorkspace`; `core/history/patchHistory.ts` is confined to `transactionEngine.ts`.
+6. Load and export. `object.cells` is still materialized whole on open, so a virtual sheet currently bounds what the grid *reads*, not what the workspace *holds*. The footprint win arrives only when the load path stops materializing and every full-map reader (`sheet/formulas.js`, `sheet/textMeasure.js`, `topology.js`) tolerates absence.
+

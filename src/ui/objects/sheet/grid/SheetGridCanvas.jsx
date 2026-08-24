@@ -24,6 +24,7 @@ export function SheetGridCanvas({
   columnGroupByStart,
   visibleRows,
   visibleColumns,
+  viewportCells,
   viewport,
   canvasSize,
   metrics,
@@ -363,7 +364,11 @@ export function SheetGridCanvas({
         {visibleRows.flatMap(({ row, position }) => visibleColumns.map(({ column, position: columnPosition }) => {
           const id = cellId(row, column);
           const address = cellAddress(row, column);
-          const cell = object.cells?.[id];
+          // A virtual sheet holds only the blocks it has fetched, so its cells
+          // come from the residency map; `object.cells` would read as empty.
+          const resident = viewportCells?.get(id);
+          const cell = viewportCells ? resident?.record : object.cells?.[id];
+          const residency = viewportCells ? (resident?.state || "pending") : "ready";
           const rawValue = cell?.value ?? "";
           const formula = cell?.formula ?? "";
           const embed = cell?.embed;
@@ -393,6 +398,7 @@ export function SheetGridCanvas({
               embedType={embed?.type || ""}
               embedLinkId={embed?.linkId || ""}
               linkUrl={linkUrl}
+              residency={residency}
               role={cell?.role || ""}
               styleBold={Boolean(cell?.style?.bold)}
               styleWrap={Boolean(cell?.style?.wrap)}

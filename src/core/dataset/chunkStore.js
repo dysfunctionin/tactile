@@ -1,4 +1,4 @@
-import { chunkKeysForRange } from "./cellChunks.js";
+import { chunkKeysForRange, groupCellsIntoChunks } from "./cellChunks.js";
 
 /**
  * Backing store for the 64x64 cell blocks defined in ADR 0002.
@@ -22,6 +22,25 @@ export async function readChunksForRange(store, objectId, range) {
   const keys = chunkKeysForRange(range);
   if (!keys.length) return [];
   return store.readChunks(objectId, keys);
+}
+
+/**
+ * Writes a sheet's cells into the store as blocks, unless blocks are already
+ * there.
+ *
+ * A sheet cannot serve reads from blocks it never wrote, so a sheet that is
+ * about to turn virtual has to be seeded first or it would render as empty.
+ * Existing blocks are left alone because they are the newer copy: the snapshot
+ * path writes them on every save, while `cells` here is whatever the caller
+ * happens to be holding.
+ */
+export async function seedChunks(store, objectId, cells) {
+  const existing = await store.listChunkKeys(objectId);
+  if (existing.length) return false;
+  const put = [...groupCellsIntoChunks(cells).values()];
+  if (!put.length) return false;
+  await store.writeChunks(objectId, put, []);
+  return true;
 }
 
 /** In-memory implementation used by tests and by the pre-persistence boot path. */
