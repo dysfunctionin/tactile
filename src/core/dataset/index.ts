@@ -4,6 +4,7 @@ export * from "./chunkCache.js";
 export * from "./chunkStore.js";
 export * from "./eagerStore.ts";
 export * from "./fixedChunks.ts";
+export * from "./hydrate.js";
 export * from "./sheetColumns.js";
 export * from "./sheetSnapshotStore.ts";
 export * from "./storageMode.js";

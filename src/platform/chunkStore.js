@@ -1,3 +1,4 @@
+import { hydrateWorkspaceCells, virtualSheetIds } from "../core/dataset/index.ts";
 import { createBrowserChunkStore } from "./browser/chunkStore.js";
 import { openRecordDatabase } from "./browser/indexedDb.js";
 import { loadWorkspaceBootState } from "./browser/storage.js";
@@ -58,4 +59,16 @@ export function releaseChunkStore(workspaceId) {
 export function activeChunkStore() {
   const workspaceId = loadWorkspaceBootState()?.workspaceId;
   return workspaceId ? chunkStoreFor(workspaceId) : null;
+}
+
+/**
+ * The workspace as a serializer must see it: every cell of every sheet.
+ *
+ * Returns the same object when nothing is partial, so the eager path stays a
+ * single `await` with no copying.
+ */
+export async function hydrateWorkspaceForExport(workspace) {
+  const objectIds = virtualSheetIds(workspace);
+  if (!objectIds.length) return workspace;
+  return hydrateWorkspaceCells(activeChunkStore(), workspace, objectIds);
 }

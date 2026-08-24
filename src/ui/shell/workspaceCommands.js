@@ -2,6 +2,7 @@ import { useCallback, useRef } from "react";
 import { downloadWorkspaceZip, importWorkspaceFile } from "../../core/workspace/export.js";
 import { cloneTheme, downloadTheme, themeFromFile } from "../../core/workspace/themes.js";
 import { inferFileObjectType, isBareUrlValue } from "../../core/workspace/model.js";
+import { hydrateWorkspaceForExport } from "../../platform/chunkStore.js";
 import { readLocalFile } from "./selectionCommands.js";
 import { useObjectPluginCommands } from "../objects/registry/ObjectPluginProvider.jsx";
 
@@ -33,7 +34,7 @@ export function useWorkspaceCommands({
   const exportWorkspace = useCallback(async () => {
     setExportState("exporting");
     try {
-      await downloadWorkspaceZip(workspace);
+      await downloadWorkspaceZip(await hydrateWorkspaceForExport(workspace));
       showNotice("Portable .zip workspace exported");
     } catch (error) {
       showNotice(error?.message || "Export failed");

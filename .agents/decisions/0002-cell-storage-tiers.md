@@ -44,10 +44,15 @@ Landed:
 1. Backing stores. `src-tauri/src/storage/chunks.rs` over SQLite, `src/platform/browser/chunkStore.js` over IndexedDB, one shape in `src/core/dataset/chunkStore.js`.
 2. Residency. `dataset/chunkCache.js` evicts by LRU in bytes with pinning; `dataset/virtualSheet.js` owns the ready/stale/pending states and coalesces concurrent block reads.
 3. Read path. `dataset/virtualSheetStore.js` answers the same window request as the eager store; `dataset/storageMode.js` chooses per sheet; `useDatasetViewport` feeds the grid, which dims a block that is stale or pending.
+4. Whole-map reads. `dataset/hydrate.js` fills a partial sheet back in from its blocks, and the two paths that serialize the in-memory workspace (the export command and the native folder mirror) call it before building a portable package.
 
 Outstanding, in order:
 
-4. Aggregate pushdown. `virtualSheetStore` deliberately has no `aggregate()`, and the formula engine still scans `sheet.cells`.
-5. Undo. Visible undo still clones workspaces in `useLocalWorkspace`; `core/history/patchHistory.ts` is confined to `transactionEngine.ts`.
-6. Load and export. `object.cells` is still materialized whole on open, so a virtual sheet currently bounds what the grid *reads*, not what the workspace *holds*. The footprint win arrives only when the load path stops materializing and every full-map reader (`sheet/formulas.js`, `sheet/textMeasure.js`, `topology.js`) tolerates absence.
+5. Full-map readers. `sheet/formulas.js` registers formulas by scanning `sheet.cells`, `topology.js` finds embed relationships the same way, and `sheet/textMeasure.js` measures wrap heights that way. Each needs a persisted side index or an explicit tolerance for absence before cells can go partial.
+6. Load path. `object.cells` is still materialized whole on open, so a virtual sheet bounds what the grid *reads*, not what the workspace *holds*. The footprint win arrives only after 5.
+
+Reassessed and dropped:
+
+- Aggregate pushdown. Nothing consumes `DatasetStore.aggregate()`; the sheet status bar reports position and size, not sums. Computing aggregates natively would also mean Rust parsing `cell.value`, which contradicts the opaque-chunk rule above. Revisit only if a summary row ships.
+- Undo rework. `core/history/snapshot.js` already keeps workspace clones proportional to object count by sharing cell maps and copying on next mutation, and cell edits record before/after entries rather than snapshots. Moving visible undo onto `patchHistory.ts` would change structure without changing cost.
 

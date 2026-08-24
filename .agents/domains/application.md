@@ -11,6 +11,7 @@ Layout: `src/app/` composes, `src/core/` holds headless domain logic, `src/ui/` 
 - Treat portable workspace v4 as a compatibility contract; private caches are rebuildable.
 - Keep sheets sparse and virtualized; avoid work proportional to the full visible grid.
 - A sheet reads through `src/core/dataset/`: eager sheets from `object.cells`, virtual sheets from a chunk store via `useDatasetViewport`. A cell from a virtual sheet carries a residency state, and rendering it without that state shows an unloaded sheet as an empty one.
+- Serializing the in-memory workspace (portable export, the native folder mirror in `App.jsx`) means awaiting `hydrateWorkspaceForExport` first; a partial sheet would otherwise be written out truncated.
 - Heavy Markdown renderers remain lazy, strict, and source-only at the portable boundary.
 
 Load `knowledge/architecture.md` for cross-module changes and `knowledge/file-format.md` only for serialized data or migration work.

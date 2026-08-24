@@ -12,6 +12,7 @@ import { useWorkspaceCommands } from "../ui/shell/workspaceCommands.js";
 import { reparentReasonMessage } from "../core/reparenting.js";
 import { buildPortablePackage } from "../core/workspace/export.js";
 import { createBlankWorkspace, isBareUrlValue, normalizeWorkspace } from "../core/workspace/model.js";
+import { hydrateWorkspaceForExport } from "../platform/chunkStore.js";
 import { saveNativeWorkspacePath } from "../platform/browser/storage.js";
 import {
   cloneTheme,
@@ -345,22 +346,8 @@ export function App() {
 
   useEffect(() => {
     if (!nativeRuntime || !hydrated || !nativeInvoke || !workspace.settings.nativeWorkspacePath) return undefined;
-    const packageData = buildPortablePackage(workspace);
-    const files = Object.entries(packageData.files)
-      .filter(([filePath, contents]) => filePath !== "workspace.json" && (typeof contents === "string" || contents?.dataUrl))
-      .map(([filePath, contents]) => ({
-        path: filePath,
-        contents: typeof contents === "string" ? contents : contents.dataUrl,
-        ...(typeof contents === "string" ? {} : { encoding: "data-url" }),
-      }));
     const pending = nativeSnapshotRef.current;
-    pending.version += 1;
-    pending.pending = {
-      version: pending.version,
-      path: workspace.settings.nativeWorkspacePath,
-      workspaceJson: JSON.stringify(workspace),
-      files,
-    };
+    let cancelled = false;
     const flush = async () => {
       if (pending.writing || !pending.pending) return;
       pending.writing = true;
@@ -378,15 +365,45 @@ export function App() {
         if (pending.pending) void flush();
       }
     };
+    const stage = async () => {
+      // A virtual sheet only holds the blocks the grid painted, so the mirror
+      // has to read the rest back or it would overwrite the folder with a
+      // workspace that is missing every row nobody scrolled to. A failed read
+      // therefore skips the write instead of mirroring what little is resident.
+      let source;
+      try {
+        source = await hydrateWorkspaceForExport(workspace);
+      } catch {
+        return;
+      }
+      if (cancelled) return;
+      const packageData = buildPortablePackage(source);
+      const files = Object.entries(packageData.files)
+        .filter(([filePath, contents]) => filePath !== "workspace.json" && (typeof contents === "string" || contents?.dataUrl))
+        .map(([filePath, contents]) => ({
+          path: filePath,
+          contents: typeof contents === "string" ? contents : contents.dataUrl,
+          ...(typeof contents === "string" ? {} : { encoding: "data-url" }),
+        }));
+      pending.version += 1;
+      pending.pending = {
+        version: pending.version,
+        path: workspace.settings.nativeWorkspacePath,
+        workspaceJson: JSON.stringify(source),
+        files,
+      };
+      void flush();
+    };
     // Debounce the native flush so a burst of edits (e.g. burst typing,
     // fast formatting) produces a single portable-package rebuild and IPC
     // snapshot instead of one full rebuild per keypress. The in-flight
     // single-flight above remains, so writes never stack.
     if (nativeFlushTimerRef.current != null) window.clearTimeout(nativeFlushTimerRef.current);
     nativeFlushTimerRef.current = window.setTimeout(() => {
-      void flush();
+      void stage();
     }, 200);
     return () => {
+      cancelled = true;
       if (nativeFlushTimerRef.current != null) {
         window.clearTimeout(nativeFlushTimerRef.current);
         nativeFlushTimerRef.current = null;

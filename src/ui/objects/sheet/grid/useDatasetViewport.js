@@ -1,18 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 
 import {
-  createStorageModePolicy,
   createVirtualSheetDatasetStore,
   seedChunks,
+  sharedStorageModePolicy as policy,
   sheetColumnName,
 } from "../../../../core/dataset/index.ts";
 import { cellId } from "../../../../core/sheet/coordinates.js";
 import { activeChunkStore } from "../../../../platform/chunkStore.js";
 import { cellChangeVersion } from "./cellChangeJournal.js";
-
-// One policy for the session, so a sheet keeps the mode it was opened with even
-// as the user moves between it and another.
-const policy = createStorageModePolicy();
 
 const sourceIds = new WeakMap();
 let sourceSequence = 0;

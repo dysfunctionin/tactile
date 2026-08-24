@@ -42,3 +42,14 @@ export function createStorageModePolicy({ threshold = VIRTUAL_CELL_THRESHOLD } =
     },
   };
 }
+
+// One policy for the session. The grid and the export path have to agree about
+// which sheets are partial, or export would trust a complete-looking cells map
+// that is missing every block the user never scrolled to.
+export const sharedStorageModePolicy = createStorageModePolicy();
+
+export function virtualSheetIds(workspace, policy = sharedStorageModePolicy) {
+  return Object.values(workspace?.objects || {})
+    .filter((object) => object?.type === "sheet" && policy.isVirtual(object.id))
+    .map((object) => object.id);
+}
