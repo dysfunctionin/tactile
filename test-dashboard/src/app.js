@@ -502,12 +502,6 @@ function renderOverview(main) {
     }
     totals.append(
       metricBlock("Total run time", formatMs(runMetrics.current), "", "sum of scenario durations across all types"),
-      metricBlock(
-        "Run-time spread",
-        `${formatMs(runMetrics.min)} – ${formatMs(runMetrics.max)}`,
-        "",
-        `average ${formatMs(runMetrics.average)} over ${runMetrics.runCount} retained run${runMetrics.runCount === 1 ? "" : "s"}`,
-      ),
     );
     header.append(totals);
 

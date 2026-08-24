@@ -45,21 +45,15 @@ export function sidebarStatus(entry) {
 }
 
 export function aggregateRunMetrics(entries, runs) {
-  const totals = new Map();
+  const latestRunId = runs?.[0]?.runId;
+  let current = null;
   for (const [, entry] of entries) {
     for (const run of entry.runs || []) {
-      if (!Number.isFinite(run.durationMs)) continue;
-      totals.set(run.runId, (totals.get(run.runId) || 0) + run.durationMs);
+      if (run.runId !== latestRunId || !Number.isFinite(run.durationMs)) continue;
+      current = (current || 0) + run.durationMs;
     }
   }
-  const durations = (runs || []).map((run) => totals.get(run.runId)).filter((value) => Number.isFinite(value));
-  return {
-    current: durations[0] ?? null,
-    min: durations.length ? Math.min(...durations) : null,
-    max: durations.length ? Math.max(...durations) : null,
-    average: durations.length ? durations.reduce((sum, value) => sum + value, 0) / durations.length : null,
-    runCount: durations.length,
-  };
+  return { current };
 }
 
 export function stepComparison(entry) {
