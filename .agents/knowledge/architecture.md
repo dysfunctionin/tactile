@@ -23,6 +23,8 @@ The shell owns workspace identity, navigation, start-object metadata, commands, 
 - `homeObjectId` selects launch behavior; it does not rewrite containment.
 - Portable workspace/object normalization is v4. Native cache schema is private and rebuildable.
 - Browser/native persistence uses forward deltas and revision acknowledgements; inverse patches stay in the engine.
+- Browser workspace authority is tab-scoped and ephemeral; reload restores that tab, while a new tab starts blank. See ADR 0002.
+- Native workspace authority remains the user-selected folder and may be changed in Settings.
 - Portable files are the user recovery authority. Native SQLite/WAL is an optimization, not the only copy.
 - Unknown fields and future/plugin state round-trip without coercion.
 

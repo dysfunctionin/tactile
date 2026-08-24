@@ -26,6 +26,7 @@ const FilesPanel = lazy(() => import("../ui/components/FilesPanel.jsx").then(({ 
 const SettingsPanel = lazy(() => import("../ui/components/SettingsPanel.jsx").then(({ SettingsPanel: Component }) => ({ default: Component })));
 const TooltipLayer = lazy(() => import("../ui/components/TooltipLayer.jsx").then(({ TooltipLayer: Component }) => ({ default: Component })));
 const NativeOnboarding = lazy(() => import("../ui/components/NativeOnboarding.jsx").then(({ NativeOnboarding: Component }) => ({ default: Component })));
+const SessionRecoveryDialog = lazy(() => import("../ui/components/SessionRecoveryDialog.jsx").then(({ SessionRecoveryDialog: Component }) => ({ default: Component })));
 
 function FilesPanelFallback({ pinned = false }) {
   return (
@@ -41,6 +42,14 @@ export function App() {
       workspace,
       hydrated,
     saveState,
+    closeExportRequested,
+    clearCloseExportRequest,
+    markWorkspaceExported,
+    recoverySessions,
+    dismissRecovery,
+    restoreRecoverySessions,
+    discardRecoverySessions,
+    exportRecoverySessions,
     replaceWorkspace,
     updateObject,
     updateCell,
@@ -123,6 +132,7 @@ export function App() {
     schedule: inOut.schedule,
     showNotice: shell.showNotice,
     setExportState: shell.setExportState,
+    onWorkspaceExported: markWorkspaceExported,
     importInputRef: shell.importInputRef,
     resetSelection: () => resetSelectionRef.current?.(),
   });
@@ -139,6 +149,12 @@ export function App() {
     redo,
   });
   resetSelectionRef.current = selection.resetSelection;
+
+  useEffect(() => {
+    if (!closeExportRequested || nativeRuntime) return;
+    shell.openSettings(null, "files");
+    clearCloseExportRequest();
+  }, [clearCloseExportRequest, closeExportRequested, nativeRuntime, shell]);
 
   // Keep the document-level keyboard and clipboard bridge mounted once. The
   // active shell/selection callbacks change as workspace state changes, but
@@ -451,7 +467,7 @@ export function App() {
       saveNativeWorkspacePath(path);
     }
     if (nextWorkspace) {
-      replaceWorkspace(nextWorkspace);
+      await replaceWorkspace(nextWorkspace);
       shell.showNotice("Workspace loaded from selected folder");
     } else {
       updateSettings({
@@ -509,7 +525,7 @@ export function App() {
       await nativeInvoke("workspace_prepare_directory", { path });
       await nativeInvoke("workspace_set_last_path", { path });
       saveNativeWorkspacePath(path);
-      replaceWorkspace(nextWorkspace);
+      await replaceWorkspace(nextWorkspace);
       shell.showNotice("Home directory changed");
     } catch (error) {
       shell.showNotice(error?.message || "That folder could not be selected");
@@ -749,6 +765,7 @@ export function App() {
       {shell.settingsOpen ? (
         <Suspense fallback={null}>
           <SettingsPanel
+            initialTab={shell.settingsInitialTab}
             activeTheme={activeTheme}
             customThemes={workspace.themes}
             settings={workspace.settings}
@@ -784,6 +801,22 @@ export function App() {
             }}
             onChooseFolder={chooseNativeFolder}
             onFinish={finishNativeGuide}
+          />
+        </Suspense>
+      ) : null}
+
+      {!nativeRuntime && recoverySessions.length ? (
+        <Suspense fallback={null}>
+          <SessionRecoveryDialog
+            sessions={recoverySessions}
+            onRestore={restoreRecoverySessions}
+            onExport={async () => {
+              const result = await exportRecoverySessions();
+              if (result.failed) shell.showNotice(`${result.failed} workspace export${result.failed === 1 ? "" : "s"} failed`);
+              else shell.showNotice(`${result.exported} workspace${result.exported === 1 ? "" : "s"} exported`);
+            }}
+            onDiscard={discardRecoverySessions}
+            onDismiss={dismissRecovery}
           />
         </Suspense>
       ) : null}

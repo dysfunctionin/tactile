@@ -177,9 +177,10 @@ onChangeWorkspaceFolder,
   onDownloadAndInstallUpdate,
   onOpenGuide,
   onClose,
+  initialTab = "appearance",
 }) {
   const plugins = useObjectPlugins();
-  const [tab, setTab] = useState("appearance");
+  const [tab, setTab] = useState(initialTab);
   const [themeFilter, setThemeFilter] = useState("all");
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [authoringPromptCopied, setAuthoringPromptCopied] = useState(false);

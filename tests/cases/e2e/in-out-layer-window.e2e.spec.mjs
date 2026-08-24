@@ -720,29 +720,27 @@ scenario("changing home preserves the active parent chain and dock ordering", as
   await expect(page.locator('.base-object-layer [data-object-id="home"]')).not.toHaveCount(0);
 });
 
-scenario("a fresh page restores the parent chain for a nested home", async ({ page, context }) => {
+scenario("a reload restores the parent chain for a nested home", async ({ page }) => {
   await page.goto("/");
   await importWorkspace(page);
 
-  await cellLocator(page, "home", "A1").click();
-  await expect(page.locator('[data-layer-object="layer-two"]')).toHaveAttribute("data-spatial-phase", "floating");
+  await cellLocator(page, "home", "A1").dblclick();
+  await expect(page.locator('[data-layer-object="layer-two"]')).toHaveAttribute("data-spatial-phase", "full");
   await page.locator(".spatial-layer .workspace-menu-trigger").click();
   await page.getByRole("menuitem", { name: "Set as start" }).click();
   await page.waitForTimeout(300);
 
-  const reopened = await context.newPage();
-  await reopened.goto("/");
-  await expect(reopened.locator(".workspace-shell")).toHaveAttribute("data-logical-layer-count", "2", {
+  await page.reload();
+  await expect(page.locator(".workspace-shell")).toHaveAttribute("data-logical-layer-count", "2", {
     timeout: 4_000,
   });
-  await expect(reopened.locator(".spatial-layer .object-header-parent")).toHaveCount(1);
-  await expect(reopened.locator('.app-dock [aria-label="Object path"]')).toContainText("Layer one");
-  await expect(reopened.locator('.app-dock [aria-label="Object path"]')).toContainText("Layer two");
+  await expect(page.locator(".spatial-layer .object-header-parent")).toHaveCount(1);
+  await expect(page.locator('.app-dock [aria-label="Object path"]')).toContainText("Layer one");
+  await expect(page.locator('.app-dock [aria-label="Object path"]')).toContainText("Layer two");
 
-  await reopened.locator(".spatial-layer .object-header-parent").click();
-  await expect(reopened.locator(".spatial-layer")).toHaveCount(0, { timeout: 4_000 });
-  await expect(reopened.getByRole("textbox", { name: "Object title" })).toHaveValue("Layer one");
-  await reopened.close();
+  await page.locator(".spatial-layer .object-header-parent").click();
+  await expect(page.locator(".spatial-layer")).toHaveCount(0, { timeout: 4_000 });
+  await expect(page.getByRole("textbox", { name: "Object title" })).toHaveValue("Layer one");
 });
 
 scenario("keeps parent navigation unique through a deep nested stack", async ({ page }) => {

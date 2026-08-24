@@ -280,7 +280,7 @@ export function createWave2Shadow(initialWorkspace, options = {}) {
     try {
       const stored = useInitialSnapshot
         ? null
-        : await persistence.open({ workspaceId: previous.id });
+        : await persistence.open();
       if (stored) {
         previous = normalizeWorkspace(stored);
         engine = createTransactionEngine(previous, { initialRevision: "0" });
@@ -461,6 +461,20 @@ export function createWave2Shadow(initialWorkspace, options = {}) {
       return scheduleReconcile();
     }
 
+    async function replaceSnapshot(nextWorkspace, options = {}) {
+      const next = shadowSnapshot(options.normalized === true
+        ? nextWorkspace
+        : normalizeWorkspace(nextWorkspace));
+      await ready;
+      if (reconcileJob) await reconcileJob;
+      if (disposed) return next;
+      pendingReconcile = null;
+      previous = next;
+      await resetTo(next);
+      exposeState(state);
+      return next;
+    }
+
   function dispose() {
     disposed = true;
     disposeFormulaClients(formulaClients);
@@ -480,6 +494,7 @@ export function createWave2Shadow(initialWorkspace, options = {}) {
     engine: () => engine,
     ready,
     reconcile,
+    replaceSnapshot,
     dispose,
   };
 }

@@ -24,6 +24,7 @@ export function useWorkspaceCommands({
   schedule,
   showNotice,
   setExportState,
+  onWorkspaceExported,
   importInputRef,
   resetSelection,
 }) {
@@ -34,13 +35,14 @@ export function useWorkspaceCommands({
     setExportState("exporting");
     try {
       await downloadWorkspaceZip(workspace);
+      onWorkspaceExported?.();
       showNotice("Portable .zip workspace exported");
     } catch (error) {
       showNotice(error?.message || "Export failed");
     } finally {
       setExportState("idle");
     }
-  }, [setExportState, showNotice, workspace]);
+  }, [onWorkspaceExported, setExportState, showNotice, workspace]);
 
   const importWorkspace = useCallback(() => {
     importInputRef.current?.click();
@@ -52,7 +54,7 @@ export function useWorkspaceCommands({
     if (!file) return;
     try {
       const imported = await importWorkspaceFile(file);
-      replaceWorkspace(imported);
+      await replaceWorkspace(imported);
       resetSelection();
       showNotice(`Imported ${imported.name}`);
     } catch (error) {
