@@ -8,6 +8,7 @@
 // the user would lose the rest.
 
 import { cellsFromChunks } from "./cellChunks.js";
+import { clearPartialCells } from "./sheetIndex.js";
 
 /** Every cell a sheet has in the backing store, block order irrelevant. */
 export async function readAllCells(store, objectId) {
@@ -34,7 +35,9 @@ export async function hydrateWorkspaceCells(store, workspace, objectIds) {
     if (object?.type !== "sheet") continue;
     const stored = await readAllCells(store, objectId);
     if (!Object.keys(stored).length) continue;
-    objects[objectId] = { ...object, cells: { ...stored, ...(object.cells || {}) } };
+    // The result is whole, so it must not carry a mark that tells the rest of
+    // the app to treat its cells as a floor.
+    objects[objectId] = clearPartialCells({ ...object, cells: { ...stored, ...(object.cells || {}) } });
     changed = true;
   }
 

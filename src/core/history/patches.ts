@@ -4,6 +4,7 @@ import type {
   ReplaceObjectOperation,
   ReplaceThemeOperation,
   ReplaceWorkspaceMetaOperation,
+  ShiftCellsOperation,
   WorkspacePatch,
   WorkspacePatchOperation,
 } from "../patches.ts";
@@ -30,6 +31,8 @@ export function operationKey(operation: WorkspacePatchOperation): string {
       return `asset:${String(operation.assetId)}`;
     case "replace-theme":
       return `theme:${String(operation.themeId)}`;
+    case "shift-cells":
+      return `shift:${operation.token}`;
     default:
       return String((operation as { kind: string }).kind);
   }
@@ -71,6 +74,14 @@ export function invertOperation(operation: WorkspacePatchOperation): WorkspacePa
         before: cloneValue(operation.after),
         after: cloneValue(operation.before),
       } satisfies ReplaceThemeOperation;
+    // Undoing an insert deletes the row it added; undoing a delete reopens the
+    // gap. Cells the delete removed come back from the object before-image, so
+    // the caller has to make that line resident before deleting it.
+    case "shift-cells":
+      return {
+        ...operation,
+        operation: operation.operation === "insert" ? "delete" : "insert",
+      } satisfies ShiftCellsOperation;
     default:
       throw new Error(`Unsupported patch operation ${(operation as { kind: string }).kind}.`);
   }
@@ -122,6 +133,10 @@ function combineOperations(first: WorkspacePatchOperation, second: WorkspacePatc
         before: cloneValue(first.before),
         after: cloneValue((second as ReplaceThemeOperation).after),
       };
+    // A shift has a token of its own, so two of them never share a key and
+    // this branch only guards the exhaustive switch.
+    case "shift-cells":
+      return first;
     default:
       throw new Error(`Unsupported patch operation ${(first as { kind: string }).kind}.`);
   }

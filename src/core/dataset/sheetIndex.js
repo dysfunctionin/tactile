@@ -73,15 +73,21 @@ export function sheetResidencyFloor(cells) {
   return { ...index.embeds, ...index.formulas };
 }
 
-// Symbols survive object spread but never reach JSON, so a sheet stays marked
-// through the copies the workspace makes on every edit without the mark
-// leaking into a saved or exported file.
-export const PARTIAL_CELLS = Symbol.for("tactile.partialCells");
+// A symbol was tried first and does not work: the engine and the patch layer
+// both clone records with structuredClone, which drops symbol keys, so the
+// mark vanished exactly where persistence needed to read it. It is a plain
+// field instead, and `hydrate.js` clears it when a sheet is made whole again.
+export const PARTIAL_CELLS = "partialCells";
 
 /** Marks a sheet whose `cells` is a floor rather than the whole sheet. */
 export function markPartialCells(object) {
   object[PARTIAL_CELLS] = true;
   return object;
+}
+
+export function clearPartialCells(object) {
+  const { [PARTIAL_CELLS]: _partial, ...rest } = object;
+  return rest;
 }
 
 export function isPartialCells(object) {

@@ -22,6 +22,10 @@ export interface ReplaceObjectOperation {
   objectId: ObjectId;
   before: WorkspaceObject | null;
   after: WorkspaceObject | null;
+  // `after` is a clone, and cloning drops the symbol a partial sheet is marked
+  // with, so the mark has to travel as data or persistence would rewrite the
+  // sheet's blocks from a floor.
+  partialCells?: boolean;
 }
 
 export interface ReplaceCellOperation {
@@ -46,12 +50,32 @@ export interface ReplaceThemeOperation {
   after: ThemeRecord | null;
 }
 
+/**
+ * Moves a partial sheet's stored cells for a row or column insert/delete.
+ *
+ * A complete sheet needs nothing here: its blocks are rewritten from
+ * `object.cells`, which the command already shifted. A partial sheet holds
+ * only a floor, so the cells it never loaded have to be shifted where they
+ * live, and that is a store walk rather than a record replacement.
+ */
+export interface ShiftCellsOperation {
+  kind: "shift-cells";
+  objectId: ObjectId;
+  axis: "row" | "column";
+  index: number;
+  operation: "insert" | "delete";
+  // Two inserts at the same index are two separate moves, so each shift needs
+  // an identity of its own or patch coalescing would merge them into one.
+  token: string;
+}
+
 export type WorkspacePatchOperation =
   | ReplaceWorkspaceMetaOperation
   | ReplaceObjectOperation
   | ReplaceCellOperation
   | ReplaceAssetOperation
-  | ReplaceThemeOperation;
+  | ReplaceThemeOperation
+  | ShiftCellsOperation;
 
 export interface WorkspacePatch {
   id: PatchId;

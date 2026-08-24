@@ -13,7 +13,7 @@ import type {
   WorkspaceCommand,
 } from "../commands.ts";
 import type { AssetRecord, CellRecord, SheetObject, ThemeRecord, WorkspaceMeta, WorkspaceObject } from "../domain.ts";
-import type { DirtyReason, DirtyRecord, WorkspacePatchOperation } from "../patches.ts";
+import type { DirtyReason, DirtyRecord, ReplaceObjectOperation, WorkspacePatchOperation } from "../patches.ts";
 import type { AxisName, CellPatch } from "../domain.ts";
 import type { CellId, ObjectId } from "../ids.ts";
 import { asAssetId, asCellId, asEmbedLinkId, asObjectId, asThemeId, asTimestamp } from "../ids.ts";
@@ -28,6 +28,7 @@ import {
   reorderFormulaForAxis,
 } from "../structure.ts";
 import { cloneValue, deepEqual } from "../engine/clone.ts";
+import { isPartialCells } from "../dataset/sheetIndex.js";
 import { NormalizedRecordStore } from "../engine/normalizedStore.ts";
 import type { DispatchableWorkspaceCommand } from "./types.ts";
 
@@ -68,6 +69,8 @@ function cloneCellOrNull(cell: CellRecord | null | undefined): CellRecord | null
   return cell ? cloneValue(cell) : null;
 }
 
+let shiftSequence = 0;
+
 export class TransactionMutationBuilder {
   private readonly operations: WorkspacePatchOperation[] = [];
 
@@ -99,7 +102,27 @@ export class TransactionMutationBuilder {
     const next = cloneValue(after);
     if (deepEqual(before, next)) return;
     this.store.replaceObject(id, next);
-    this.operations.push({ kind: "replace-object", objectId: id, before, after: next });
+    const operation: WorkspacePatchOperation = { kind: "replace-object", objectId: id, before, after: next };
+    if (isPartialCells(after)) (operation as ReplaceObjectOperation).partialCells = true;
+    this.operations.push(operation);
+  }
+
+  /** Moves a partial sheet's stored cells, which its floor cannot stand in for. */
+  shiftCells(
+    objectId: ObjectId | string,
+    axis: AxisName,
+    index: number,
+    operation: "insert" | "delete",
+  ): void {
+    shiftSequence += 1;
+    this.operations.push({
+      kind: "shift-cells",
+      objectId: asObjectId(String(objectId)),
+      axis,
+      index,
+      operation,
+      token: `shift-${shiftSequence.toString(36)}`,
+    });
   }
 
   replaceCell(objectId: ObjectId | string, cellId: CellId | string, after: CellRecord | null): void {
@@ -346,6 +369,9 @@ function applyAxisInsert(
     conditionalFormats: adjustConditionalFormats(object.conditionalFormats, command.axis, index, "insert"),
   };
   builder.replaceObject(objectId, next);
+  // A complete sheet's blocks are rewritten from the cells above. A partial
+  // one only shifted its floor, so the rest has to move where it is stored.
+  if (isPartialCells(object)) builder.shiftCells(objectId, command.axis, index, "insert");
 }
 
 function applyAxisDelete(
@@ -372,6 +398,7 @@ function applyAxisDelete(
     conditionalFormats: adjustConditionalFormats(object.conditionalFormats, command.axis, index, "delete"),
   };
   builder.replaceObject(objectId, next);
+  if (isPartialCells(object)) builder.shiftCells(objectId, command.axis, index, "delete");
 }
 
 function applyAxisMove(

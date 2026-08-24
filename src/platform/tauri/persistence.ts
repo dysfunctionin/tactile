@@ -19,7 +19,7 @@ import {
   type RevisionId,
   type WorkspaceId,
 } from "../../core/ids.ts";
-import type { WorkspacePatchOperation } from "../../core/patches.ts";
+import type { ShiftCellsOperation, WorkspacePatchOperation } from "../../core/patches.ts";
 import {
   TAURI_COMMANDS,
   type TauriAssetHandle,
@@ -111,7 +111,7 @@ function assetMetadata(value: AssetRecord | null): Record<string, unknown> | nul
   return value ? stripAssetBinary(value as unknown as Record<string, unknown>) : null;
 }
 
-function deltaOperation(operation: WorkspacePatchOperation): TauriDeltaOperation {
+function deltaOperation(operation: Exclude<WorkspacePatchOperation, ShiftCellsOperation>): TauriDeltaOperation {
   switch (operation.kind) {
     case "replace-workspace-meta":
       return { kind: operation.kind, after: operation.after };
@@ -148,7 +148,14 @@ export function toTauriDeltaPayload(workspaceId: WorkspaceId, persisted: Persist
       patchId: patch.id,
       baseRevision: patch.baseRevision,
       targetRevision: patch.targetRevision,
-      operations: patch.operations.map(deltaOperation),
+      // A shift moves cells inside the block store, which the native side owns
+      // through its own commands; the record delta has nothing to say about it.
+      operations: patch.operations
+        .filter(
+          (operation): operation is Exclude<WorkspacePatchOperation, ShiftCellsOperation> =>
+            operation.kind !== "shift-cells",
+        )
+        .map(deltaOperation),
     },
     dirtyRecordIds: uniqueStrings(transaction.dirtyRecords.map((record) => record.recordId)),
   };

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 
 import { createMemoryChunkStore, seedChunks } from "../../../src/core/dataset/chunkStore.js";
+import { hydrateWorkspaceCells } from "../../../src/core/dataset/hydrate.js";
 import {
   buildSheetIndex,
   canRewriteCells,
@@ -169,15 +170,21 @@ scenario("a sheet is rewritable until it is marked partial", () => {
   assert.equal(canRewriteCells(object), false);
 });
 
-scenario("the partial mark survives the copies a workspace edit makes", () => {
+scenario("the partial mark survives the clones the engine makes", () => {
   const object = markPartialCells({ id: "sheet-1", type: "sheet", cells: {} });
 
   assert.equal(isPartialCells({ ...object, title: "Renamed" }), true);
+  assert.equal(isPartialCells(structuredClone(object)), true);
 });
 
-scenario("the partial mark never reaches a saved or exported file", () => {
-  const object = markPartialCells({ id: "sheet-1", type: "sheet", cells: {} });
+scenario("hydrating a sheet clears the mark that called it partial", async () => {
+  const store = createMemoryChunkStore();
+  const id = cellId(0, 0);
+  await seedChunks(store, "sheet-1", { [id]: value(id, "stored") });
+  const workspace = { objects: { "sheet-1": markPartialCells({ id: "sheet-1", type: "sheet", cells: {} }) } };
 
-  assert.equal(JSON.parse(JSON.stringify(object))[Symbol.for("tactile.partialCells")], undefined);
-  assert.equal(JSON.stringify(object).includes("partialCells"), false);
+  const hydrated = await hydrateWorkspaceCells(store, workspace, ["sheet-1"]);
+
+  assert.equal(isPartialCells(hydrated.objects["sheet-1"]), false);
+  assert.equal(hydrated.objects["sheet-1"].cells[id].value, "stored");
 });

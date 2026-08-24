@@ -44,6 +44,8 @@ import {
 } from "./indexedDb.js";
 import { chunkKeyForCellId, groupCellsIntoChunks } from "../../core/dataset/cellChunks.js";
 import { canRewriteCells } from "../../core/dataset/sheetIndex.js";
+import { shiftStoredCells } from "../../core/dataset/shiftChunks.js";
+import { chunkStoreFor } from "../chunkStore.js";
 import { migrateLegacyWorkspace, readLegacyWorkspace } from "./migration.js";
 
 function now() {
@@ -173,7 +175,7 @@ function applyObjectOperation(transaction, workspaceId, operation) {
   const objects = transaction.objectStore(STORE_NAMES.objects);
   const chunks = transaction.objectStore(STORE_NAMES.cellChunks);
   const key = objectKey(workspaceId, operation.objectId);
-  const partial = operation.after?.type === "sheet" && !canRewriteCells(operation.after);
+  const partial = operation.after?.type === "sheet" && operation.partialCells === true;
   // Deleting the blocks of a partial sheet would throw away the cells it is
   // paging from, and they cannot be put back from the floor it holds.
   if (!partial) deleteObjectCells(transaction, workspaceId, operation.objectId);
@@ -232,6 +234,9 @@ function applyPatchOperations(transaction, workspaceId, operations) {
         else store.delete(key);
         break;
       }
+      // Already applied against the block store before this transaction opened.
+      case "shift-cells":
+        break;
       default:
         throw new Error(`Unsupported persistence operation: ${String(operation.kind)}`);
     }
@@ -239,8 +244,20 @@ function applyPatchOperations(transaction, workspaceId, operations) {
   chunkWriter.flush();
 }
 
-function acknowledge(transaction, workspaceId, revision) {
-  const store = transaction.objectStore(STORE_NAMES.workspaceMeta);
+async function applyCellShifts(workspaceId, operations) {
+  const shifts = operations.filter((operation) => operation.kind === "shift-cells");
+  if (!shifts.length) return;
+  const store = chunkStoreFor(workspaceId);
+  for (const shift of shifts) {
+    await shiftStoredCells(store, shift.objectId, {
+      axis: shift.axis,
+      index: shift.index,
+      operation: shift.operation,
+    });
+  }
+}
+
+function acknowledge(transaction, workspaceId, revision) {  const store = transaction.objectStore(STORE_NAMES.workspaceMeta);
   const read = store.get(workspaceKey(workspaceId));
   read.onsuccess = () => {
     const current = read.result || { workspaceId };
@@ -516,11 +533,15 @@ export class BrowserPersistenceAdapter {
     const revision = String(persisted?.revision || transactionResult?.revision || "");
     if (!revision) throw new Error("A persistence commit requires a revision.");
     const database = await this.databaseHandle();
+    const operations = transactionResult?.forwardPatch?.operations || [];
+    // Shifts walk the block store a band at a time, which cannot happen inside
+    // an IndexedDB transaction: awaiting anything else would close it. Running
+    // them first also means a failed shift aborts before any record is written.
+    await applyCellShifts(this.workspaceId, operations);
     await runRecordTransaction(database, "readwrite", (transaction) => {
-      applyPatchOperations(transaction, this.workspaceId, transactionResult?.forwardPatch?.operations || []);
+      applyPatchOperations(transaction, this.workspaceId, operations);
       acknowledge(transaction, this.workspaceId, revision);
-    });
-    writeBootMetadata({
+    });    writeBootMetadata({
       activeWorkspaceId: this.workspaceId,
       acknowledgedRevision: revision,
       databaseName: this.databaseName,
