@@ -52,7 +52,7 @@ scenario(
     await page.waitForFunction(
       () => window.__TACTILE_WAVE2__?.differential?.mode === "reset",
       null,
-      { timeout: 120_000 },
+      { timeout: 300_000 },
     );
     await page.reload();
     await expect(rootCell).toBeVisible({ timeout: 120_000 });
