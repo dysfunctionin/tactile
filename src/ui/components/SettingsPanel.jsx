@@ -168,6 +168,7 @@ export function SettingsPanel({
   onExportTheme,
   onUpdateSettings,
   onExportWorkspace,
+  onImportWorkspace,
 onChangeWorkspaceFolder,
   onOpenWorkspaceFolder,
   onGetUpdateChannel,
@@ -511,6 +512,7 @@ onChangeWorkspaceFolder,
               <pre><code>workspace.json{"\n"}objects/home/sheet.csv{"\n"}objects/text-…/content.md{"\n"}themes/your-theme.json</code></pre>
               <div className="files-actions">
                 <button type="button" onClick={onExportWorkspace}><IconDownload size={15} /> Export .zip</button>
+                {onImportWorkspace ? <button type="button" onClick={onImportWorkspace}><IconUpload size={15} /> Import workspace</button> : null}
                 {onOpenGuide ? <button type="button" onClick={onOpenGuide}><IconSparkles size={15} /> Open getting started guide</button> : null}
               </div>
               {onChangeWorkspaceFolder ? (

@@ -760,6 +760,7 @@ export function App() {
             onExportTheme={commands.downloadTheme}
             onUpdateSettings={updateSettings}
             onExportWorkspace={commands.exportWorkspace}
+            onImportWorkspace={commands.importWorkspace}
             onChangeWorkspaceFolder={nativeRuntime ? changeNativeWorkspaceFolder : undefined}
             onOpenWorkspaceFolder={nativeRuntime ? openNativeWorkspaceFolder : undefined}
             onGetUpdateChannel={nativeRuntime ? () => import("../platform/tauri/updater.js").then((m) => m.getUpdateChannel()) : undefined}
