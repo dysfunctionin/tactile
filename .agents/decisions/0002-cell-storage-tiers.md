@@ -45,12 +45,12 @@ Landed:
 2. Residency. `dataset/chunkCache.js` evicts by LRU in bytes with pinning; `dataset/virtualSheet.js` owns the ready/stale/pending states and coalesces concurrent block reads.
 3. Read path. `dataset/virtualSheetStore.js` answers the same window request as the eager store; `dataset/storageMode.js` chooses per sheet; `useDatasetViewport` feeds the grid, which dims a block that is stale or pending.
 4. Whole-map reads. `dataset/hydrate.js` fills a partial sheet back in from its blocks, and the two paths that serialize the in-memory workspace (the export command and the native folder mirror) call it before building a portable package. `tests/cases/e2e/workspace-export.e2e.spec.mjs` fails if an export ever comes out short.
-5. Sparse index. `dataset/sheetIndex.js` collects the embedded and formula cells of a sheet by reading its blocks in batches, so the cells that topology and the formula engine cannot do without stay known without the sheet being whole.
+5. Sparse index. `dataset/sheetIndex.js` collects the embedded and formula cells of a sheet by reading its blocks in batches, so the cells that topology and the formula engine cannot do without stay known without the sheet being whole. `sheetResidencyFloor` is that set, and `canRewriteCells` stops the two whole-object rewrite paths in `browser/persistence.js` from writing a floor over the blocks it came from.
 
 Outstanding, in order:
 
-6. Full-map readers. `topology.js` finds embed relationships by scanning `object.cells`, and `sheet/textMeasure.js` measures wrap heights the same way. The formula engine already has a bounded mode (`rebuild({ registerOnly })`). Each remaining scan needs to move onto the index or tolerate absence.
-7. Load path. `object.cells` is still materialized whole on open, so a virtual sheet bounds what the grid *reads*, not what the workspace *holds*. The footprint win arrives only after 6.
+6. Structural edits. Row and column insert/delete rebuild the whole cells map (`commands/execute.ts`), so they shift only what is resident. A partial sheet needs the shift pushed into the store as a block-key rewrite before these commands can be trusted. **This blocks 7.**
+7. Load path. `object.cells` is still materialized whole on open, so a virtual sheet bounds what the grid *reads*, not what the workspace *holds*. Flooring the load path is a small change to `snapshotFromRecords`, but shipping it before 6 would trade a memory cost for a correctness bug, which is the worse trade.
 
 Reassessed and dropped:
 

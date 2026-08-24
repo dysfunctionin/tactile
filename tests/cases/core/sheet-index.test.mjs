@@ -3,10 +3,14 @@ import assert from "node:assert/strict";
 import { createMemoryChunkStore, seedChunks } from "../../../src/core/dataset/chunkStore.js";
 import {
   buildSheetIndex,
+  canRewriteCells,
   emptySheetIndex,
+  isPartialCells,
+  markPartialCells,
   mergeSheetIndex,
   readSheetIndex,
   sheetIndexSize,
+  sheetResidencyFloor,
 } from "../../../src/core/dataset/sheetIndex.js";
 import { cellId } from "../../../src/core/sheet/coordinates.js";
 import { defineSuite } from "../../harness/index.mjs";
@@ -141,4 +145,39 @@ scenario("adds a cell that becomes a formula", () => {
   mergeSheetIndex(index, { A1: formula("A1", "=B1") });
 
   assert.deepEqual(Object.keys(index.formulas), ["A1"]);
+});
+
+scenario("a residency floor drops plain values and keeps the rest", () => {
+  const floor = sheetResidencyFloor({
+    A1: value("A1", "plain"),
+    A2: formula("A2", "=A1"),
+    A3: embed("A3", "note-1"),
+  });
+
+  assert.deepEqual(Object.keys(floor).sort(), ["A2", "A3"]);
+});
+
+scenario("a sheet is rewritable until it is marked partial", () => {
+  const object = { id: "sheet-1", type: "sheet", cells: {} };
+
+  assert.equal(isPartialCells(object), false);
+  assert.equal(canRewriteCells(object), true);
+
+  markPartialCells(object);
+
+  // Rewriting stored blocks from a floor would delete every cell outside it.
+  assert.equal(canRewriteCells(object), false);
+});
+
+scenario("the partial mark survives the copies a workspace edit makes", () => {
+  const object = markPartialCells({ id: "sheet-1", type: "sheet", cells: {} });
+
+  assert.equal(isPartialCells({ ...object, title: "Renamed" }), true);
+});
+
+scenario("the partial mark never reaches a saved or exported file", () => {
+  const object = markPartialCells({ id: "sheet-1", type: "sheet", cells: {} });
+
+  assert.equal(JSON.parse(JSON.stringify(object))[Symbol.for("tactile.partialCells")], undefined);
+  assert.equal(JSON.stringify(object).includes("partialCells"), false);
 });

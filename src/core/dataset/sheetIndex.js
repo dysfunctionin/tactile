@@ -60,3 +60,40 @@ export function mergeSheetIndex(index, changes) {
 export function sheetIndexSize(index) {
   return Object.keys(index?.embeds || {}).length + Object.keys(index?.formulas || {}).length;
 }
+
+/**
+ * The cells a sheet must keep even when the rest of it is paged out.
+ *
+ * Topology repair and a full formula rebuild both run synchronously during
+ * render, so the cells they need cannot be fetched on demand. Keeping them
+ * resident lets both carry on reading `object.cells` unchanged.
+ */
+export function sheetResidencyFloor(cells) {
+  const index = buildSheetIndex(cells);
+  return { ...index.embeds, ...index.formulas };
+}
+
+// Symbols survive object spread but never reach JSON, so a sheet stays marked
+// through the copies the workspace makes on every edit without the mark
+// leaking into a saved or exported file.
+export const PARTIAL_CELLS = Symbol.for("tactile.partialCells");
+
+/** Marks a sheet whose `cells` is a floor rather than the whole sheet. */
+export function markPartialCells(object) {
+  object[PARTIAL_CELLS] = true;
+  return object;
+}
+
+export function isPartialCells(object) {
+  return Boolean(object?.[PARTIAL_CELLS]);
+}
+
+/**
+ * Whether it is safe to rewrite a sheet's stored blocks from `object.cells`.
+ *
+ * A partial sheet's blocks are where its cells came from and are already
+ * current, so rewriting from the floor would delete everything outside it.
+ */
+export function canRewriteCells(object) {
+  return !isPartialCells(object);
+}

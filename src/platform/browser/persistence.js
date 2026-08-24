@@ -43,6 +43,7 @@ import {
   workspaceKeyRange,
 } from "./indexedDb.js";
 import { chunkKeyForCellId, groupCellsIntoChunks } from "../../core/dataset/cellChunks.js";
+import { canRewriteCells } from "../../core/dataset/sheetIndex.js";
 import { migrateLegacyWorkspace, readLegacyWorkspace } from "./migration.js";
 
 function now() {
@@ -96,6 +97,10 @@ function putWorkspaceRecords(transaction, workspace, revision, storageState = "a
     metaStore.put(workspaceMetaRecord(workspace, revision, storageState));
     Object.values(workspace.objects || {}).forEach((object) => {
       objectStore.put(objectStoreRecord(workspaceId, object));
+      // A partial sheet holds a floor, not a sheet. Its blocks were the source
+      // of that floor and are still current, so rewriting from it would delete
+      // every cell the user has not scrolled to.
+      if (!canRewriteCells(object)) return;
       groupCellsIntoChunks(object.cells).forEach((chunk) => {
         chunkStore.put(cellChunkRecord(workspaceId, object.id, chunk.chunkKey, chunk.cells));
       });
@@ -168,13 +173,16 @@ function applyObjectOperation(transaction, workspaceId, operation) {
   const objects = transaction.objectStore(STORE_NAMES.objects);
   const chunks = transaction.objectStore(STORE_NAMES.cellChunks);
   const key = objectKey(workspaceId, operation.objectId);
-  deleteObjectCells(transaction, workspaceId, operation.objectId);
+  const partial = operation.after?.type === "sheet" && !canRewriteCells(operation.after);
+  // Deleting the blocks of a partial sheet would throw away the cells it is
+  // paging from, and they cannot be put back from the floor it holds.
+  if (!partial) deleteObjectCells(transaction, workspaceId, operation.objectId);
   if (!operation.after) {
     objects.delete(key);
     return;
   }
   objects.put(objectStoreRecord(workspaceId, operation.after));
-  if (operation.after.type === "sheet" && operation.after.cells) {
+  if (!partial && operation.after.type === "sheet" && operation.after.cells) {
     groupCellsIntoChunks(operation.after.cells).forEach((chunk) => {
       chunks.put(cellChunkRecord(workspaceId, operation.objectId, chunk.chunkKey, chunk.cells));
     });
