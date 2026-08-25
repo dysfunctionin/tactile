@@ -146,12 +146,32 @@ function runPrettier(files) {
   }
 }
 
+function requireMutableMarketplaceArtifacts() {
+  const modified = git(["diff", "--name-only", "--diff-filter=M", "--", "marketplace/dist/plugins"], {
+    capture: true,
+  });
+  const untracked = git(["ls-files", "--others", "--exclude-standard", "--", "marketplace/dist/plugins"], {
+    capture: true,
+  });
+  const artifacts = [...modified.split(/\r?\n/), ...untracked.split(/\r?\n/)].filter(Boolean);
+  for (const artifact of artifacts) {
+    const match = /^marketplace\/dist\/plugins\/([^/]+)\/([^/]+)\//.exec(artifact);
+    if (!match) continue;
+    const tag = `${match[1]}@${match[2]}`;
+    if (git(["tag", "--list", tag], { capture: true })) {
+      fail(`Marketplace build would modify published artifact ${tag}; bump its plugin version first.`);
+    }
+  }
+}
+
 function runQualityChecks({ fix = false, formatBase } = {}) {
   if (fix) {
     run("npm", ["run", "lint", "--", "--fix-dry-run"]);
     run("npm", ["run", "lint", "--", "--fix"]);
     const formatFiles = changedFormatFiles(formatBase);
     runPrettier(formatFiles);
+    run("npm", ["run", "marketplace:build"]);
+    requireMutableMarketplaceArtifacts();
   }
   run("npm", ["run", "lint"]);
   run("npm", ["run", "typecheck"]);
@@ -164,6 +184,7 @@ function validateAndStage(version, tag, options = {}) {
   run("node", ["scripts/release/validate-release-version.mjs", "app", tag]);
   windowsBundleVersion(version);
   git(["add", "--update", "--"]);
+  git(["add", "--", "marketplace/dist"]);
 }
 
 function printStableNextSteps(version) {

@@ -40,10 +40,10 @@ To start a minor or major alpha series, or choose a specific counter, pass the c
 git build alpha 1.5.0-alpha.1
 ```
 
-The command synchronizes every version mirror, applies safe ESLint fixes, formats changed files, and runs the full
-lint and typecheck gates before committing as `build(alpha): prepare <version>`. It stages any tracked quality fixes
-with the version mirrors, creates the annotated tag, and atomically pushes `alpha` with the tag. The tag push triggers
-the alpha package workflow.
+The command synchronizes every version mirror, applies safe ESLint fixes, formats changed files, rebuilds and verifies
+committed Marketplace artifacts, and runs the full lint and typecheck gates before committing as
+`build(alpha): prepare <version>`. It stages quality and generated Marketplace fixes with the version mirrors, creates
+the annotated tag, and atomically pushes `alpha` with the tag. The tag push triggers the alpha package workflow.
 
 Use `--dry-run` to inspect the selected version and actions without changing files. Use `--yes` only when a trusted
 interactive or automated caller should skip confirmation.
@@ -59,10 +59,11 @@ git build stable 1.5.0
 ```
 
 This synchronizes and validates the stable version, applies safe lint fixes, formats the complete `origin/main` to
-`alpha` change set that the release PR will check, and runs lint and typecheck. It commits the version and quality
-fixes as `build(release): prepare 1.5.0` and pushes `alpha`. It does not tag or modify protected `main`. Open and merge
-the `alpha` -> `main` release PR after CI and release evidence pass. Then publish from a clean, current `main` branch
-using the copy-paste commands printed by the preparation command:
+`alpha` change set that the release PR will check, rebuilds and verifies committed Marketplace artifacts, and runs
+lint and typecheck. It refuses to modify an already tagged plugin artifact. It commits the version, quality, and
+generated Marketplace fixes as `build(release): prepare 1.5.0` and pushes `alpha`. It does not tag or modify protected
+`main`. Open and merge the `alpha` -> `main` release PR after CI and release evidence pass. Then publish from a clean,
+current `main` branch using the copy-paste commands printed by the preparation command:
 
 ```bash
 git switch main

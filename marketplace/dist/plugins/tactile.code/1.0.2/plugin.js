@@ -150,7 +150,10 @@ var dy=Object.create;var _f=Object.defineProperty;var py=Object.getOwnPropertyDe
   font: inherit;
   text-align: left;
   cursor: pointer;
-  transition: border-color 100ms ease, box-shadow 100ms ease, opacity 100ms ease;
+  transition:
+    border-color 100ms ease,
+    box-shadow 100ms ease,
+    opacity 100ms ease;
 }
 
 .code-runtime-language:hover:not(:disabled),
