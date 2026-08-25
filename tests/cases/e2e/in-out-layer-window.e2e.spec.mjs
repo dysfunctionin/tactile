@@ -777,7 +777,7 @@ scenario("keeps parent navigation unique through a deep nested stack", async ({ 
   await expect(page).toHaveURL(/\/$/);
 });
 
-scenario("opens a deep start route at its leaf without replaying the ancestor animation", async ({ page }) => {
+scenario("reload restores the active deep route directly at its leaf", async ({ page }) => {
   await page.goto("/");
   await importWorkspace(page, deepNestedWorkspace());
 
@@ -808,6 +808,11 @@ scenario("opens a deep start route at its leaf without replaying the ancestor an
   expect(restored).toMatchObject({ logical: "6", rendered: "2" });
   expect(restored.spatial).toEqual(expect.arrayContaining([{ objectId: "deep-layer-5", phase: "full" }]));
   expect(restored.spatial.some(({ phase }) => phase === "origin" || phase === "floating")).toBe(false);
+
+  await page.locator(".spatial-layer .object-header-parent").click();
+  await expect(page.locator(".workspace-shell")).toHaveAttribute("data-logical-layer-count", "5");
+  await expect(page.locator('[data-layer-object="deep-layer-4"]')).toHaveAttribute("data-spatial-phase", "full");
+  await expect(page.locator('[data-layer-object="deep-layer-5"]')).toHaveCount(0);
 });
 
 scenario("dock breadcrumbs jump directly and reveal the complete path from the ellipsis", async ({ page }) => {

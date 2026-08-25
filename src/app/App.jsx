@@ -3,7 +3,7 @@ import { AppDock } from "../ui/components/AppDock.jsx";
 import { SpatialLayer } from "../ui/components/SpatialLayer.jsx";
 import { useLocalWorkspace } from "../ui/hooks/useLocalWorkspace.js";
 import { ObjectSurface } from "../ui/shell/ObjectSurface.jsx";
-import { layerHistoryEntry, MAX_VISIBLE_LAYERS, useInOut } from "../ui/shell/inOut.js";
+import { layerHistoryEntry, useInOut } from "../ui/shell/inOut.js";
 import { useSelectionCommands } from "../ui/shell/selectionCommands.js";
 import { useShellState } from "../ui/shell/useShellState.js";
 import { buildFilesIndex } from "../ui/shell/filesIndex.js";
@@ -90,6 +90,7 @@ export function App() {
   workspaceObjectsHandleRef.current.current = workspace.objects;
   const workspaceRootId = workspace.homeObjectId;
   const inOut = useInOut({ workspace, workspaceRootId, workspaceHydrated: hydrated });
+  const logicalLayers = inOut.logicalLayers;
   const themeSources = useMemo(() => themePreference?.theme
     ? { ...workspace.themes, [themePreference.themeId]: themePreference.theme }
     : workspace.themes, [themePreference, workspace.themes]);
@@ -196,7 +197,7 @@ export function App() {
   });
   const selection = useSelectionCommands({
     workspace,
-    layers: inOut.layers,
+    layers: logicalLayers,
     openObject: inOut.openObject,
     openLinkCell: commands.openLinkCell,
     showNotice: shell.showNotice,
@@ -338,8 +339,8 @@ export function App() {
     };
   }, []);
 
-  const objectPaths = useMemo(() => inOut.layers.map((_, index) => {
-    const rootLayer = inOut.layers[0];
+  const objectPaths = useMemo(() => logicalLayers.map((_, index) => {
+    const rootLayer = logicalLayers[0];
     // Keep the actual navigation root in the dock path even when it is the
     // workspace's ordinary Home object. The dock intentionally removes the
     // workspace shell entry, so omitting this layer made Home disappear from
@@ -348,7 +349,7 @@ export function App() {
     const rootObjectId = rootLayer?.objectId || workspaceRootId;
     const routeForIndex = (targetIndex) => ({
       rootObjectId,
-      segments: inOut.layers.slice(1, targetIndex + 1).map((layer) => ({
+      segments: logicalLayers.slice(1, targetIndex + 1).map((layer) => ({
         ...layerHistoryEntry(layer),
         mode: "full",
       })),
@@ -360,21 +361,21 @@ export function App() {
         title: workspace.objects[rootLayer.objectId]?.title || "Untitled",
         route: routeForIndex(0),
       }] : []),
-      ...inOut.layers.slice(1, index + 1).map((layer) => ({
+      ...logicalLayers.slice(1, index + 1).map((layer) => ({
       id: layer.objectId,
       title: workspace.objects[layer.objectId]?.title || "Untitled",
-      route: routeForIndex(inOut.layers.indexOf(layer)),
+      route: routeForIndex(logicalLayers.indexOf(layer)),
       })),
     ];
-  }), [inOut.layers, workspace, workspaceRootId]);
+  }), [logicalLayers, workspace, workspaceRootId]);
 
-  const currentObject = workspace.objects[inOut.layers[inOut.layers.length - 1]?.objectId || workspaceRootId];
+  const currentObject = workspace.objects[logicalLayers[logicalLayers.length - 1]?.objectId || workspaceRootId];
   const currentObjectTitle = currentObject?.title || workspace.name || "Home";
   const activeObjectId = currentObject?.id || workspaceRootId;
   const fullDockPath = objectPaths.at(-1) || [{ id: workspace.id, title: workspace.name }];
   // The root sheet is already named in the header; keep the root dock quiet,
   // while nested navigation still exposes Home as the first breadcrumb.
-  const activeDockPath = inOut.layers.length === 1 && inOut.layers[0]?.objectId === workspaceRootId
+  const activeDockPath = logicalLayers.length === 1 && logicalLayers[0]?.objectId === workspaceRootId
     ? fullDockPath.slice(0, 1)
     : fullDockPath;
 
@@ -620,9 +621,8 @@ export function App() {
   };
 
   const sheetMetrics = useMemo(() => themeSheetMetrics(activeTheme), [activeTheme]);
-  const visibleLayerStart = Math.max(0, inOut.layers.length - MAX_VISIBLE_LAYERS);
-  const visibleLayers = inOut.layers.slice(visibleLayerStart);
-  const topLayer = inOut.layers.at(-1);
+  const { visibleLayerStart, visibleLayers } = inOut;
+  const topLayer = logicalLayers.at(-1);
   const floatingLayerActive = topLayer?.phase === "floating";
   // The worksheet and ancestor layers become inert under a floating child,
   // but the global dock remains available for direct breadcrumb navigation.
@@ -643,8 +643,8 @@ export function App() {
     } else {
       objectHandle.current = object;
     }
-    const isTopLayer = index > 0 && index === inOut.layers.length - 1;
-    const isVisibleParentLayer = parentContextVisible && index === inOut.layers.length - 2;
+    const isTopLayer = index > 0 && index === logicalLayers.length - 1;
+    const isVisibleParentLayer = parentContextVisible && index === logicalLayers.length - 2;
     const selectedAddress = selection.selectedByObject[object.id] || "A1";
     const selectionRange = selection.rangeByObject[object.id] || { anchor: selectedAddress, focus: selectedAddress };
     const multiSelectedAddresses = selection.multiSelectedByObject[object.id] || [];
@@ -719,7 +719,7 @@ export function App() {
       {nativeRuntime ? <TitleBar /> : null}
       <div
         className="workspace-shell"
-        data-logical-layer-count={inOut.layers.length}
+        data-logical-layer-count={logicalLayers.length}
         data-rendered-layer-count={visibleLayers.length}
         inert={shell.settingsOpen || (shell.filesOpen && !shell.filesPinned)}
         aria-hidden={shell.settingsOpen || (shell.filesOpen && !shell.filesPinned) ? "true" : undefined}

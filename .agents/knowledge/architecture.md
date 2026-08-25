@@ -24,7 +24,7 @@ The shell owns workspace identity, navigation, start-object metadata, commands, 
 - Portable workspace/object normalization is v4. Native cache schema is private and rebuildable.
 - Browser/native persistence uses forward deltas and revision acknowledgements; inverse patches stay in the engine.
 - Browser workspace authority is tab-scoped and ephemeral; reload restores that tab, while a new tab starts blank. See ADR 0002.
-- Browser startup renders a blank seed only until its tab database hydrates. Hydration must preserve saved navigation history, while an interactive workspace replacement resets it.
+- Browser startup renders a blank seed only until its tab database hydrates. Capture compact workspace/root/link navigation intent before that seed can validate history, resolve it only against the authoritative hydrated workspace, and keep visual layer geometry/animation state ephemeral. Interactive workspace replacement still resets navigation.
 - Browser IndexedDB stores dense sheet cells in bounded spatial chunks. Portable JSON remains cell-oriented, and small edits still persist through forward patches.
 - Lazy object renderers keep a stable React component identity after resolution or preload so ordinary parent renders do not remount active object interactions.
 - Native workspace authority remains the user-selected folder and may be changed in Settings.
