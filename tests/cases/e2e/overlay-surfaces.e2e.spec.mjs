@@ -171,13 +171,15 @@ scenario("row and column insertion visibly shifts sheet cells", async ({ page })
   await expect(editor).toHaveCount(0);
   await expect(cellA1).toContainText("anchor");
 
-  await cellA1.click({ button: "right" });
+  await expect(cellA1).toHaveAttribute("aria-selected", "true");
+  await cellA1.press("Control+]");
   let menu = page.getByRole("menu", { name: "Commands for A1" });
   await selectRowColumnCommand(menu, "Insert row above");
   await expect(page.locator('[role="gridcell"][data-cell-address="A2"]')).toContainText("anchor");
   await expect(page.locator(".object-statusbar")).toContainText("257 × 64");
 
-  await cellA1.click({ button: "right" });
+  await expect(cellA1).toHaveAttribute("aria-selected", "true");
+  await cellA1.press("Control+]");
   menu = page.getByRole("menu", { name: "Commands for A1" });
   await selectRowColumnCommand(menu, "Insert column left");
   await expect(page.locator('[role="gridcell"][data-cell-address="B2"]')).toContainText("anchor");
@@ -196,7 +198,8 @@ scenario(
     await page.locator('input[type="file"][accept*=".json"]').setInputFiles(artifactPath);
     await expect(rootCell("A1")).toBeVisible({ timeout: 120_000 });
 
-    await rootCell("A1").click({ button: "right" });
+    await rootCell("A1").click();
+    await rootCell("A1").press("Control+]");
     let menu = page.getByRole("menu", { name: "Commands for A1" });
     await selectRowColumnCommand(menu, "Insert row above");
     await expect(page.locator(".object-statusbar")).toContainText(`${rootRows + 1} × ${rootColumns}`, {
@@ -204,7 +207,8 @@ scenario(
     });
     await expect(rootCell("A1")).toBeEmpty();
 
-    await rootCell("A1").click({ button: "right" });
+    await rootCell("A1").click();
+    await rootCell("A1").press("Control+]");
     menu = page.getByRole("menu", { name: "Commands for A1" });
     await selectRowColumnCommand(menu, "Insert column left");
     await expect(page.locator(".object-statusbar")).toContainText(`${rootRows + 1} × ${rootColumns + 1}`, {
@@ -212,14 +216,16 @@ scenario(
     });
     await expect(rootCell("A1")).toBeEmpty();
 
-    await rootCell("A1").click({ button: "right" });
+    await rootCell("A1").click();
+    await rootCell("A1").press("Control+]");
     menu = page.getByRole("menu", { name: "Commands for A1" });
     await selectRowColumnCommand(menu, "Delete row");
     await expect(page.locator(".object-statusbar")).toContainText(`${rootRows} × ${rootColumns + 1}`, {
       timeout: 120_000,
     });
 
-    await rootCell("A1").click({ button: "right" });
+    await rootCell("A1").click();
+    await rootCell("A1").press("Control+]");
     menu = page.getByRole("menu", { name: "Commands for A1" });
     await selectRowColumnCommand(menu, "Delete column");
     await expect(page.locator(".object-statusbar")).toContainText(`${rootRows} × ${rootColumns}`, { timeout: 120_000 });

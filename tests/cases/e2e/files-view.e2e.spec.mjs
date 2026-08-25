@@ -511,7 +511,7 @@ scenario("files context-menu Rename validates names and preserves live object li
 scenario("files context commands use active Paper tokens for enabled text and icons", async ({ page }) => {
   await page.goto("/");
   const workspace = filesWorkspace();
-  workspace.activeThemeId = "contrast-paper";
+  workspace.activeThemeId = "paper-public";
   workspace.themes = {
     "contrast-paper": {
       id: "contrast-paper",
@@ -531,6 +531,12 @@ scenario("files context commands use active Paper tokens for enabled text and ic
     },
   };
   await importWorkspace(page, workspace);
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  const settings = page.getByRole("dialog", { name: "Settings" });
+  const contrastPaper = settings.locator(".theme-card", { hasText: "Contrast Paper" });
+  await contrastPaper.click();
+  await expect(contrastPaper).toHaveClass(/is-selected/);
+  await settings.getByRole("button", { name: "Close settings" }).click();
   await page.getByRole("button", { name: "Browse files", exact: true }).click();
 
   await page.locator('.files-tree-row[data-object-id="child"]').click({ button: "right" });
@@ -552,6 +558,7 @@ scenario("files context commands use active Paper tokens for enabled text and ic
       ink: resolveToken("--ink"),
     };
   });
+  expect(colors.ink).toBe("rgb(244, 247, 250)");
   expect(colors.text).toBe(colors.ink);
   expect(colors.icon).toBe(colors.ink);
 });
