@@ -99,6 +99,8 @@ export default defineConfig({
   build: {
     outDir: "dist/client",
     chunkSizeWarningLimit: 700,
+    // Readable frames for tests/performance/benchmarks/suite/profile-op.mjs; never set for releases.
+    minify: process.env.TACTILE_PROFILE_BUILD === "1" ? false : "esbuild",
     rollupOptions: {
       output: {
         manualChunks(id) {
@@ -115,7 +117,7 @@ export default defineConfig({
     host: "0.0.0.0",
     allowedHosts: ["terminal.local"],
     warmup: {
-      clientFiles: ["./src/main.jsx"],
+      clientFiles: ["./src/app/main.jsx"],
     },
   },
   plugins: [marketplaceDevServer(), react()],

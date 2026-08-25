@@ -3,8 +3,8 @@ import {
   cellId,
   coordinatesFromAddress,
   coordinatesFromCellId,
-} from "../sheet/coordinates.js";
-import { createCellRecord, isCellUsed } from "../model.js";
+} from "./sheet/coordinates.js";
+import { createCellRecord, isCellUsed } from "./workspace/model.js";
 import {
   EMBED_RELATIONS,
   deterministicEmbedLinkId,

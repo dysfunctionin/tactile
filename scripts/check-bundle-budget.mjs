@@ -37,7 +37,7 @@ const budgets = {
   // markdown, code editor with syntax highlighting) are part of the shipped
   // entry CSS. Keep a compact ceiling while allowing their complete Paper
   // layouts and transitions.
-  css: 21 * 1024,
+  css: 24 * 1024,
   katex: 80 * 1024,
   mermaid: 170 * 1024,
 };

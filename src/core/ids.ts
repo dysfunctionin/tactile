@@ -4,6 +4,10 @@ export type Brand<Value, Tag extends string> = Value & {
 
 export type WorkspaceId = Brand<string, "WorkspaceId">;
 export type ObjectId = Brand<string, "ObjectId">;
+export type DatasetId = Brand<string, "DatasetId">;
+export type DatasetViewId = Brand<string, "DatasetViewId">;
+export type RowId = Brand<string, "RowId">;
+export type ColumnId = Brand<string, "ColumnId">;
 export type CellId = Brand<string, "CellId">;
 export type EmbedLinkId = Brand<string, "EmbedLinkId">;
 export type AssetId = Brand<string, "AssetId">;
@@ -24,6 +28,22 @@ export function asWorkspaceId(value: string): WorkspaceId {
 
 export function asObjectId(value: string): ObjectId {
   return value as ObjectId;
+}
+
+export function asDatasetId(value: string): DatasetId {
+  return value as DatasetId;
+}
+
+export function asDatasetViewId(value: string): DatasetViewId {
+  return value as DatasetViewId;
+}
+
+export function asRowId(value: string): RowId {
+  return value as RowId;
+}
+
+export function asColumnId(value: string): ColumnId {
+  return value as ColumnId;
 }
 
 export function asCellId(value: string): CellId {

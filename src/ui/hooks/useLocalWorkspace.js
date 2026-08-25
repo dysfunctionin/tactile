@@ -1,0 +1,853 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  DEFAULT_COLUMNS,
+  DEFAULT_ROWS,
+  bareUrlTitle,
+  createBlankWorkspace,
+  createCellRecord,
+  createId,
+  createObjectForType,
+  deleteObjectFromWorkspace,
+  generatedObjectTitle,
+  inferFileObjectType,
+  isBareUrlValue,
+  isCellUsed,
+  normalizeWorkspace,
+} from "../../core/workspace/model.js";
+import { normalizeIconEmoji } from "../../core/workspace/iconEmoji.js";
+import { repairWorkspaceTopology } from "../../core/topology.js";
+import { cellsForMutation, cloneHistoryWorkspace } from "../../core/history/snapshot.js";
+import { measureStage, measureStageAsync } from "../../core/perf/stageTimer.js";
+import { reparentWorkspace } from "../../core/reparenting.js";
+import { cellAddress, cellId, coordinatesFromCellId } from "../../core/sheet/coordinates.js";
+import {
+  adjustAxisGroups,
+  adjustColumnFilters,
+  adjustConditionalFormats,
+  adjustFormulaForAxis,
+  reorderFormulaForAxis,
+} from "../../core/sheet/structure.js";
+import {
+  removeSheetAxisCells,
+  reorderSheetAxis,
+  shiftAxisSizes,
+  shiftCells,
+} from "../../core/sheet/axisCells.js";
+import { loadWorkspace, loadWorkspaceCache, saveWorkspace, saveWorkspaceCache } from "../../platform/browser/storage.js";
+import {
+  browserSessionForPage,
+  claimOrphanedBrowserSessions,
+  deleteBrowserSessions,
+  releaseBrowserSessionClaim,
+} from "../../platform/browser/session.js";
+import { createWave2Shadow } from "../../core/engine/shadow.js";
+import { recordCellChanges } from "../objects/sheet/grid/cellChangeJournal.js";
+import { isTauriRuntime } from "../../platform/tauri/runtime.ts";
+import { getObjectTypeDefinition } from "../objects/registry/index.js";
+
+function initialWorkspace() {
+  if (!isTauriRuntime()) return normalizeWorkspace(createBlankWorkspace());
+  const cached = loadWorkspaceCache();
+  const workspace = normalizeWorkspace(cached || createBlankWorkspace());
+  if (isTauriRuntime() && !cached) {
+    return normalizeWorkspace({
+      ...workspace,
+      activeThemeId: "one-dark",
+      settings: { ...workspace.settings, onboardingThemeId: "one-dark" },
+    });
+  }
+  return workspace;
+}
+
+function browserRecoveryLabel(workspace) {
+  const workspaceName = String(workspace?.name || "").trim();
+  const homeTitle = String(workspace?.objects?.[workspace?.homeObjectId]?.title || "").trim();
+  if (workspaceName && workspaceName !== "Tactile") return workspaceName;
+  if (homeTitle && homeTitle !== "Home") return homeTitle;
+  return workspaceName || homeTitle || "Untitled workspace";
+}
+
+function touch(workspace, objects, repairTopology = false) {
+  const next = {
+    ...workspace,
+    updatedAt: new Date().toISOString(),
+    objects,
+  };
+  return repairTopology ? measureStage("topology", () => repairWorkspaceTopology(next)) : next;
+}
+
+function cloneHistoryCell(cell) {
+  return cell ? { ...cell } : null;
+}
+
+function applyCellHistory(workspace, entry, direction) {
+  const object = workspace.objects[entry.objectId];
+  if (object?.type !== "sheet") return workspace;
+  const cells = cellsForMutation(object.cells);
+  entry.changes.forEach((change) => {
+    const cell = change[direction];
+    if (cell) cells[change.cellId] = { ...cell };
+    else delete cells[change.cellId];
+  });
+  recordCellChanges(cells, entry.changes.map((change) => change.cellId));
+  return touch({
+    ...workspace,
+    objects: { ...workspace.objects, [entry.objectId]: { ...object, cells } },
+  }, { ...workspace.objects, [entry.objectId]: { ...object, cells } }, entry.changes.some((change) => Boolean(change.before?.embed || change.after?.embed)));
+}
+
+export function useLocalWorkspace() {
+  const nativeRuntime = isTauriRuntime();
+  const browserSessionRef = useRef(null);
+  if (!nativeRuntime && !browserSessionRef.current) {
+    const params = new URLSearchParams(window.location.search);
+    const restoreToken = params.get("restore-session");
+    browserSessionRef.current = browserSessionForPage({ restoreToken });
+    if (restoreToken) {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("restore-session");
+      window.history.replaceState(null, "", url);
+    }
+  }
+  const [workspace, setWorkspace] = useState(initialWorkspace);
+  const [saveState, setSaveState] = useState("loading local copy");
+  const [hydrated, setHydrated] = useState(false);
+  const [needsExport, setNeedsExport] = useState(false);
+  const [closeExportRequested, setCloseExportRequested] = useState(false);
+  const [recoverySessions, setRecoverySessions] = useState([]);
+  const saveTimer = useRef(null);
+  const saveSequenceRef = useRef(0);
+  const historyRef = useRef({ past: [], future: [], lastKey: null, lastAt: 0 });
+  const wave2ShadowRef = useRef(null);
+  const workspaceMutationRef = useRef(false);
+  const replacementReconcileRef = useRef(null);
+
+  const markBrowserWorkspaceDirty = useCallback((nextWorkspace) => {
+    if (!browserSessionRef.current) return;
+    browserSessionRef.current.markDirty(browserRecoveryLabel(nextWorkspace));
+    setNeedsExport(true);
+  }, []);
+
+  const markWorkspaceExported = useCallback(() => {
+    if (!browserSessionRef.current) return;
+    browserSessionRef.current.markExported();
+    setNeedsExport(false);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const initialLoad = nativeRuntime ? loadWorkspace() : Promise.resolve(null);
+    initialLoad.then(async (stored) => {
+      if (cancelled) return;
+      const initial = normalizeWorkspace(stored || initialWorkspace());
+      const controller = createWave2Shadow(initial, {
+        ...(browserSessionRef.current ? { persistence: browserSessionRef.current.persistence } : {}),
+        useInitialSnapshot: nativeRuntime || browserSessionRef.current?.isNew === true,
+      });
+      wave2ShadowRef.current = controller;
+      const resolved = await controller.ready;
+      if (cancelled) {
+        controller.dispose();
+        wave2ShadowRef.current = null;
+        return;
+      }
+      // Keep the render snapshot independent from the bridge's normalized
+      // snapshot. Cell edits intentionally update only the affected sparse
+      // records in place, so sharing this object would let a render update
+      // mutate the bridge's previous-state baseline before reconciliation.
+      if (!workspaceMutationRef.current) {
+        setWorkspace(normalizeWorkspace(cloneHistoryWorkspace(resolved || initial)));
+      }
+      historyRef.current = { past: [], future: [], lastKey: null, lastAt: 0 };
+      setHydrated(true);
+      setSaveState("saved");
+    });
+    return () => {
+      cancelled = true;
+      wave2ShadowRef.current?.dispose?.();
+      wave2ShadowRef.current = null;
+    };
+  }, [nativeRuntime]);
+
+  useEffect(() => {
+    const session = browserSessionRef.current;
+    if (!session) return undefined;
+    const heartbeat = window.setInterval(() => session.heartbeat(), 5_000);
+    let recoveryTimer = null;
+    if (session.isNew) {
+      void session.cleanupDiscardable();
+      recoveryTimer = window.setTimeout(async () => {
+        const candidates = await session.probeOrphans();
+        if (candidates.length) setRecoverySessions(candidates);
+      }, 2_100);
+    }
+    const handleBeforeUnload = (event) => {
+      if (!session.needsExport) return;
+      session.markClosePending();
+      setCloseExportRequested(true);
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    const handlePageHide = () => session.markClosed();
+    const handleResume = () => {
+      if (document.visibilityState === "hidden") return;
+      session.resume();
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    window.addEventListener("pagehide", handlePageHide);
+    window.addEventListener("focus", handleResume);
+    document.addEventListener("visibilitychange", handleResume);
+    return () => {
+      window.clearInterval(heartbeat);
+      if (recoveryTimer) window.clearTimeout(recoveryTimer);
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+      window.removeEventListener("pagehide", handlePageHide);
+      window.removeEventListener("focus", handleResume);
+      document.removeEventListener("visibilitychange", handleResume);
+    };
+  }, []);
+
+  const restoreRecoverySessions = useCallback((sessionIds) => {
+    const availableIds = new Set(recoverySessions.map((session) => session.sessionId));
+    const requestedIds = [...new Set(sessionIds || [])].filter((sessionId) => availableIds.has(sessionId));
+    if (!requestedIds.length) return;
+    const discardedIds = recoverySessions
+      .map((session) => session.sessionId)
+      .filter((sessionId) => !requestedIds.includes(sessionId));
+    const claims = claimOrphanedBrowserSessions(requestedIds);
+    if (!claims.length) {
+      setRecoverySessions((current) => current.filter((session) => !requestedIds.includes(session.sessionId)));
+      return;
+    }
+    const restoreUrl = (token) => {
+      const url = new URL(window.location.href);
+      url.searchParams.set("restore-session", token);
+      return url.href;
+    };
+    const blockedIds = [];
+    claims.forEach((claim) => {
+      const opened = window.open(restoreUrl(claim.restoreToken), "_blank");
+      if (!opened) {
+        blockedIds.push(claim.sessionId);
+        releaseBrowserSessionClaim(claim.restoreToken);
+      }
+    });
+    const finishRestore = () => {
+      setRecoverySessions((current) => current.filter((session) => blockedIds.includes(session.sessionId)));
+    };
+    if (discardedIds.length) void deleteBrowserSessions(discardedIds).then(finishRestore);
+    else finishRestore();
+  }, [recoverySessions]);
+
+  const discardRecoverySessions = useCallback(async () => {
+    const ids = recoverySessions.map((session) => session.sessionId);
+    setRecoverySessions([]);
+    await deleteBrowserSessions(ids);
+  }, [recoverySessions]);
+
+  useEffect(() => {
+    if (!hydrated) return undefined;
+    const shadow = wave2ShadowRef.current;
+    const sequence = ++saveSequenceRef.current;
+    if (nativeRuntime) saveWorkspaceCache(workspace);
+    // The Wave 2 record adapter persists dirty cells and metadata as patches.
+    // Falling back to the legacy snapshot writer here during normal edits
+    // serializes the entire workspace on the input path, including large
+    // fixtures and binary metadata. Keep the snapshot writer for environments
+    // where the record adapter is unavailable.
+    window.clearTimeout(saveTimer.current);
+    if (shadow?.state?.persistence === "active") return undefined;
+    if (!nativeRuntime) {
+      setSaveState("saved in this tab");
+      return undefined;
+    }
+    setSaveState("saving");
+    saveTimer.current = window.setTimeout(async () => {
+      const persisted = await measureStageAsync("persist-snapshot", () => saveWorkspace(workspace));
+      if (sequence !== saveSequenceRef.current) return;
+      setSaveState(persisted ? "saved" : "saved in local cache");
+    }, 120);
+    return () => window.clearTimeout(saveTimer.current);
+  }, [hydrated, nativeRuntime, workspace]);
+
+  useEffect(() => {
+    const shadow = wave2ShadowRef.current;
+    if (!hydrated || !shadow) return undefined;
+    const replacement = replacementReconcileRef.current;
+    if (replacement) {
+      replacementReconcileRef.current = null;
+      if (workspace === replacement) return undefined;
+    }
+    let current = true;
+    setSaveState("saving");
+    Promise.resolve(measureStageAsync("shadow-reconcile", () => shadow.reconcile(workspace, { normalized: true }))).then(
+      () => {
+        if (!current) return;
+        setSaveState(shadow.state.persistence === "active" ? "saved" : "saved in local cache");
+      },
+      () => {
+        if (current) setSaveState("saved in local cache");
+      },
+    );
+    return () => { current = false; };
+  }, [hydrated, workspace]);
+
+  const commitWorkspace = useCallback((updater, historyKey = "workspace") => {
+    setWorkspace((current) => {
+      const next = updater(current);
+      if (next === current) return current;
+      markBrowserWorkspaceDirty(next);
+      const history = historyRef.current;
+      const now = Date.now();
+      const coalesced = history.lastKey === historyKey && now - history.lastAt < 650;
+      if (!coalesced) {
+        history.past.push({
+          kind: "snapshot",
+          value: measureStage("history-snapshot", () => cloneHistoryWorkspace(current)),
+        });
+        if (history.past.length > 120) history.past.shift();
+      }
+      history.future = [];
+      history.lastKey = historyKey;
+      history.lastAt = now;
+      return next;
+    });
+  }, [markBrowserWorkspaceDirty]);
+
+  const commitCellChanges = useCallback((objectId, changes, historyKey = "range") => {
+    if (!Array.isArray(changes) || !changes.length) return;
+    setWorkspace((current) => {
+      const object = current.objects[objectId];
+      if (object?.type !== "sheet") return current;
+      const historyChanges = [];
+      let changed = false;
+      const cells = cellsForMutation(object.cells);
+      changes.forEach(({ cellId: targetCellId, patch }) => {
+        const coordinates = coordinatesFromCellId(targetCellId);
+        if (!coordinates) return;
+        const before = cells[targetCellId] || null;
+        const cell = createCellRecord(coordinates.row, coordinates.column, {
+          ...(before || {}),
+          ...(patch || {}),
+        });
+        const after = isCellUsed(cell) ? cell : null;
+        const beforeValue = JSON.stringify(before || null);
+        const afterValue = JSON.stringify(after || null);
+        if (beforeValue === afterValue) return;
+        if (after) cells[targetCellId] = after;
+        else delete cells[targetCellId];
+        changed = true;
+        historyChanges.push({
+          cellId: targetCellId,
+          before: cloneHistoryCell(before),
+          after: cloneHistoryCell(after),
+        });
+      });
+      if (!changed) return current;
+
+      markBrowserWorkspaceDirty(current);
+
+      recordCellChanges(cells, historyChanges.map((change) => change.cellId));
+
+      const history = historyRef.current;
+      const now = Date.now();
+      const coalesced = history.lastKey === historyKey && now - history.lastAt < 650;
+      const last = history.past.at(-1);
+      if (coalesced && last?.kind === "cells" && last.historyKey === historyKey && last.objectId === objectId) {
+        const byCell = new Map(last.changes.map((change) => [change.cellId, change]));
+        historyChanges.forEach((change) => {
+          const existing = byCell.get(change.cellId);
+          if (existing) existing.after = change.after;
+          else byCell.set(change.cellId, change);
+        });
+        last.changes = [...byCell.values()];
+      } else {
+        history.past.push({ kind: "cells", historyKey, objectId, changes: historyChanges });
+        if (history.past.length > 120) history.past.shift();
+      }
+      history.future = [];
+      history.lastKey = historyKey;
+      history.lastAt = now;
+      return touch({
+        ...current,
+        objects: { ...current.objects, [objectId]: { ...object, cells } },
+      }, { ...current.objects, [objectId]: { ...object, cells } }, changes.some(({ patch }) => Object.prototype.hasOwnProperty.call(patch || {}, "embed")));
+    });
+  }, [markBrowserWorkspaceDirty]);
+
+  const replaceWorkspace = useCallback(async (nextWorkspace) => {
+    const normalized = normalizeWorkspace(nextWorkspace);
+    const shadow = wave2ShadowRef.current;
+    const replacesPersistedSnapshot = shadow?.state?.persistence === "active";
+    workspaceMutationRef.current = true;
+    historyRef.current = { past: [], future: [], lastKey: null, lastAt: 0 };
+    markBrowserWorkspaceDirty(normalized);
+    if (replacesPersistedSnapshot) {
+      await shadow.replaceSnapshot(normalized, { normalized: true });
+      replacementReconcileRef.current = normalized;
+    }
+    setWorkspace(normalized);
+    return normalized;
+  }, [markBrowserWorkspaceDirty]);
+
+  const updateObject = useCallback((objectId, patch) => {
+    const normalizedPatch = Object.prototype.hasOwnProperty.call(patch || {}, "iconEmoji")
+      ? { ...patch, iconEmoji: normalizeIconEmoji(patch.iconEmoji) }
+      : patch;
+    commitWorkspace((current) => {
+      const object = current.objects[objectId];
+      if (!object) return current;
+      return touch(current, {
+          ...current.objects,
+        [objectId]: { ...object, ...normalizedPatch },
+      });
+    }, `object:${objectId}:${Object.keys(normalizedPatch || {}).sort().join(",")}`);
+  }, [commitWorkspace]);
+
+  const updateCell = useCallback((objectId, targetCellId, patch) => {
+    commitCellChanges(objectId, [{ cellId: targetCellId, patch }], `cell:${objectId}:${targetCellId}`);
+  }, [commitCellChanges]);
+
+  const updateCells = useCallback((objectId, changes, historyKey = "range") => {
+    commitCellChanges(objectId, changes, `${historyKey}:${objectId}`);
+  }, [commitCellChanges]);
+
+  const clearCell = useCallback((objectId, targetCellId) => {
+    commitCellChanges(objectId, [{ cellId: targetCellId, patch: {
+      value: "",
+      formula: "",
+      embed: null,
+      note: null,
+      style: null,
+      validation: null,
+      role: null,
+    } }], `clear:${objectId}:${targetCellId}`);
+  }, [commitCellChanges]);
+
+  const clearCells = useCallback((objectId, targetCellIds) => {
+    if (!Array.isArray(targetCellIds) || !targetCellIds.length) return;
+    commitCellChanges(objectId, targetCellIds.map((cellId) => ({ cellId, patch: {
+      value: "",
+      formula: "",
+      embed: null,
+      note: null,
+      style: null,
+      validation: null,
+      role: null,
+    } })), `clear-range:${objectId}`);
+  }, [commitCellChanges]);
+
+  const createEmbeddedObject = useCallback((parentObjectId, parentCellId, type) => {
+    const coordinates = coordinatesFromCellId(parentCellId);
+    if (!coordinates) return null;
+    const address = cellAddress(coordinates.row, coordinates.column);
+    const definition = getObjectTypeDefinition(type);
+    if (definition.type !== type) return null;
+    const created = definition.create({
+      title: generatedObjectTitle(type, address),
+    });
+    const linkId = createId("link");
+    created.parent = {
+      linkId,
+      parentObjectId,
+      parentCellId,
+      sourceAddress: address,
+    };
+    commitWorkspace((current) => {
+      const parent = current.objects[parentObjectId];
+      if (parent?.type !== "sheet") return current;
+      const cell = createCellRecord(coordinates.row, coordinates.column, {
+        ...(parent.cells[parentCellId] || {}),
+        value: created.title,
+        formula: "",
+        embed: {
+          objectId: created.id,
+          type: created.type,
+          linkId,
+          relation: "containment",
+        },
+      });
+      return touch(current, {
+        ...current.objects,
+        [parentObjectId]: {
+          ...parent,
+          cells: { ...parent.cells, [parentCellId]: cell },
+        },
+        [created.id]: created,
+      }, true);
+    }, `create:${parentObjectId}:${parentCellId}`);
+    return created;
+  }, [commitWorkspace]);
+
+  const createEmbeddedLink = useCallback((parentObjectId, parentCellId, url) => {
+    const coordinates = coordinatesFromCellId(parentCellId);
+    if (!coordinates || !isBareUrlValue(url)) return null;
+    const address = cellAddress(coordinates.row, coordinates.column);
+    const created = createObjectForType("link", {
+      title: bareUrlTitle(url),
+      url,
+    });
+    const linkId = createId("link");
+    created.parent = {
+      linkId,
+      parentObjectId,
+      parentCellId,
+      sourceAddress: address,
+    };
+    commitWorkspace((current) => {
+      const parent = current.objects[parentObjectId];
+      if (parent?.type !== "sheet") return current;
+      const cell = createCellRecord(coordinates.row, coordinates.column, {
+        ...(parent.cells[parentCellId] || {}),
+        value: created.title,
+        formula: "",
+        embed: {
+          objectId: created.id,
+          type: "link",
+          linkId,
+          relation: "containment",
+        },
+      });
+      return touch(current, {
+        ...current.objects,
+        [parentObjectId]: {
+          ...parent,
+          cells: { ...parent.cells, [parentCellId]: cell },
+        },
+        [created.id]: created,
+      }, true);
+    }, `create:${parentObjectId}:${parentCellId}`);
+    return created;
+  }, [commitWorkspace]);
+
+  const createObject = useCallback((type) => {
+    if (type !== "sheet" && type !== "markdown") return null;
+    const created = createObjectForType(type);
+    commitWorkspace((current) => touch(current, {
+      ...current.objects,
+      [created.id]: created,
+    }, true), `create-root:${created.id}`);
+    return created;
+  }, [commitWorkspace]);
+
+  const createEmbeddedFile = useCallback((parentObjectId, parentCellId, fileAsset) => {
+    const coordinates = coordinatesFromCellId(parentCellId);
+    if (!coordinates || !fileAsset) return null;
+    const type = inferFileObjectType(fileAsset);
+    const assetId = fileAsset.id || `asset-${Date.now().toString(36)}`;
+    const fileName = fileAsset.fileName || fileAsset.name || generatedObjectTitle(type);
+    const title = fileName.replace(/\.[^.]+$/, "") || generatedObjectTitle(type, cellAddress(coordinates.row, coordinates.column));
+    const created = createObjectForType(type, type === "markdown"
+      ? { title, content: fileAsset.text || "" }
+      : type === "code"
+        ? { title, content: fileAsset.text || "", extension: fileAsset.extension }
+        : { title, assetId, source: type === "html" ? fileAsset.text || "" : "" });
+    const linkId = createId("link");
+    created.parent = {
+      linkId,
+      parentObjectId,
+      parentCellId,
+      sourceAddress: cellAddress(coordinates.row, coordinates.column),
+    };
+    const asset = { ...fileAsset, id: assetId, fileName };
+    commitWorkspace((current) => {
+      const parent = current.objects[parentObjectId];
+      if (parent?.type !== "sheet") return current;
+      const cell = createCellRecord(coordinates.row, coordinates.column, {
+        ...(parent.cells[parentCellId] || {}),
+        value: created.title,
+        formula: "",
+        embed: {
+          objectId: created.id,
+          type: created.type,
+          linkId,
+          relation: "containment",
+        },
+      });
+      const next = touch(current, {
+          ...current.objects,
+          [parentObjectId]: {
+            ...parent,
+            cells: { ...parent.cells, [parentCellId]: cell },
+          },
+          [created.id]: created,
+        }, true);
+      return type === "markdown" || type === "code"
+        ? next
+        : { ...next, assets: { ...current.assets, [assetId]: asset } };
+    }, `create-file:${parentObjectId}:${parentCellId}`);
+    return created;
+  }, [commitWorkspace]);
+
+  const replaceObjectFile = useCallback((objectId, fileAsset) => {
+    if (!fileAsset) return;
+    const type = inferFileObjectType(fileAsset);
+    const assetId = fileAsset.id || `asset-${Date.now().toString(36)}`;
+    const fileName = fileAsset.fileName || fileAsset.name || generatedObjectTitle(type);
+    commitWorkspace((current) => {
+      const previous = current.objects[objectId];
+      if (!previous || previous.type === "sheet") return current;
+      const replacement = type === "markdown"
+        ? {
+            id: previous.id,
+            type: "markdown",
+            title: previous.title,
+            description: previous.description || "",
+            parent: previous.parent || null,
+            content: fileAsset.text || "",
+          }
+        : {
+            id: previous.id,
+            type,
+            title: previous.title,
+            description: previous.description || "",
+            parent: previous.parent || null,
+            assetId,
+            source: type === "html" ? fileAsset.text || "" : "",
+          };
+      const objects = Object.fromEntries(Object.entries(current.objects).map(([id, object]) => {
+        if (id === objectId) return [id, replacement];
+        if (object.type !== "sheet") return [id, object];
+        let changed = false;
+        const cells = Object.fromEntries(Object.entries(object.cells || {}).map(([cellKey, cell]) => {
+          if (cell.embed?.objectId !== objectId) return [cellKey, cell];
+          changed = true;
+          return [cellKey, { ...cell, embed: { ...cell.embed, type } }];
+        }));
+        return [id, changed ? { ...object, cells } : object];
+      }));
+      const assets = { ...current.assets };
+      if (previous.assetId) delete assets[previous.assetId];
+      if (type !== "markdown") assets[assetId] = { ...fileAsset, id: assetId, fileName };
+      return {
+        ...touch(current, objects),
+        assets,
+      };
+    }, `replace-file:${objectId}`);
+  }, [commitWorkspace]);
+
+  const reparentObject = useCallback((input = {}) => {
+    const preview = reparentWorkspace(workspace, input);
+    if (!preview.ok) return preview;
+    const historyKey = `reparent:${preview.objectId}:${preview.linkId}:${preview.targetObjectId}:${preview.targetCellId}`;
+    commitWorkspace((current) => {
+      const result = reparentWorkspace(current, input);
+      return result.ok ? result.workspace : current;
+    }, historyKey);
+    return preview;
+  }, [commitWorkspace, workspace]);
+  const deleteObject = useCallback((objectId) => {
+    commitWorkspace((current) => deleteObjectFromWorkspace(current, objectId), `object-delete:${objectId}`);
+  }, [commitWorkspace]);
+
+  const insertSheetAxis = useCallback((objectId, axis, index) => {
+    commitWorkspace((current) => {
+      const object = current.objects[objectId];
+      if (object?.type !== "sheet") return current;
+      const rows = axis === "row" ? Math.max(DEFAULT_ROWS, object.rows + 1) : object.rows;
+      const columns = axis === "column" ? Math.max(DEFAULT_COLUMNS, object.columns + 1) : object.columns;
+      return touch(current, {
+        ...current.objects,
+        [objectId]: {
+          ...object,
+          rows,
+          columns,
+          cells: measureStage("shift-cells", () => shiftCells(object, axis, index)),
+          rowHeights: axis === "row" ? shiftAxisSizes(object.rowHeights, index, "insert") : object.rowHeights,
+          columnWidths: axis === "column" ? shiftAxisSizes(object.columnWidths, index, "insert") : object.columnWidths,
+          rowGroups: axis === "row" ? adjustAxisGroups(object.rowGroups, index, "insert") : object.rowGroups,
+          columnGroups: axis === "column" ? adjustAxisGroups(object.columnGroups, index, "insert") : object.columnGroups,
+          filters: axis === "column" ? adjustColumnFilters(object.filters, index, "insert") : object.filters,
+          conditionalFormats: adjustConditionalFormats(object.conditionalFormats, axis, index, "insert"),
+        },
+      }, true);
+    }, `insert:${objectId}:${axis}:${index}`);
+  }, [commitWorkspace]);
+
+  const deleteSheetAxis = useCallback((objectId, axis, index) => {
+    commitWorkspace((current) => {
+      const object = current.objects[objectId];
+      if (object?.type !== "sheet") return current;
+      const rows = axis === "row" ? Math.max(DEFAULT_ROWS, object.rows - 1) : object.rows;
+      const columns = axis === "column" ? Math.max(DEFAULT_COLUMNS, object.columns - 1) : object.columns;
+      return touch(current, {
+        ...current.objects,
+        [objectId]: {
+          ...object,
+          rows,
+          columns,
+          cells: measureStage("remove-axis-cells", () => removeSheetAxisCells(object, axis, index)),
+          rowHeights: axis === "row" ? shiftAxisSizes(object.rowHeights, index, "delete") : object.rowHeights,
+          columnWidths: axis === "column" ? shiftAxisSizes(object.columnWidths, index, "delete") : object.columnWidths,
+          rowGroups: axis === "row" ? adjustAxisGroups(object.rowGroups, index, "delete") : object.rowGroups,
+          columnGroups: axis === "column" ? adjustAxisGroups(object.columnGroups, index, "delete") : object.columnGroups,
+          filters: axis === "column" ? adjustColumnFilters(object.filters, index, "delete") : object.filters,
+          conditionalFormats: adjustConditionalFormats(object.conditionalFormats, axis, index, "delete"),
+        },
+      }, true);
+    }, `delete:${objectId}:${axis}:${index}`);
+  }, [commitWorkspace]);
+
+  const moveSheetAxis = useCallback((objectId, axis, from, to) => {
+    if (!Number.isInteger(from) || !Number.isInteger(to) || from === to) return;
+    commitWorkspace((current) => {
+      const object = current.objects[objectId];
+      if (object?.type !== "sheet") return current;
+      return touch(current, {
+        ...current.objects,
+        [objectId]: reorderSheetAxis(object, axis, from, to),
+      }, true);
+    }, `move:${objectId}:${axis}`);
+  }, [commitWorkspace]);
+
+  const setHomeObject = useCallback((objectId, homePath = []) => {
+    commitWorkspace((current) => current.objects[objectId]
+      ? normalizeWorkspace({
+        ...current,
+        homeObjectId: objectId,
+        homePath: Array.isArray(homePath) ? homePath : [],
+        updatedAt: new Date().toISOString(),
+      })
+      : current, `home:${objectId}`);
+  }, [commitWorkspace]);
+
+  const setActiveTheme = useCallback((themeId) => {
+    commitWorkspace((current) => ({
+      ...current,
+      activeThemeId: themeId,
+      updatedAt: new Date().toISOString(),
+    }), `theme-select:${themeId}`);
+  }, [commitWorkspace]);
+
+  const saveTheme = useCallback((theme) => {
+    commitWorkspace((current) => ({
+      ...current,
+      activeThemeId: theme.id,
+      updatedAt: new Date().toISOString(),
+      themes: { ...current.themes, [theme.id]: theme },
+    }), `theme-save:${theme.id}`);
+  }, [commitWorkspace]);
+
+  const updateTheme = useCallback((themeId, patch) => {
+    commitWorkspace((current) => {
+      const theme = current.themes[themeId];
+      if (!theme) return current;
+      const nextTheme = {
+        ...theme,
+        ...patch,
+        tokens: patch.tokens ? { ...theme.tokens, ...patch.tokens } : theme.tokens,
+      };
+      return {
+        ...current,
+        updatedAt: new Date().toISOString(),
+        themes: { ...current.themes, [themeId]: nextTheme },
+      };
+    }, `theme-update:${themeId}:${Object.keys(patch.tokens || patch).sort().join(",")}`);
+  }, [commitWorkspace]);
+
+  const deleteTheme = useCallback((themeId) => {
+    commitWorkspace((current) => {
+      if (!current.themes[themeId]) return current;
+      const themes = { ...current.themes };
+      delete themes[themeId];
+      return {
+        ...current,
+        activeThemeId: current.activeThemeId === themeId ? "paper-public" : current.activeThemeId,
+        updatedAt: new Date().toISOString(),
+        themes,
+      };
+    }, `theme-delete:${themeId}`);
+  }, [commitWorkspace]);
+
+  const updateSettings = useCallback((patch) => {
+    commitWorkspace((current) => ({
+      ...current,
+      updatedAt: new Date().toISOString(),
+      settings: { ...current.settings, ...patch },
+    }), `settings:${Object.keys(patch).sort().join(",")}`);
+  }, [commitWorkspace]);
+
+  const undo = useCallback(() => {
+    setWorkspace((current) => {
+      const history = historyRef.current;
+      const previous = history.past.pop();
+      if (!previous) return current;
+      markBrowserWorkspaceDirty(current);
+      if (previous.kind === "cells") {
+        history.future.push(previous);
+        history.lastKey = null;
+        history.lastAt = 0;
+        return applyCellHistory(current, previous, "before");
+      }
+      history.future.push({
+        kind: "snapshot",
+        value: cloneHistoryWorkspace(current),
+      });
+      history.lastKey = null;
+      history.lastAt = 0;
+      return { ...previous.value, updatedAt: new Date().toISOString() };
+    });
+  }, [markBrowserWorkspaceDirty]);
+
+  const redo = useCallback(() => {
+    setWorkspace((current) => {
+      const history = historyRef.current;
+      const next = history.future.pop();
+      if (!next) return current;
+      markBrowserWorkspaceDirty(current);
+      if (next.kind === "cells") {
+        history.past.push(next);
+        history.lastKey = null;
+        history.lastAt = 0;
+        return applyCellHistory(current, next, "after");
+      }
+      history.past.push({
+        kind: "snapshot",
+        value: cloneHistoryWorkspace(current),
+      });
+      history.lastKey = null;
+      history.lastAt = 0;
+      return { ...next.value, updatedAt: new Date().toISOString() };
+    });
+  }, [markBrowserWorkspaceDirty]);
+
+  return {
+    workspace,
+    hydrated,
+    saveState,
+    needsExport,
+    closeExportRequested,
+    clearCloseExportRequest: () => setCloseExportRequested(false),
+    markWorkspaceExported,
+    recoverySessions,
+    dismissRecovery: () => setRecoverySessions([]),
+    restoreRecoverySessions,
+    discardRecoverySessions,
+    replaceWorkspace,
+    updateObject,
+    updateCell,
+    updateCells,
+    clearCell,
+    clearCells,
+    createObject,
+    createEmbeddedObject,
+    createEmbeddedLink,
+    createEmbeddedFile,
+    replaceObjectFile,
+    reparentObject,
+    deleteObject,
+    insertSheetAxis,
+    deleteSheetAxis,
+    moveSheetAxis,
+    setHomeObject,
+    setActiveTheme,
+    saveTheme,
+    updateTheme,
+    deleteTheme,
+    updateSettings,
+    undo,
+    redo,
+    canUndo: historyRef.current.past.length > 0,
+    canRedo: historyRef.current.future.length > 0,
+  };
+}

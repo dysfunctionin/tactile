@@ -10,7 +10,7 @@ import {
   rangeSize as rangeSizeRuntime,
   serializeRange as serializeRangeRuntime,
   shiftFormulaReferences as shiftFormulaReferencesRuntime,
-} from "../sheet/ranges.js";
+} from "./sheet/ranges.js";
 import type { CellChange, CellRange, NormalizedCellRange, SheetObject } from "./domain.ts";
 import type { CellAddress, CellId, ColumnIndex, RowIndex } from "./ids.ts";
 import { asCellAddress, asCellId, asColumnIndex, asRowIndex } from "./ids.ts";

@@ -20,6 +20,9 @@ export function ensureRecordStores(database) {
   if (!database.objectStoreNames.contains(STORE_NAMES.cells)) {
     database.createObjectStore(STORE_NAMES.cells, { keyPath: ["workspaceId", "objectId", "cellId"] });
   }
+  if (!database.objectStoreNames.contains(STORE_NAMES.cellChunks)) {
+    database.createObjectStore(STORE_NAMES.cellChunks, { keyPath: ["workspaceId", "objectId", "chunkId"] });
+  }
   if (!database.objectStoreNames.contains(STORE_NAMES.assets)) {
     database.createObjectStore(STORE_NAMES.assets, { keyPath: ["workspaceId", "assetId"] });
   }

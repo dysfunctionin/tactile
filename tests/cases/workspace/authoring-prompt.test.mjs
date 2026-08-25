@@ -1,0 +1,33 @@
+import assert from "node:assert/strict";
+
+import { defineSuite } from "../../harness/index.mjs";
+import {
+  WORKSPACE_AUTHORING_PROMPT,
+  WORKSPACE_AUTHORING_PROMPT_VERSION,
+} from "../../../src/core/workspace/authoringPrompt.js";
+
+const scenario = defineSuite({ type: "unit", suite: "workspace" });
+
+scenario("workspace authoring prompt declares the current contract and core architecture", () => {
+  assert.equal(WORKSPACE_AUTHORING_PROMPT_VERSION, "tactile-workspace-authoring/v2");
+  for (const requiredText of [
+    "tactile v4",
+    "[[tactile:<type>:<object-id>|<title>]]",
+    "stable opaque IDs",
+    "cycle",
+    "Text/Markdown content is stored separately",
+    "asset id",
+    "A1 addressing",
+    "manifest.json",
+    "workspace.json",
+    "sheet.meta.json",
+    '"format":"tactile"',
+    '"version":4',
+    "IMMUTABILITY CONTRACT",
+    "Never overwrite",
+    "DIFF SUMMARY",
+    "validation",
+  ]) {
+    assert.ok(WORKSPACE_AUTHORING_PROMPT.includes(requiredText), `missing ${requiredText}`);
+  }
+});

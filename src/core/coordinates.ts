@@ -5,7 +5,7 @@ import {
   coordinatesFromAddress as coordinatesFromAddressRuntime,
   coordinatesFromCellId as coordinatesFromCellIdRuntime,
   moveAddress as moveAddressRuntime,
-} from "../sheet/coordinates.js";
+} from "./sheet/coordinates.js";
 import type { CellAddress } from "./ids.ts";
 import {
   asCellAddress,

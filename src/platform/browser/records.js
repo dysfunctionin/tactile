@@ -3,6 +3,10 @@ function withoutKeys(record, keys) {
   return Object.fromEntries(Object.entries(record).filter(([key]) => !keys.has(key)));
 }
 
+import { coordinatesFromCellId } from "../../core/sheet/coordinates.js";
+
+export const CELL_CHUNK_EDGE = 32;
+
 export function workspaceKey(workspaceId) {
   return String(workspaceId);
 }
@@ -13,6 +17,27 @@ export function objectKey(workspaceId, objectId) {
 
 export function cellKey(workspaceId, objectId, cellId) {
   return [String(workspaceId), String(objectId), String(cellId)];
+}
+
+export function cellChunkId(cell, fallbackCellId = "") {
+  const coordinates = Number.isInteger(cell?.row) && Number.isInteger(cell?.column)
+    ? cell
+    : coordinatesFromCellId(cell?.id || fallbackCellId);
+  if (!coordinates) return `other:${String(cell?.id || fallbackCellId)}`;
+  return `${Math.floor(coordinates.row / CELL_CHUNK_EDGE)}:${Math.floor(coordinates.column / CELL_CHUNK_EDGE)}`;
+}
+
+export function cellChunkKey(workspaceId, objectId, chunkId) {
+  return [String(workspaceId), String(objectId), String(chunkId)];
+}
+
+export function cellChunkRecord(workspaceId, objectId, chunkId, cells) {
+  return {
+    workspaceId: String(workspaceId),
+    objectId: String(objectId),
+    chunkId: String(chunkId),
+    cells,
+  };
 }
 
 export function assetKey(workspaceId, assetId) {
@@ -86,6 +111,10 @@ export function objectFromRecord(record) {
 
 export function cellFromRecord(record) {
   return withoutKeys(record, new Set(["workspaceId", "objectId", "cellId"]));
+}
+
+export function cellsFromChunkRecord(record) {
+  return record?.cells && typeof record.cells === "object" ? record.cells : {};
 }
 
 export function assetFromRecord(record) {

@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-	<a href="https://github.com/aryanxxvii/tactile/releases">Downloads</a> ·
+	<a href="https://github.com/dysfunctionin/tactile/releases">Downloads</a> ·
 	<a href="CONTRIBUTING.md">Contributing</a> ·
 	<a href="SECURITY.md">Security</a> ·
 	<a href="LICENSE">MIT License</a>
@@ -37,7 +37,7 @@ Tactile stores source rather than rendered output. Text remains Markdown, sheets
 
 ## Get Tactile
 
-Signed-where-configured installers and checksums for Windows, macOS, and Linux are published on the [GitHub Releases](https://github.com/aryanxxvii/tactile/releases) page.
+Signed-where-configured installers and checksums for Windows, macOS, and Linux are published on the [GitHub Releases](https://github.com/dysfunctionin/tactile/releases) page.
 
 - Stable versions use standard `vX.Y.Z` releases.
 - Development previews use clearly marked `vX.Y.Z-alpha.N` or `vX.Y.Z-rc.N` prereleases and blue branding.
@@ -54,7 +54,7 @@ Signed-where-configured installers and checksums for Windows, macOS, and Linux a
 ### Clone and run the web app
 
 ```bash
-git clone https://github.com/aryanxxvii/tactile.git
+git clone https://github.com/dysfunctionin/tactile.git
 cd tactile
 npm ci
 npm run dev
@@ -83,11 +83,13 @@ Native build and platform notes live in [`src-tauri/README.md`](src-tauri/README
 Start narrow while iterating, then run the relevant broader checks:
 
 ```bash
-npm test
+npm run test:unit
 npm run typecheck
 npm run lint
 npm run build
 ```
+
+Run every test type as one dashboard history entry with `npm run tests:all`.
 
 The full repository gate is:
 
@@ -106,15 +108,19 @@ cargo test --manifest-path src-tauri/Cargo.toml
 ## Repository map
 
 ```text
-src/             React application, object model, shell, and browser platform
+src/app/         Application entry point and composition root
+src/core/        Headless domain: engine, sheet math, workspace, compatibility, workers
+src/ui/          React components, object renderers, shell, and styles
+src/platform/    Browser, Tauri, and code-runtime adapters
 src-tauri/       Tauri/Rust shell, native persistence, packaging, and platform tests
 marketplace/     Independently compiled optional object packages and generated catalog
-tests/           Unit, compatibility, browser, native, visual, and performance tests
+tests/           Harness templates, scenario setups, and feature-grouped cases
+test-dashboard/  Static dashboard charting scenario latency across retained runs
 scripts/         Build, marketplace, release, checksum, and inventory automation
 config/          Tool configuration that does not require root-level discovery
 .agents/         Vendor-neutral project routing, domain knowledge, and decisions
 images/          Repository artwork and visual documentation
-evidence/        Performance results, SBOMs, and third-party inventory snapshots
+evidence/        SBOMs and third-party inventory snapshots
 ```
 
 Development work targets the protected `alpha` integration branch. Production-ready changes are promoted to protected `main` through a release pull request. Read [`CONTRIBUTING.md`](CONTRIBUTING.md) before opening a PR; coding agents should begin with [`AGENTS.md`](AGENTS.md).

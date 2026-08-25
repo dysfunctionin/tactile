@@ -21,7 +21,7 @@ Do not pre-load referenced files. Cross-domain tasks add one domain at a time af
 - `domains/`: ownership and invariants for code boundaries.
 - `knowledge/`: durable concepts/policy that source alone cannot explain.
 - `decisions/`: why accepted architectural choices exist.
-- Local `AGENTS.md`: subtree-only constraints.
+- Local `AGENTS.md`: subtree-only constraints, present in `src/core/`, `src/ui/`, `src-tauri/`, `marketplace/`, `tests/`, and `test-dashboard/`.
 - Human entrypoints (`README.md`, `CONTRIBUTING.md`, `SECURITY.md`): concise user/contributor information and links to canonical knowledge.
 
 Source/tests define current implementation behavior. Knowledge explains concepts and contracts; update it when implementation intentionally changes them.

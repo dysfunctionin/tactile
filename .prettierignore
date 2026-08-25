@@ -3,8 +3,6 @@ dist
 tmp
 coverage
 src-tauri/target
-benchmarks/.generated
-tests/visual/baselines
 test-results
 test-results-sol-max*
 src/**/*.js
@@ -13,9 +11,9 @@ src/**/*.jsx
 *.xlsx
 index.html
 README.md
-src/styles.css
-tests/format.test.mjs
-tests/formulas.test.mjs
-tests/ranges.test.mjs
-tests/structure.test.mjs
+src/ui/styles/styles.css
+tests/cases/workspace/portable-format.test.mjs
+tests/cases/sheet/formulas.test.mjs
+tests/cases/sheet/ranges.test.mjs
+tests/cases/sheet/structure.test.mjs
 WORKFLOW.md

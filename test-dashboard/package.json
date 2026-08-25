@@ -1,0 +1,11 @@
+{
+  "name": "tactile-test-dashboard",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Reads Tactile test results and charts scenario latency over the retained runs.",
+  "scripts": {
+    "start": "node serve.mjs",
+    "sync:themes": "node scripts/sync-themes.mjs"
+  }
+}

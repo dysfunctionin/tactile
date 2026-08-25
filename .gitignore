@@ -6,6 +6,7 @@ dist/
 !src-tauri/icons/*.png
 !src-tauri/icons-alpha/*.png
 !images/*.png
+!test-dashboard/assets/tactile-icon.png
 *.xlsx
 audits/
 .cache/
@@ -14,7 +15,10 @@ test-results-*/
 *.tsbuildinfo
 test-results/
 tmp/
-evidence/performance/playwright-results.json
+
+# Local dev server log written by the Tauri dev runner.
+/tauri-dev.log
+/vite.log
 
 # Internal project planning and wave records are kept out of the public repository.
 /WORKFLOW.md

@@ -12,6 +12,24 @@ Tactile is a React/Vite local-first workspace with a Tauri/Rust native shell and
 
 Do not scan all Markdown, source, tests, or history. Expand context one concrete dependency at a time.
 
+## Code map
+
+Resolve ownership here before searching.
+
+| Path              | Owns                                                                   |
+| ----------------- | ---------------------------------------------------------------------- |
+| `src/app/`        | Entry point and composition root                                       |
+| `src/core/`       | Headless domain: engine, sheet math, workspace, compatibility, workers |
+| `src/ui/`         | React components, object renderers, shell, styles                      |
+| `src/platform/`   | Browser, Tauri, and code-runtime adapters                              |
+| `src-tauri/`      | Rust shell, native persistence, packaging                              |
+| `marketplace/`    | Plugin packages, host SDK, generated catalog                           |
+| `tests/`          | `harness/` templates, `scenarios/` setup, `cases/` tests               |
+| `test-dashboard/` | Static, dependency-free dashboard for test latency trends              |
+| `scripts/`        | Build, marketplace, and release automation                             |
+
+Headless logic belongs in `src/core/`; React belongs in `src/ui/`. Choose the folder before loading callers.
+
 ## Precedence
 
 Explicit user requirements override repository guidance. Within the repository, the nearest applicable `AGENTS.md` overrides this file; selected workflow/domain guidance overrides general guidance. Source and executable tests are authoritative for current behavior. If guidance is stale, fix it with the implementation.
@@ -21,6 +39,8 @@ Explicit user requirements override repository guidance. Within the repository, 
 - Routine work starts from `alpha`; `main` is production-only.
 - Preserve unrelated worktree changes and keep edits scoped.
 - Prefer existing boundaries and focused tests over new abstractions.
+- In browsers, each tab owns an isolated ephemeral workspace database; preserve reload reuse, fresh-tab blank state, live-tab exclusion, and orphan recovery together. See ADR 0002.
+- Theme selection is app-global: web uses origin local storage and native uses versioned `$APPCONFIG/preferences.json`; do not make appearance authority workspace-scoped. Preserve custom-theme snapshots, native cache migration, clean blank browser sessions, and user workspace folders during app-data cleanup. See ADR 0003.
 - Edit only `version.json` for app versions; synchronize generated mirrors.
 - Never move a published tag or commit official binaries/build outputs.
 - Validate the touched slice immediately after the first edit, then broaden before handoff.

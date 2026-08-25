@@ -4,7 +4,7 @@ import {
   adjustConditionalFormats as adjustConditionalFormatsRuntime,
   adjustFormulaForAxis as adjustFormulaForAxisRuntime,
   reorderFormulaForAxis as reorderFormulaForAxisRuntime,
-} from "../sheet/structure.js";
+} from "./sheet/structure.js";
 import type { AxisGroup, AxisName, ConditionalFormatRule, FilterRule } from "./domain.ts";
 
 export type AxisOperation = "insert" | "delete";

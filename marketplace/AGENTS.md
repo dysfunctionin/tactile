@@ -8,7 +8,7 @@ These instructions apply to every file under `marketplace/`.
 - A plugin must not import another plugin or any file from `src/`.
 - Import approved host APIs only from `tactile:host`. Additions to that API require corresponding host, compiler, security, and compatibility tests.
 - Import plugin CSS from the plugin entry or one of its renderer modules. The marketplace compiler converts each CSS import into a package-owned `installStyle(...)` call that is removed when the plugin is deactivated.
-- Never add plugin-specific selectors to `src/styles.css`. Plugins may rely on documented host primitives such as `object-surface`, `ObjectHeader`, `object-statusbar`, `cell-format-toolbar`, and `native-file-input`; all other visual classes belong to the plugin.
+- Never add plugin-specific selectors to `src/ui/styles/styles.css`. Plugins may rely on documented host primitives such as `object-surface`, `ObjectHeader`, `object-statusbar`, `cell-format-toolbar`, and `native-file-input`; all other visual classes belong to the plugin.
 - Shared plugin SDK CSS may live under `marketplace/sdk/` and be imported by an SDK helper. Every consuming plugin must still compile that CSS into its own independent artifact; plugins never load styles from another plugin at runtime.
 - Keep plugin-owned state on its object record and preserve unknown fields through `migrate`, `serialize`, and `deserialize`.
 - Cross-plugin content references store stable object IDs, not copied content or source imports. Resolve them from host-provided workspace records, react to source changes, and render a recoverable missing-source state when the referenced plugin/object is unavailable. HTML uses this pattern to preview an HTML-language Code object while both objects retain their own type and cell.
@@ -26,7 +26,7 @@ These instructions apply to every file under `marketplace/`.
 
 `npm run dev` is the local plugin preview path. It builds `marketplace/dist` before Vite starts, serves that directory at `/marketplace/` with `no-store`, watches `marketplace/plugins/` and `marketplace/sdk/`, rebuilds on source changes, and reloads after a successful build. Development activation prefers the current local artifact over an installed IndexedDB bundle without overwriting the persistent production cache.
 
-Production does not embed `marketplace/dist` in the client. It defaults to the verified catalog at `https://raw.githubusercontent.com/aryanxxvii/tactile/main/marketplace/dist/catalog.json`; relative artifact URLs remain on that allowlisted origin.
+Production does not embed `marketplace/dist` in the client. It defaults to the verified catalog at `https://raw.githubusercontent.com/dysfunctionin/tactile/main/marketplace/dist/catalog.json`; relative artifact URLs remain on that allowlisted origin.
 
 1. Change only the target package where possible.
 2. Bump its semantic `version` in `manifest.json` for every published behavior or artifact change. The Marketplace displays Update only when the catalog version is newer than the locally installed version.

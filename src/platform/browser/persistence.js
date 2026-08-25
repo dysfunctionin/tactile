@@ -1,7 +1,7 @@
-import { createBlankWorkspace, normalizeWorkspace } from "../../model.js";
-import { readPortableV4Package } from "../../compat/portable.js";
-import { buildPortableV4Package, portablePackageToZip } from "../../compat/portable.js";
-import { buildPortablePackage } from "../../export.js";
+import { createBlankWorkspace, normalizeWorkspace } from "../../core/workspace/model.js";
+import { readPortableV4Package } from "../../core/compat/portable.js";
+import { buildPortableV4Package, portablePackageToZip } from "../../core/compat/portable.js";
+import { buildPortablePackage } from "../../core/workspace/export.js";
 import {
   BROWSER_DATABASE_NAME,
   BROWSER_DATABASE_VERSION,
@@ -18,9 +18,12 @@ import {
   assetFromRecord,
   assetKey,
   assetRecord,
+  cellChunkId,
+  cellChunkKey,
+  cellChunkRecord,
   cellFromRecord,
   cellKey,
-  cellRecord,
+  cellsFromChunkRecord,
   objectFromRecord,
   objectKey,
   objectRecord,
@@ -52,10 +55,6 @@ function objectStoreRecord(workspaceId, object) {
   return objectRecord(workspaceId, object);
 }
 
-function cellStoreRecord(workspaceId, objectId, cell) {
-  return cellRecord(workspaceId, objectId, cell);
-}
-
 function assetStoreRecord(workspaceId, assetId, asset) {
   const blob = toNativeBlob(asset?.blob || asset?.data || asset?.dataUrl, asset?.mime);
   return assetRecord(workspaceId, assetId, asset, blob);
@@ -65,11 +64,25 @@ function themeStoreRecord(workspaceId, theme) {
   return themeRecord(workspaceId, theme);
 }
 
+function chunkedCellRecords(workspaceId, objectId, cells) {
+  const chunks = new Map();
+  Object.entries(cells || {}).forEach(([fallbackCellId, cell]) => {
+    const chunkId = cellChunkId(cell, fallbackCellId);
+    const chunk = chunks.get(chunkId) || {};
+    chunk[String(cell?.id || fallbackCellId)] = cell;
+    chunks.set(chunkId, chunk);
+  });
+  return [...chunks].map(([chunkId, chunkCells]) => (
+    cellChunkRecord(workspaceId, objectId, chunkId, chunkCells)
+  ));
+}
+
 function putWorkspaceRecords(transaction, workspace, revision, storageState = "active") {
   const workspaceId = String(workspace.id);
   const metaStore = transaction.objectStore(STORE_NAMES.workspaceMeta);
   const objectStore = transaction.objectStore(STORE_NAMES.objects);
   const cellStore = transaction.objectStore(STORE_NAMES.cells);
+  const cellChunkStore = transaction.objectStore(STORE_NAMES.cellChunks);
   const assetStore = transaction.objectStore(STORE_NAMES.assets);
   const themeStore = transaction.objectStore(STORE_NAMES.themes);
 
@@ -83,6 +96,11 @@ function putWorkspaceRecords(transaction, workspace, revision, storageState = "a
       store: cellStore,
       records: "cells",
       key: (record) => cellKey(record.workspaceId, record.objectId, record.cellId),
+    },
+    {
+      store: cellChunkStore,
+      records: "cellChunks",
+      key: (record) => cellChunkKey(record.workspaceId, record.objectId, record.chunkId),
     },
     {
       store: assetStore,
@@ -102,8 +120,8 @@ function putWorkspaceRecords(transaction, workspace, revision, storageState = "a
     metaStore.put(workspaceMetaRecord(workspace, revision, storageState));
     Object.values(workspace.objects || {}).forEach((object) => {
       objectStore.put(objectStoreRecord(workspaceId, object));
-      Object.values(object.cells || {}).forEach((cell) => {
-        cellStore.put(cellStoreRecord(workspaceId, object.id, cell));
+      chunkedCellRecords(workspaceId, object.id, object.cells).forEach((record) => {
+        cellChunkStore.put(record);
       });
     });
     Object.values(workspace.assets || {}).forEach((asset) => {
@@ -136,16 +154,16 @@ function putWorkspaceRecords(transaction, workspace, revision, storageState = "a
 
 function deleteObjectCells(transaction, workspaceId, objectId, object) {
   if (!object?.cells) return;
-  const cells = transaction.objectStore(STORE_NAMES.cells);
+  const chunks = transaction.objectStore(STORE_NAMES.cellChunks);
+  const chunkIds = new Set();
   Object.entries(object.cells).forEach(([fallbackCellId, cell]) => {
-    const cellId = String(cell?.id || fallbackCellId);
-    cells.delete(cellKey(workspaceId, objectId, cellId));
+    chunkIds.add(cellChunkId(cell, fallbackCellId));
   });
+  chunkIds.forEach((chunkId) => chunks.delete(cellChunkKey(workspaceId, objectId, chunkId)));
 }
 
 function applyObjectOperation(transaction, workspaceId, operation) {
   const objects = transaction.objectStore(STORE_NAMES.objects);
-  const cells = transaction.objectStore(STORE_NAMES.cells);
   const key = objectKey(workspaceId, operation.objectId);
   deleteObjectCells(transaction, workspaceId, operation.objectId, operation.before);
   if (!operation.after) {
@@ -154,10 +172,39 @@ function applyObjectOperation(transaction, workspaceId, operation) {
   }
   objects.put(objectStoreRecord(workspaceId, operation.after));
   if (operation.after.type === "sheet" && operation.after.cells) {
-    Object.values(operation.after.cells).forEach((cell) => {
-      cells.put(cellStoreRecord(workspaceId, operation.objectId, cell));
+    const chunks = transaction.objectStore(STORE_NAMES.cellChunks);
+    chunkedCellRecords(workspaceId, operation.objectId, operation.after.cells).forEach((record) => {
+      chunks.put(record);
     });
   }
+}
+
+function applyCellOperations(transaction, workspaceId, operations) {
+  const chunks = transaction.objectStore(STORE_NAMES.cellChunks);
+  const grouped = new Map();
+  operations.forEach((operation) => {
+    const chunkId = cellChunkId(operation.after || operation.before, operation.cellId);
+    const groupKey = `${String(operation.objectId)}\u0000${chunkId}`;
+    const group = grouped.get(groupKey) || { objectId: String(operation.objectId), chunkId, operations: [] };
+    group.operations.push(operation);
+    grouped.set(groupKey, group);
+  });
+  grouped.forEach(({ objectId, chunkId, operations: chunkOperations }) => {
+    const key = cellChunkKey(workspaceId, objectId, chunkId);
+    const read = chunks.get(key);
+    read.onsuccess = () => {
+      const nextCells = { ...cellsFromChunkRecord(read.result) };
+      chunkOperations.forEach((operation) => {
+        if (operation.after) nextCells[String(operation.cellId)] = operation.after;
+        else delete nextCells[String(operation.cellId)];
+      });
+      if (Object.keys(nextCells).length) {
+        chunks.put(cellChunkRecord(workspaceId, objectId, chunkId, nextCells));
+      } else {
+        chunks.delete(key);
+      }
+    };
+  });
 }
 
 function applyAssetOperation(transaction, workspaceId, operation) {
@@ -177,6 +224,7 @@ function applyAssetOperation(transaction, workspaceId, operation) {
 }
 
 function applyPatchOperations(transaction, workspaceId, operations) {
+  const cellOperations = operations.filter((operation) => operation.kind === "replace-cell");
   operations.forEach((operation) => {
     switch (operation.kind) {
       case "replace-workspace-meta":
@@ -189,10 +237,6 @@ function applyPatchOperations(transaction, workspaceId, operations) {
         applyObjectOperation(transaction, workspaceId, operation);
         break;
       case "replace-cell": {
-        const store = transaction.objectStore(STORE_NAMES.cells);
-        const key = cellKey(workspaceId, operation.objectId, operation.cellId);
-        if (operation.after) store.put(cellStoreRecord(workspaceId, operation.objectId, operation.after));
-        else store.delete(key);
         break;
       }
       case "replace-asset":
@@ -209,6 +253,7 @@ function applyPatchOperations(transaction, workspaceId, operations) {
         throw new Error(`Unsupported persistence operation: ${String(operation.kind)}`);
     }
   });
+  applyCellOperations(transaction, workspaceId, cellOperations);
 }
 
 function acknowledge(transaction, workspaceId, revision) {
@@ -227,10 +272,11 @@ function acknowledge(transaction, workspaceId, revision) {
 }
 
 async function recordsForWorkspace(database, workspaceId, { includeStaged = true } = {}) {
-  const [metaRecords, objectRecords, cellRecords, assetRecords, themeRecords] = await Promise.all([
+  const [metaRecords, objectRecords, cellRecords, cellChunkRecords, assetRecords, themeRecords] = await Promise.all([
     readAllRecords(database, STORE_NAMES.workspaceMeta),
     readAllRecords(database, STORE_NAMES.objects),
     readAllRecords(database, STORE_NAMES.cells),
+    readAllRecords(database, STORE_NAMES.cellChunks),
     readAllRecords(database, STORE_NAMES.assets),
     readAllRecords(database, STORE_NAMES.themes),
   ]);
@@ -241,6 +287,7 @@ async function recordsForWorkspace(database, workspaceId, { includeStaged = true
     )) || null,
     objects: objectRecords.filter((record) => record.workspaceId === String(workspaceId)),
     cells: cellRecords.filter((record) => record.workspaceId === String(workspaceId)),
+    cellChunks: cellChunkRecords.filter((record) => record.workspaceId === String(workspaceId)),
     assets: assetRecords.filter((record) => record.workspaceId === String(workspaceId)),
     themes: themeRecords.filter((record) => record.workspaceId === String(workspaceId)),
   };
@@ -258,6 +305,12 @@ function snapshotFromRecords(records) {
     if (!object) return;
     object.cells ||= {};
     object.cells[record.cellId] = cellFromRecord(record);
+  });
+  records.cellChunks.forEach((record) => {
+    const object = workspace.objects[record.objectId];
+    if (!object) return;
+    object.cells ||= {};
+    Object.assign(object.cells, cellsFromChunkRecord(record));
   });
   records.assets.forEach((record) => {
     workspace.assets ||= {};
@@ -305,6 +358,7 @@ export class BrowserPersistenceAdapter {
     this.workspaceId = options.workspaceId || null;
     this.latestAcknowledgedRevision = null;
     this.migrationError = null;
+    this.legacyCellWorkspaceIds = new Set();
   }
 
   get activeWorkspaceId() {
@@ -375,6 +429,12 @@ export class BrowserPersistenceAdapter {
 
     snapshot ||= createBlankWorkspace();
     this.workspaceId = String(workspaceId || snapshot.id);
+    if (this.legacyCellWorkspaceIds.has(this.workspaceId)) {
+      await this.writeSnapshot(snapshot, {
+        revision: this.latestAcknowledgedRevision || "cell-chunks-v2",
+        activate: true,
+      });
+    }
     return snapshot;
   }
 
@@ -382,6 +442,7 @@ export class BrowserPersistenceAdapter {
     if (!this.indexedDB || !workspaceId) return null;
     const database = await this.databaseHandle();
     const records = await recordsForWorkspace(database, workspaceId, options);
+    if (records.cells.length) this.legacyCellWorkspaceIds.add(String(workspaceId));
     return snapshotFromRecords(records);
   }
 
@@ -392,6 +453,7 @@ export class BrowserPersistenceAdapter {
     await runRecordTransaction(database, "readwrite", (transaction) => {
       putWorkspaceRecords(transaction, normalized, revision, activate ? "active" : "staged");
     });
+    this.legacyCellWorkspaceIds.delete(String(normalized.id));
     if (activate) await this.activateWorkspace(normalized.id, revision);
     this.workspaceId = normalized.id;
     return normalized;

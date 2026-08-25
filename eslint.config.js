@@ -15,7 +15,7 @@ export default tseslint.config(
       "tmp/**",
       "coverage/**",
       "src-tauri/target/**",
-      "benchmarks/.generated/**",
+      "tests/performance/benchmarks/.generated/**",
       "tests/visual/baselines/**",
       "test-results/**",
       "test-results-sol-max*/**",
@@ -43,11 +43,12 @@ export default tseslint.config(
     files: [
       "*.js",
       "*.mjs",
-      "benchmarks/**/*.mjs",
       "config/**/*.mjs",
       "scripts/**/*.mjs",
       "tests/**/*.mjs",
-      "src/compat/**/*.js",
+      "test-dashboard/**/*.mjs",
+      "test-dashboard/**/*.js",
+      "src/core/compat/**/*.js",
     ],
     languageOptions: {
       ecmaVersion: "latest",

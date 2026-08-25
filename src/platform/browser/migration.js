@@ -1,5 +1,5 @@
-import { migratePortableWorkspace } from "../../compat/migrations.js";
-import { clonePortableValue } from "../../compat/schema.js";
+import { migratePortableWorkspace } from "../../core/compat/migrations.js";
+import { clonePortableValue } from "../../core/compat/schema.js";
 import {
   LEGACY_CACHE_KEY,
   LEGACY_DATABASE_NAME,
@@ -170,8 +170,11 @@ export async function migrateLegacyWorkspace({
 
   const normalized = normalizeLegacyWorkspace(source.workspace);
   const revision = `migration-${Date.now().toString(36)}`;
+  // The adapter normalizes on write, so the stored form is the only fair
+  // comparison target for verification.
+  let stored;
   try {
-    await adapter.writeSnapshot(normalized, { revision, activate: false });
+    stored = (await adapter.writeSnapshot(normalized, { revision, activate: false })) || normalized;
   } catch (error) {
     throw new BrowserStorageMigrationError("Legacy workspace copy failed; the legacy data was retained.", {
       phase: "copy",
@@ -181,9 +184,9 @@ export async function migrateLegacyWorkspace({
 
   let verified;
   try {
-    const copied = await adapter.readSnapshot(normalized.id);
-    verified = copied && await verifyMigratedWorkspace(normalized, copied, {
-      readAssetBlob: (assetId) => adapter.readAssetBlob(assetId, normalized.id),
+    const copied = await adapter.readSnapshot(stored.id);
+    verified = copied && await verifyMigratedWorkspace(stored, copied, {
+      readAssetBlob: (assetId) => adapter.readAssetBlob(assetId, stored.id),
     });
   } catch (error) {
     throw new BrowserStorageMigrationError("Legacy workspace verification failed; the legacy data was retained.", {
@@ -198,7 +201,7 @@ export async function migrateLegacyWorkspace({
   }
 
   try {
-    await adapter.activateWorkspace(normalized.id, revision);
+    await adapter.activateWorkspace(stored.id, revision);
   } catch (error) {
     throw new BrowserStorageMigrationError("Legacy workspace switch failed; the legacy data was retained.", {
       phase: "switch",
@@ -207,7 +210,7 @@ export async function migrateLegacyWorkspace({
   }
 
   return {
-    workspace: normalized,
+    workspace: stored,
     revision,
     source: source.source,
     legacyRetained: true,

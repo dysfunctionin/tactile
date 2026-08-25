@@ -1,0 +1,880 @@
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { AppDock } from "../ui/components/AppDock.jsx";
+import { SpatialLayer } from "../ui/components/SpatialLayer.jsx";
+import { useLocalWorkspace } from "../ui/hooks/useLocalWorkspace.js";
+import { ObjectSurface } from "../ui/shell/ObjectSurface.jsx";
+import { layerHistoryEntry, useInOut } from "../ui/shell/inOut.js";
+import { useSelectionCommands } from "../ui/shell/selectionCommands.js";
+import { useShellState } from "../ui/shell/useShellState.js";
+import { buildFilesIndex } from "../ui/shell/filesIndex.js";
+import { measureStage } from "../core/perf/stageTimer.js";
+import { useWorkspaceCommands } from "../ui/shell/workspaceCommands.js";
+import { reparentReasonMessage } from "../core/reparenting.js";
+import { buildPortablePackage } from "../core/workspace/export.js";
+import { createBlankWorkspace, isBareUrlValue, normalizeWorkspace } from "../core/workspace/model.js";
+import { saveNativeWorkspacePath } from "../platform/browser/storage.js";
+import {
+  THEME_PREFERENCE_KEY,
+  loadThemePreference,
+  saveThemePreference,
+} from "../platform/browser/themePreference.js";
+import {
+  cloneTheme,
+  resolveTheme,
+  themeSheetMetrics,
+  themeStyle,
+} from "../core/workspace/themes.js";
+import { isTauriRuntime, resolveTauriInvoke } from "../platform/tauri/runtime.ts";
+import { saveNativeThemePreference } from "../platform/tauri/preferences.ts";
+import { TitleBar } from "../ui/components/TitleBar.jsx";
+
+const FilesPanel = lazy(() => import("../ui/components/FilesPanel.jsx").then(({ FilesPanel: Component }) => ({ default: Component })));
+const SettingsPanel = lazy(() => import("../ui/components/SettingsPanel.jsx").then(({ SettingsPanel: Component }) => ({ default: Component })));
+const TooltipLayer = lazy(() => import("../ui/components/TooltipLayer.jsx").then(({ TooltipLayer: Component }) => ({ default: Component })));
+const NativeOnboarding = lazy(() => import("../ui/components/NativeOnboarding.jsx").then(({ NativeOnboarding: Component }) => ({ default: Component })));
+const SessionRecoveryDialog = lazy(() => import("../ui/components/SessionRecoveryDialog.jsx").then(({ SessionRecoveryDialog: Component }) => ({ default: Component })));
+
+function FilesPanelFallback({ pinned = false }) {
+  return (
+    <div className={`files-layer ${pinned ? "is-pinned" : ""}`} aria-hidden="true">
+      <div className="files-scrim" aria-hidden={pinned ? "true" : undefined} />
+    </div>
+  );
+}
+
+export function App() {
+  const nativeRuntime = useMemo(() => isTauriRuntime(), []);
+  const nativeInvoke = useMemo(() => resolveTauriInvoke(), []);
+  const [themePreference, setThemePreference] = useState(loadThemePreference);
+  const workspaceState = useLocalWorkspace();
+  const {
+      workspace,
+      hydrated,
+    saveState,
+    closeExportRequested,
+    clearCloseExportRequest,
+    markWorkspaceExported,
+    recoverySessions,
+    dismissRecovery,
+    restoreRecoverySessions,
+    discardRecoverySessions,
+    replaceWorkspace,
+    updateObject,
+    updateCell,
+    updateCells,
+    clearCell,
+    clearCells,
+    createObject,
+    createEmbeddedObject,
+    createEmbeddedLink,
+    createEmbeddedFile,
+    replaceObjectFile,
+    reparentObject,
+    deleteObject,
+    insertSheetAxis,
+    deleteSheetAxis,
+    moveSheetAxis,
+    setHomeObject,
+    setActiveTheme,
+    saveTheme,
+    updateTheme,
+    deleteTheme,
+    updateSettings,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
+  } = workspaceState;
+  const workspaceObjectsHandleRef = useRef({ current: workspace.objects });
+  const objectHandlesRef = useRef(new Map());
+  workspaceObjectsHandleRef.current.current = workspace.objects;
+  const workspaceRootId = workspace.homeObjectId;
+  const inOut = useInOut({ workspace, workspaceRootId, workspaceHydrated: hydrated });
+  const logicalLayers = inOut.logicalLayers;
+  const themeSources = useMemo(() => themePreference?.theme
+    ? { ...workspace.themes, [themePreference.themeId]: themePreference.theme }
+    : workspace.themes, [themePreference, workspace.themes]);
+  const activeTheme = useMemo(
+    () => resolveTheme(themePreference?.themeId || workspace.activeThemeId, themeSources),
+    [themePreference?.themeId, themeSources, workspace.activeThemeId],
+  );
+  const rememberTheme = useCallback((theme) => {
+    const saved = saveThemePreference(theme);
+    if (saved) setThemePreference(saved);
+    if (saved && nativeRuntime) void saveNativeThemePreference(saved).catch(() => undefined);
+  }, [nativeRuntime]);
+  const selectTheme = useCallback((themeId) => {
+    const selected = resolveTheme(themeId, themeSources);
+    rememberTheme(selected);
+    if (nativeRuntime) setActiveTheme(selected.id);
+  }, [nativeRuntime, rememberTheme, setActiveTheme, themeSources]);
+  const saveGlobalTheme = useCallback((theme) => {
+    saveTheme(theme);
+    rememberTheme(resolveTheme(theme.id, { ...workspace.themes, [theme.id]: theme }));
+  }, [rememberTheme, saveTheme, workspace.themes]);
+  const updateGlobalTheme = useCallback((themeId, patch) => {
+    updateTheme(themeId, patch);
+    if (themePreference?.themeId !== themeId) return;
+    const current = themePreference.theme || workspace.themes[themeId];
+    if (!current) return;
+    rememberTheme(resolveTheme(themeId, {
+      [themeId]: {
+        ...current,
+        ...patch,
+        tokens: patch.tokens ? { ...current.tokens, ...patch.tokens } : current.tokens,
+      },
+    }));
+  }, [rememberTheme, themePreference, updateTheme, workspace.themes]);
+  const deleteGlobalTheme = useCallback((themeId) => {
+    deleteTheme(themeId);
+    if (themePreference?.themeId === themeId) rememberTheme(resolveTheme("paper-public"));
+  }, [deleteTheme, rememberTheme, themePreference?.themeId]);
+
+  useEffect(() => {
+    if (!hydrated || themePreference) return;
+    rememberTheme(resolveTheme(workspace.activeThemeId, workspace.themes));
+  }, [hydrated, rememberTheme, themePreference, workspace.activeThemeId, workspace.themes]);
+
+  useEffect(() => {
+    const handleStorage = (event) => {
+      if (event.storageArea !== window.localStorage || event.key !== THEME_PREFERENCE_KEY) return;
+      setThemePreference(loadThemePreference());
+    };
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
+  }, []);
+  const nativeSnapshotRef = useRef({ version: 0, pending: null, writing: false });
+  const nativeFlushTimerRef = useRef(null);
+  const [nativeGuideOpen, setNativeGuideOpen] = useState(false);
+  const nativeGuideShownRef = useRef(false);
+  const shell = useShellState({
+    schedule: inOut.schedule,
+    settings: workspace.settings,
+    onUpdateSettings: updateSettings,
+    workspaceHydrated: hydrated,
+  });
+  const [viewport, setViewport] = useState(() => ({
+    width: window.innerWidth,
+    height: window.innerHeight,
+  }));
+  const pasteProxyRef = useRef(null);
+  const pasteRequestRef = useRef(null);
+  const pasteRequestTimeoutRef = useRef(null);
+  useEffect(() => {
+    const handleResize = () => setViewport({ width: window.innerWidth, height: window.innerHeight });
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+  const filesIndexRef = useRef(null);
+  const resetSelectionRef = useRef(null);
+  const filesIndex = useMemo(() => {
+    const next = measureStage("files-index", () => buildFilesIndex(workspace, filesIndexRef.current));
+    filesIndexRef.current = next;
+    return next;
+  }, [workspace]);
+  const commands = useWorkspaceCommands({
+    workspace,
+    replaceWorkspace,
+    updateObject,
+    updateCell,
+    createEmbeddedObject,
+    createEmbeddedLink,
+    createEmbeddedFile,
+    replaceObjectFile,
+    setHomeObject,
+    setActiveTheme: selectTheme,
+    saveTheme: saveGlobalTheme,
+    updateTheme: updateGlobalTheme,
+    deleteTheme: deleteGlobalTheme,
+    updateSettings,
+    openObject: inOut.openObject,
+    schedule: inOut.schedule,
+    showNotice: shell.showNotice,
+    setExportState: shell.setExportState,
+    onWorkspaceExported: markWorkspaceExported,
+    importInputRef: shell.importInputRef,
+    resetSelection: () => resetSelectionRef.current?.(),
+  });
+  const selection = useSelectionCommands({
+    workspace,
+    layers: logicalLayers,
+    openObject: inOut.openObject,
+    openLinkCell: commands.openLinkCell,
+    showNotice: shell.showNotice,
+    updateCells,
+    clearCells,
+    createEmbeddedFile,
+    undo,
+    redo,
+  });
+  resetSelectionRef.current = selection.resetSelection;
+
+  useEffect(() => {
+    if (!closeExportRequested || nativeRuntime) return;
+    shell.openSettings(null, "files");
+    clearCloseExportRequest();
+  }, [clearCloseExportRequest, closeExportRequested, nativeRuntime, shell]);
+
+  // Keep the document-level keyboard and clipboard bridge mounted once. The
+  // active shell/selection callbacks change as workspace state changes, but
+  // replacing global listeners for every edit creates measurable listener
+  // churn during large imports and nested navigation.
+  const globalEventStateRef = useRef(null);
+  globalEventStateRef.current = { inOut, selection, shell };
+
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      const currentState = globalEventStateRef.current;
+      if (!currentState) return;
+      const { inOut: currentInOut, selection: currentSelection, shell: currentShell } = currentState;
+      const command = event.ctrlKey || event.metaKey;
+      const nativeSelection = typeof window !== "undefined" ? window.getSelection() : null;
+      const selectionInMarkdownPreview = Boolean(
+        nativeSelection
+        && !nativeSelection.isCollapsed
+        && nativeSelection.anchorNode?.parentElement?.closest?.(".markdown-preview"),
+      );
+      const inMarkdownPreview = Boolean(event.target?.closest?.(".markdown-preview")) || selectionInMarkdownPreview;
+      if (command && event.key.toLowerCase() === "p") {
+        event.preventDefault();
+        if (currentShell.filesOpen) currentShell.closeFiles();
+        else currentShell.openFiles(event.target);
+        return;
+      }
+      // Let focused controls keep their native keyboard activation. Global
+      // sheet navigation should never consume Enter/Space from a toolbar or
+      // menu button before the browser dispatches its click.
+      if (!command && event.target?.closest?.("button, [role=\"button\"]")) return;
+      const historyShortcut = command && (event.key.toLowerCase() === "z" || event.key.toLowerCase() === "y");
+      const typingTarget = event.target?.closest?.("input, textarea, [contenteditable=\"true\"]");
+      const isPasteProxy = event.target?.dataset?.tactilePasteProxy === "true";
+      const nativeTypingTarget = typingTarget && !isPasteProxy;
+      // The paint-DOM query below scans every mounted cell. While the user is
+      // typing in an input/textarea, only Ctrl/Meta shortcuts need it (grid
+      // navigation via handleKeyboard bails on typing surfaces), so skip the
+      // query entirely for plain printable keys.
+      const activeGridCell = (command || !nativeTypingTarget)
+        ? [...document.querySelectorAll('.sheet-grid-shell .sheet-cell[aria-selected="true"]')]
+          .reverse()
+          .find((cell) => cell.getClientRects().length > 0)
+          || document.querySelector('.sheet-grid-shell .sheet-cell[aria-selected="true"]')
+        : null;
+      const gridSurface = event.target?.closest?.(".sheet-grid-shell") || activeGridCell;
+      const inFilesPanel = Boolean(event.target?.closest?.(".files-panel"));
+      const gridShortcutsAvailable = Boolean(currentShell.filesPinned && gridSurface && !inFilesPanel);
+      const formulaEditorTarget = event.target?.closest?.(".formula-editor");
+      if (currentShell.filesOpen && !gridShortcutsAvailable && !(historyShortcut && !typingTarget)) return;
+      if (command && event.key === "]" && activeGridCell && !inFilesPanel && (!nativeTypingTarget || formulaEditorTarget) && !currentShell.settingsOpen) {
+        event.preventDefault();
+        const box = activeGridCell.getBoundingClientRect();
+        activeGridCell.dispatchEvent(new MouseEvent("contextmenu", {
+          bubbles: true,
+          cancelable: true,
+          view: window,
+          clientX: box.left + Math.min(box.width, 28),
+          clientY: box.bottom,
+        }));
+        return;
+      }
+      if ((event.key === "Control" || event.key === "Meta") && gridSurface && !nativeTypingTarget && !inMarkdownPreview && (!currentShell.filesOpen || gridShortcutsAvailable) && !currentShell.settingsOpen) {
+        pasteProxyRef.current?.focus({ preventScroll: true });
+        return;
+      }
+      if (command && event.key.toLowerCase() === "v" && gridSurface && !nativeTypingTarget && (!currentShell.filesOpen || gridShortcutsAvailable) && !currentShell.settingsOpen) {
+        const request = { handled: false };
+        pasteRequestRef.current = request;
+        if (pasteRequestTimeoutRef.current != null) window.clearTimeout(pasteRequestTimeoutRef.current);
+        pasteRequestTimeoutRef.current = window.setTimeout(() => {
+          if (pasteRequestRef.current === request) pasteRequestRef.current = null;
+        }, 1500);
+        pasteProxyRef.current?.focus({ preventScroll: true });
+        // Native ClipboardEvent data is preferred, but some preview/webview
+        // hosts do not dispatch that event for a focused grid cell. Start an
+        // async clipboard read from this user gesture as a coordinated fallback.
+        void currentSelection.clipboardSelectedCell("paste", request);
+        return;
+      }
+      // The markdown preview is read-only and not a sheet: let the browser keep
+      // ownership of copy/select-all and its text selection. Never route these
+      // keys through the sheet command surface or the paste proxy, which would
+      // drop the preview's highlight.
+      if (inMarkdownPreview) return;
+      currentSelection.handleKeyboard(
+        event,
+        currentShell.settingsOpen,
+        currentShell.closeSettings,
+        currentInOut.closeTopLayer,
+        currentInOut.expandTopLayer,
+      );
+    };
+    const handlePaste = (event) => {
+      const currentState = globalEventStateRef.current;
+      if (!currentState) return;
+      const { selection: currentSelection, shell: currentShell } = currentState;
+      const activeGridCell = document.querySelector('.sheet-grid-shell .sheet-cell[aria-selected="true"]');
+      const inFilesPanel = Boolean(event.target?.closest?.(".files-panel"));
+      const gridPasteAvailable = Boolean(currentShell.filesPinned && activeGridCell && !inFilesPanel);
+      if (currentShell.settingsOpen || (currentShell.filesOpen && !gridPasteAvailable)) return;
+      const proxy = event.target?.dataset?.tactilePasteProxy === "true" ? event.target : null;
+      const request = pasteRequestRef.current;
+      Promise.resolve(currentSelection.handlePaste(event, request)).finally(() => {
+        if (proxy) proxy.value = "";
+        if (request?.handled && pasteRequestRef.current === request) pasteRequestRef.current = null;
+      });
+    };
+    const handleKeyUp = (event) => {
+      if (event.key !== "Control" && event.key !== "Meta") return;
+      if (document.activeElement?.dataset?.tactilePasteProxy !== "true") return;
+      if (pasteRequestRef.current) return;
+      document.querySelector('.sheet-grid-shell .sheet-cell[aria-selected="true"]')?.focus({ preventScroll: true });
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    window.addEventListener("paste", handlePaste);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+      window.removeEventListener("paste", handlePaste);
+      if (pasteRequestTimeoutRef.current != null) window.clearTimeout(pasteRequestTimeoutRef.current);
+    };
+  }, []);
+
+  const objectPaths = useMemo(() => logicalLayers.map((_, index) => {
+    const rootLayer = logicalLayers[0];
+    // Keep the actual navigation root in the dock path even when it is the
+    // workspace's ordinary Home object. The dock intentionally removes the
+    // workspace shell entry, so omitting this layer made Home disappear from
+    // routes such as Home / Text C18.
+    const includeRoot = Boolean(rootLayer?.objectId);
+    const rootObjectId = rootLayer?.objectId || workspaceRootId;
+    const routeForIndex = (targetIndex) => ({
+      rootObjectId,
+      segments: logicalLayers.slice(1, targetIndex + 1).map((layer) => ({
+        ...layerHistoryEntry(layer),
+        mode: "full",
+      })),
+    });
+    return [
+      { id: workspace.id, title: workspace.name, route: routeForIndex(-1) },
+      ...(includeRoot ? [{
+        id: rootLayer.objectId,
+        title: workspace.objects[rootLayer.objectId]?.title || "Untitled",
+        route: routeForIndex(0),
+      }] : []),
+      ...logicalLayers.slice(1, index + 1).map((layer) => ({
+      id: layer.objectId,
+      title: workspace.objects[layer.objectId]?.title || "Untitled",
+      route: routeForIndex(logicalLayers.indexOf(layer)),
+      })),
+    ];
+  }), [logicalLayers, workspace, workspaceRootId]);
+
+  const currentObject = workspace.objects[logicalLayers[logicalLayers.length - 1]?.objectId || workspaceRootId];
+  const currentObjectTitle = currentObject?.title || workspace.name || "Home";
+  const activeObjectId = currentObject?.id || workspaceRootId;
+  const fullDockPath = objectPaths.at(-1) || [{ id: workspace.id, title: workspace.name }];
+  // The root sheet is already named in the header; keep the root dock quiet,
+  // while nested navigation still exposes Home as the first breadcrumb.
+  const activeDockPath = logicalLayers.length === 1 && logicalLayers[0]?.objectId === workspaceRootId
+    ? fullDockPath.slice(0, 1)
+    : fullDockPath;
+
+  const handleReparentObject = (payload, target) => {
+    const result = reparentObject({
+      objectId: payload?.objectId,
+      source: payload,
+      target,
+    });
+    if (!result?.ok) {
+      shell.showNotice(reparentReasonMessage(result?.reason));
+      return false;
+    }
+    const objectTitle = workspace.objects[result.objectId]?.title || "Object";
+    const targetTitle = workspace.objects[result.targetObjectId]?.title || "Tiles";
+    shell.showNotice(`${objectTitle} moved to ${targetTitle} ${result.targetAddress}`);
+    return true;
+  };
+
+  useEffect(() => {
+    document.title = `Tactile — ${currentObjectTitle}`;
+  }, [currentObjectTitle]);
+
+  useLayoutEffect(() => {
+    if (!hydrated) return;
+    document.documentElement.dataset.startupReady = "true";
+    document.querySelector(".startup-loader")?.classList.add("is-ready");
+    window.dispatchEvent(new Event("tactile:startup-ready"));
+  }, [hydrated]);
+
+  useEffect(() => {
+    if (!nativeRuntime || !hydrated || nativeGuideShownRef.current) return;
+    nativeGuideShownRef.current = true;
+    if (!workspace.settings.onboardingComplete) {
+      if (!workspace.settings.onboardingThemeId) {
+        selectTheme("one-dark");
+        updateSettings({ onboardingThemeId: "one-dark" });
+      }
+      setNativeGuideOpen(true);
+    }
+  }, [hydrated, nativeRuntime, selectTheme, updateSettings, workspace.settings]);
+
+  useEffect(() => {
+    if (!nativeRuntime || !hydrated || !nativeInvoke || !workspace.settings.nativeWorkspacePath) return undefined;
+    const packageData = buildPortablePackage(workspace);
+    const files = Object.entries(packageData.files)
+      .filter(([filePath, contents]) => filePath !== "workspace.json" && (typeof contents === "string" || contents?.dataUrl))
+      .map(([filePath, contents]) => ({
+        path: filePath,
+        contents: typeof contents === "string" ? contents : contents.dataUrl,
+        ...(typeof contents === "string" ? {} : { encoding: "data-url" }),
+      }));
+    const pending = nativeSnapshotRef.current;
+    pending.version += 1;
+    pending.pending = {
+      version: pending.version,
+      path: workspace.settings.nativeWorkspacePath,
+      workspaceJson: JSON.stringify(workspace),
+      files,
+    };
+    const flush = async () => {
+      if (pending.writing || !pending.pending) return;
+      pending.writing = true;
+      const next = pending.pending;
+      pending.pending = null;
+      try {
+        // A single native command writes the portable text files first and
+        // replaces workspace.json last, so the selected folder is the commit
+        // point for every edit, formatting change, and keypress update.
+        await nativeInvoke("workspace_write_snapshot", next);
+      } catch {
+        // The next workspace change retries the write; the UI remains usable.
+      } finally {
+        pending.writing = false;
+        if (pending.pending) void flush();
+      }
+    };
+    // Debounce the native flush so a burst of edits (e.g. burst typing,
+    // fast formatting) produces a single portable-package rebuild and IPC
+    // snapshot instead of one full rebuild per keypress. The in-flight
+    // single-flight above remains, so writes never stack.
+    if (nativeFlushTimerRef.current != null) window.clearTimeout(nativeFlushTimerRef.current);
+    nativeFlushTimerRef.current = window.setTimeout(() => {
+      void flush();
+    }, 200);
+    return () => {
+      if (nativeFlushTimerRef.current != null) {
+        window.clearTimeout(nativeFlushTimerRef.current);
+        nativeFlushTimerRef.current = null;
+      }
+    };
+  }, [hydrated, nativeInvoke, nativeRuntime, workspace, workspace.settings.nativeWorkspacePath]);
+
+  const finishNativeGuide = async (selectedPath = "") => {
+    const path = selectedPath || workspace.settings.nativeWorkspacePath;
+    if (!path) {
+      updateSettings({
+        onboardingComplete: true,
+        onboardingThemeId: workspace.settings.onboardingThemeId || "one-dark",
+      });
+      setNativeGuideOpen(false);
+      return;
+    }
+    // If the chosen folder already contains a workspace, reuse it — only
+    // create a blank workspace when the folder is truly empty.
+    let nextWorkspace = null;
+    if (nativeInvoke) {
+      try {
+        const result = await nativeInvoke("workspace_read_snapshot", { path });
+        const raw = typeof result === "string" ? result : result?.contents;
+        if (raw) {
+          try {
+            const parsed = normalizeWorkspace(JSON.parse(raw));
+            nextWorkspace = normalizeWorkspace({
+              ...parsed,
+              settings: {
+                ...parsed.settings,
+                nativeWorkspacePath: path,
+                onboardingComplete: true,
+                onboardingThemeId:
+                  parsed.settings.onboardingThemeId ||
+                  workspace.settings.onboardingThemeId ||
+                  "one-dark",
+              },
+            });
+          } catch {
+            shell.showNotice("That folder has an unreadable workspace file");
+            return;
+          }
+        }
+      } catch {
+        // Treat read errors as empty — fall through to blank creation.
+      }
+      // Ensure the directory structure exists without overwriting workspace.json.
+      try {
+        await nativeInvoke("workspace_prepare_directory", { path });
+      } catch {
+        void 0;
+      }
+      saveNativeWorkspacePath(path);
+      try {
+        await nativeInvoke?.("workspace_set_last_path", { path });
+      } catch {
+        // Keep the browser marker as a compatibility fallback while an older
+        // native build is still running during an update.
+      }
+    } else {
+      saveNativeWorkspacePath(path);
+    }
+    if (nextWorkspace) {
+      await replaceWorkspace(nextWorkspace);
+      shell.showNotice("Workspace loaded from selected folder");
+    } else {
+      updateSettings({
+        onboardingComplete: true,
+        onboardingThemeId: workspace.settings.onboardingThemeId || "one-dark",
+        nativeWorkspacePath: path,
+      });
+    }
+    setNativeGuideOpen(false);
+  };
+
+  const chooseNativeFolder = async () => {
+    if (!nativeInvoke) return;
+    const result = await nativeInvoke("workspace_choose_directory", {});
+    const path = typeof result === "string" ? result : result?.path;
+    return path || "";
+  };
+
+  const changeNativeWorkspaceFolder = async () => {
+    if (!nativeInvoke) return;
+    const path = await chooseNativeFolder();
+    if (!path || path === workspace.settings.nativeWorkspacePath) return;
+    try {
+      const result = await nativeInvoke("workspace_read_snapshot", { path });
+      const raw = typeof result === "string" ? result : result?.contents;
+      let nextWorkspace;
+      if (raw) {
+        try {
+          nextWorkspace = normalizeWorkspace(JSON.parse(raw));
+        } catch {
+          shell.showNotice("That folder has an unreadable workspace file");
+          return;
+        }
+      } else {
+        // Changing the home directory switches workspaces. An empty folder
+        // starts clean and must never inherit the current folder's objects.
+        const blank = createBlankWorkspace({ name: "Tactile" });
+        nextWorkspace = normalizeWorkspace({
+          ...blank,
+          activeThemeId: workspace.activeThemeId,
+          themes: workspace.themes,
+          settings: {
+            ...blank.settings,
+            ...workspace.settings,
+            onboardingComplete: true,
+            onboardingThemeId: workspace.settings.onboardingThemeId || "one-dark",
+            nativeWorkspacePath: path,
+          },
+        });
+      }
+      nextWorkspace = normalizeWorkspace({
+        ...nextWorkspace,
+        settings: { ...nextWorkspace.settings, nativeWorkspacePath: path },
+      });
+      await nativeInvoke("workspace_prepare_directory", { path });
+      await nativeInvoke("workspace_set_last_path", { path });
+      saveNativeWorkspacePath(path);
+      await replaceWorkspace(nextWorkspace);
+      shell.showNotice("Home directory changed");
+    } catch (error) {
+      shell.showNotice(error?.message || "That folder could not be selected");
+    }
+  };
+
+  const openNativeWorkspaceFolder = async () => {
+    const path = workspace.settings.nativeWorkspacePath;
+    if (!nativeInvoke || !path) return;
+    try {
+      await nativeInvoke("workspace_open_directory", { path });
+    } catch (error) {
+      shell.showNotice(error?.message || "That folder could not be opened");
+    }
+  };
+
+  const openExternalUrl = async (url) => {
+    if (!isBareUrlValue(url)) return;
+    if (nativeInvoke) {
+      try {
+        await nativeInvoke("workspace_open_url", { url });
+        return;
+      } catch {
+        // Fall back to a browser tab/window when the native opener is absent.
+      }
+    }
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.target = "_blank";
+    anchor.rel = "noopener noreferrer";
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+  };
+
+  const sheetMetrics = useMemo(() => themeSheetMetrics(activeTheme), [activeTheme]);
+  const { visibleLayerStart, visibleLayers } = inOut;
+  const topLayer = logicalLayers.at(-1);
+  const floatingLayerActive = topLayer?.phase === "floating";
+  // The worksheet and ancestor layers become inert under a floating child,
+  // but the global dock remains available for direct breadcrumb navigation.
+  const dockBlocked = false;
+  const parentLayerSuspended = visibleLayers.length > 1;
+  const parentContextVisible = parentLayerSuspended && topLayer?.phase !== "full";
+  const filesSidebarWidth = shell.filesPinned && shell.filesOpen && viewport.width > 620
+    ? Math.min(shell.filesWidth, Math.max(0, viewport.width - 24))
+    : 0;
+
+  const renderObject = (layer, index) => {
+    const object = workspace.objects[layer.objectId];
+    if (!object) return null;
+    let objectHandle = objectHandlesRef.current.get(object.id);
+    if (!objectHandle) {
+      objectHandle = { current: object };
+      objectHandlesRef.current.set(object.id, objectHandle);
+    } else {
+      objectHandle.current = object;
+    }
+    const isTopLayer = index > 0 && index === logicalLayers.length - 1;
+    const isVisibleParentLayer = parentContextVisible && index === logicalLayers.length - 2;
+    const selectedAddress = selection.selectedByObject[object.id] || "A1";
+    const selectionRange = selection.rangeByObject[object.id] || { anchor: selectedAddress, focus: selectedAddress };
+    const multiSelectedAddresses = selection.multiSelectedByObject[object.id] || [];
+    const sharedProps = {
+      objectHandle,
+      spatialPhase: layer.phase,
+      path: objectPaths[index],
+      saveState,
+      selectedAddress,
+      selectionRange,
+      multiSelectedAddresses,
+      workspaceObjectsHandle: workspaceObjectsHandleRef.current,
+      onSelectAddress: (address) => selection.selectAddress(object.id, address),
+      onSelectRange: (anchor, focus, active) => selection.selectRange(object.id, anchor, focus, active),
+      onToggleMultiSelect: (address) => selection.toggleMultiSelect(object.id, address),
+      onToggleAxisSelection: (axis, index) => selection.toggleAxisSelection(object.id, axis, index),
+      onDeleteSelectedText: (event) => selection.deleteSelectedText(object.id, event),
+      onUpdateObject: (patch) => updateObject(object.id, patch),
+      onReparentObject: handleReparentObject,
+      onUpdateCell: (cellId, patch) => updateCell(object.id, cellId, patch),
+      onUpdateCells: (changes, historyKey) => updateCells(object.id, changes, historyKey),
+      onOpenObject: (payload) => {
+        if (payload.linkUrl) {
+          commands.openLinkCell(object.id, payload);
+          return;
+        }
+        inOut.openObject({ ...payload, sourceObjectId: object.id });
+      },
+      onOpenExternal: openExternalUrl,
+      onCreateEmbedded: (cell, type, sourceElement) => commands.createInCell(object.id, cell, type, sourceElement),
+      onCreateFile: (cell, file, sourceElement) => commands.createFileInCell(object.id, cell, file, sourceElement),
+      onReplaceFile: (file) => commands.replaceFileObject(object.id, file),
+      renderTheme: activeTheme.tokens,
+      onClearCell: (cellId) => clearCell(object.id, cellId),
+      onInsertAxis: (axis, indexToInsert) => insertSheetAxis(object.id, axis, indexToInsert),
+      onDeleteAxis: (axis, indexToDelete) => deleteSheetAxis(object.id, axis, indexToDelete),
+      onMoveAxis: (axis, from, to) => moveSheetAxis(object.id, axis, from, to),
+      sheetMetrics,
+      assets: workspace.assets,
+      workspaceActions: {
+        homeObjectId: workspace.homeObjectId,
+        exportState: shell.exportState,
+        onSetHome: (objectId) => {
+          setHomeObject(objectId, inOut.homePathForObject(objectId));
+          shell.showNotice(`${workspace.objects[objectId]?.title || "Object"} is now the start object`);
+        },
+        onExport: commands.exportWorkspace,
+      },
+      onBack: inOut.closeTopLayer,
+      canGoBack: isTopLayer
+        || (isVisibleParentLayer && index > 0)
+        || (index === 0 && Boolean(object.parent?.parentObjectId)),
+      onOpenSettings: shell.openSettings,
+      onUndo: undo,
+      onRedo: redo,
+      canUndo,
+      canRedo,
+    };
+
+    return <ObjectSurface {...sharedProps} />;
+  };
+
+  return (
+    <div
+      className={`tactile-app ${nativeRuntime ? "native-shell" : ""} ${shell.filesPinned && shell.filesOpen ? "files-is-pinned" : ""} ${floatingLayerActive ? "has-floating-layer" : ""} ${shell.settingsOpen ? "settings-open" : ""}`}
+        data-paper-scheme
+      data-files-pinned={shell.filesPinned ? "true" : undefined}
+      data-files-resizing={shell.filesResizing ? "true" : undefined}
+      data-reduce-motion={workspace.settings.reduceMotion ? "true" : "false"}
+      style={{ ...themeStyle(activeTheme), "--files-sidebar-width": `${shell.filesWidth}px` }}
+    >
+      {nativeRuntime ? <TitleBar /> : null}
+      <div
+        className="workspace-shell"
+        data-logical-layer-count={logicalLayers.length}
+        data-rendered-layer-count={visibleLayers.length}
+        inert={shell.settingsOpen || (shell.filesOpen && !shell.filesPinned)}
+        aria-hidden={shell.settingsOpen || (shell.filesOpen && !shell.filesPinned) ? "true" : undefined}
+      >
+        <input
+          ref={shell.importInputRef}
+          className="native-file-input"
+          type="file"
+          accept=".tactile,.zip,.json,application/zip,application/json"
+          onChange={commands.handleImportFile}
+          tabIndex={-1}
+          aria-hidden="true"
+        />
+        <textarea
+          ref={pasteProxyRef}
+          className="native-paste-proxy"
+          data-tactile-paste-proxy="true"
+          aria-hidden="true"
+          tabIndex={-1}
+          defaultValue=""
+          spellCheck="false"
+        />
+        <div
+          className="base-object-layer"
+          inert={parentLayerSuspended}
+          data-under-floating-layer={parentContextVisible ? "true" : undefined}
+        >
+          {renderObject(visibleLayers[0], visibleLayerStart)}
+        </div>
+
+        {visibleLayers.slice(1).map((layer, childIndex) => (
+          <SpatialLayer
+            layer={layer}
+            depth={childIndex + 1}
+            viewportInsetLeft={filesSidebarWidth}
+            liveViewport={viewport}
+            key={childIndex}
+            onExpand={inOut.expandLayer}
+            onClose={inOut.closeTopLayer}
+          >
+            {renderObject(layer, visibleLayerStart + childIndex + 1)}
+          </SpatialLayer>
+        ))}
+      </div>
+
+      <div
+        className="app-bottom-bar"
+        aria-label="Tactile bottom bar"
+        inert={dockBlocked || undefined}
+        data-interaction-blocked={dockBlocked ? "true" : undefined}
+      >
+        <AppDock
+          path={activeDockPath}
+          onNavigatePath={(item) => inOut.navigateToRoute(item.route, { mode: "full" })}
+          filesOpen={shell.filesOpen}
+          onOpenFiles={shell.toggleFiles}
+          onOpenSettings={shell.openSettings}
+          onUndo={undo}
+          onRedo={redo}
+          canUndo={canUndo}
+          canRedo={canRedo}
+        />
+      </div>
+
+      {shell.filesOpen ? (
+        <Suspense fallback={<FilesPanelFallback pinned={shell.filesPinned} />}>
+          <FilesPanel
+            index={filesIndex}
+            activeObjectId={activeObjectId}
+            pinned={shell.filesPinned}
+            width={shell.filesWidth}
+            onOpenRoute={(route) => inOut.navigateToRoute(route, { mode: "full", immediate: true })}
+            onCreateObject={(type) => {
+              const created = createObject(type);
+              if (created) shell.showNotice(`${created.title} created`);
+            }}
+            onUpdateObject={updateObject}
+            onReparentObject={handleReparentObject}
+            onDeleteObject={(objectId) => {
+              const title = workspace.objects[objectId]?.title || "Object";
+              deleteObject(objectId);
+              shell.showNotice(`${title} deleted`);
+            }}
+            onSetHome={(objectId, route) => {
+              setHomeObject(objectId, route?.segments || inOut.homePathForObject(objectId));
+              shell.showNotice(`${workspace.objects[objectId]?.title || "Object"} is now the start object`);
+            }}
+            onNotice={shell.showNotice}
+            onTogglePinned={shell.toggleFilesPinned}
+            onResize={shell.updateFilesWidth}
+            onResizeStateChange={shell.setFilesResizing}
+            onClose={shell.closeFiles}
+          />
+        </Suspense>
+      ) : null}
+
+      {shell.settingsOpen ? (
+        <Suspense fallback={null}>
+          <SettingsPanel
+            initialTab={shell.settingsInitialTab}
+            activeTheme={activeTheme}
+            customThemes={themeSources}
+            settings={workspace.settings}
+            onSelectTheme={selectTheme}
+            onCloneTheme={(theme) => saveGlobalTheme(cloneTheme(theme))}
+            onUpdateTheme={updateGlobalTheme}
+            onDeleteTheme={deleteGlobalTheme}
+            onImportTheme={commands.importTheme}
+            onExportTheme={commands.downloadTheme}
+            onUpdateSettings={updateSettings}
+            onExportWorkspace={commands.exportWorkspace}
+            onImportWorkspace={commands.importWorkspace}
+            onChangeWorkspaceFolder={nativeRuntime ? changeNativeWorkspaceFolder : undefined}
+            onOpenWorkspaceFolder={nativeRuntime ? openNativeWorkspaceFolder : undefined}
+            onGetUpdateChannel={nativeRuntime ? () => import("../platform/tauri/updater.js").then((m) => m.getUpdateChannel()) : undefined}
+            onSetUpdateChannel={nativeRuntime ? (channel) => import("../platform/tauri/updater.js").then((m) => m.setUpdateChannel(channel)) : undefined}
+            onCheckForUpdate={nativeRuntime ? () => import("../platform/tauri/updater.js").then((m) => m.checkForUpdate()) : undefined}
+            onDownloadAndInstallUpdate={nativeRuntime ? () => import("../platform/tauri/updater.js").then((m) => m.downloadAndInstallUpdate()) : undefined}
+            onPrepareRemoval={nativeRuntime ? (mode) => import("../platform/tauri/preferences.ts").then((m) => m.prepareNativeRemoval(mode)) : undefined}
+            onOpenGuide={nativeRuntime ? () => setNativeGuideOpen(true) : undefined}
+            onClose={shell.closeSettings}
+          />
+        </Suspense>
+      ) : null}
+
+      {nativeRuntime && nativeGuideOpen ? (
+        <Suspense fallback={null}>
+          <NativeOnboarding
+            activeThemeId={activeTheme.id}
+            workspacePath={workspace.settings.nativeWorkspacePath}
+            onChooseTheme={(themeId) => {
+              selectTheme(themeId);
+              updateSettings({ onboardingThemeId: themeId });
+            }}
+            onChooseFolder={chooseNativeFolder}
+            onFinish={finishNativeGuide}
+          />
+        </Suspense>
+      ) : null}
+
+      {!nativeRuntime && recoverySessions.length ? (
+        <Suspense fallback={null}>
+          <SessionRecoveryDialog
+            sessions={recoverySessions}
+            onRestore={restoreRecoverySessions}
+            onDiscard={discardRecoverySessions}
+            onDismiss={dismissRecovery}
+          />
+        </Suspense>
+      ) : null}
+
+      {shell.notice ? <div className="app-notice" role="status">{shell.notice}</div> : null}
+      <Suspense fallback={null}>
+        <TooltipLayer />
+      </Suspense>
+    </div>
+  );
+}
