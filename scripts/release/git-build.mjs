@@ -14,7 +14,7 @@ const VERSION_FILES = [
   "src-tauri/Cargo.toml",
   "src-tauri/Cargo.lock",
 ];
-const JSON_VERSION_FILES = ["version.json", "package.json", "package-lock.json", "src-tauri/tauri.conf.json"];
+const PRETTIER_FILE_PATTERN = /\.(?:css|html|js|json|jsx|md|mjs|ts|tsx|ya?ml)$/i;
 
 function fail(message) {
   throw new Error(message);
@@ -130,13 +130,40 @@ function validateRequestedVersion(currentVersion, requestedVersion, channel) {
   return parsed.version;
 }
 
-function validateAndStage(version, tag) {
+function changedFormatFiles(base) {
+  const args = ["diff", "--name-only", "--diff-filter=ACMR"];
+  if (base) args.push(base);
+  args.push("--");
+  return git(args, { capture: true })
+    .split(/\r?\n/)
+    .filter((file) => PRETTIER_FILE_PATTERN.test(file) && !file.startsWith("evidence/"));
+}
+
+function runPrettier(files) {
+  const batchSize = 40;
+  for (let index = 0; index < files.length; index += batchSize) {
+    run("npx", ["prettier", "--write", ...files.slice(index, index + batchSize)]);
+  }
+}
+
+function runQualityChecks({ fix = false, formatBase } = {}) {
+  if (fix) {
+    run("npm", ["run", "lint", "--", "--fix-dry-run"]);
+    run("npm", ["run", "lint", "--", "--fix"]);
+    const formatFiles = changedFormatFiles(formatBase);
+    runPrettier(formatFiles);
+  }
+  run("npm", ["run", "lint"]);
+  run("npm", ["run", "typecheck"]);
+}
+
+function validateAndStage(version, tag, options = {}) {
   run("npm", ["run", "version:sync"]);
-  run("npx", ["prettier", "--write", ...JSON_VERSION_FILES]);
+  runQualityChecks({ fix: true, formatBase: options.formatBase });
   run("npm", ["run", "version:check"]);
   run("node", ["scripts/release/validate-release-version.mjs", "app", tag]);
   windowsBundleVersion(version);
-  git(["add", "--", ...VERSION_FILES]);
+  git(["add", "--update", "--"]);
 }
 
 function printStableNextSteps(version) {
@@ -152,6 +179,7 @@ async function prepare(options) {
   requireBranch("alpha");
   requireCleanWorktree();
   fetchAndRequireCurrent("alpha");
+  if (options.channel === "stable") git(["fetch", "origin", "main"]);
 
   const currentVersion = await readCurrentVersion();
   const tags = git(["tag", "--list", "v*"], { capture: true }).split(/\r?\n/).filter(Boolean);
@@ -179,7 +207,9 @@ async function prepare(options) {
   let committed = false;
   try {
     await writeAuthoritativeVersion(version);
-    validateAndStage(version, tag);
+    validateAndStage(version, tag, {
+      formatBase: options.channel === "stable" ? "origin/main" : undefined,
+    });
     git(["commit", "-m", commitMessage]);
     committed = true;
 
@@ -222,6 +252,7 @@ async function publishStable(options) {
   requireUnusedTag(tag);
   run("npm", ["run", "version:check"]);
   run("node", ["scripts/release/validate-release-version.mjs", "app", tag]);
+  runQualityChecks();
 
   console.log(`Publish stable tag ${tag} from ${git(["rev-parse", "--short", "HEAD"], { capture: true })}.`);
   if (options.dryRun) {

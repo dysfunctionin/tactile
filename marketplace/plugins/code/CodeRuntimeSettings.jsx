@@ -43,10 +43,7 @@ export function CodeRuntimeSettings() {
   const [scanError, setScanError] = useState(null);
   const [scanTools, setScanTools] = useState(() => profile.discovery?.tools || []);
   const invoke = resolveTauriInvoke();
-  const discoveredByTool = useMemo(
-    () => new Map(scanTools.map((tool) => [tool.tool, tool])),
-    [scanTools],
-  );
+  const discoveredByTool = useMemo(() => new Map(scanTools.map((tool) => [tool.tool, tool])), [scanTools]);
 
   const selectedTools = useMemo(() => {
     const tools = [];

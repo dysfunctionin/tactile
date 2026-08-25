@@ -41,9 +41,7 @@ async function versionTargets(version) {
   // distinct apps. The channel is inferred from the SemVer prerelease tag.
   const isPrerelease = String(version).includes("-");
   const expectedProductName = isPrerelease ? "Tactile Alpha" : "Tactile";
-  const expectedIdentifier = isPrerelease
-    ? "com.tactile.workspace.alpha"
-    : "com.tactile.workspace";
+  const expectedIdentifier = isPrerelease ? "com.tactile.workspace.alpha" : "com.tactile.workspace";
   const tauriConfigSynchronized =
     tauriConfig.version === version &&
     tauriConfig.productName === expectedProductName &&

@@ -1,5 +1,6 @@
 import { chmod, copyFile, mkdir, readdir, stat } from "node:fs/promises";
 import path from "node:path";
+
 import { githubAssetName } from "./github-asset-name.mjs";
 
 const PLATFORM_BUNDLES = Object.freeze({
