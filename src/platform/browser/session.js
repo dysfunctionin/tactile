@@ -181,16 +181,11 @@ export function createBrowserSession(options = {}) {
     ? Object.entries(registry).find(([, record]) => record?.state === "claimed" && record.restoreToken === restoreToken)
     : null;
   let sessionId = restored?.[0] || sessionStorage?.getItem(SESSION_ID_KEY) || "";
-  const existing = sessionId ? registry[sessionId] : null;
   const isReload = navigationType(performanceApi) === "reload";
-  const isClaimedByLivePage = existing?.ownerId
-    && existing.ownerId !== ownerId
-    && existing.state === "active"
-    && now - Number(existing.lastSeen || 0) < ACTIVE_LEASE_MS;
 
   let isNew = !sessionId;
   if (restored) isNew = false;
-  if (sessionId && isClaimedByLivePage && !isReload) {
+  if (sessionId && !restored && !isReload) {
     sessionId = "";
     isNew = true;
   }

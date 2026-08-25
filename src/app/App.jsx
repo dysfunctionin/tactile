@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AppDock } from "../ui/components/AppDock.jsx";
 import { SpatialLayer } from "../ui/components/SpatialLayer.jsx";
 import { useLocalWorkspace } from "../ui/hooks/useLocalWorkspace.js";
@@ -14,12 +14,18 @@ import { buildPortablePackage } from "../core/workspace/export.js";
 import { createBlankWorkspace, isBareUrlValue, normalizeWorkspace } from "../core/workspace/model.js";
 import { saveNativeWorkspacePath } from "../platform/browser/storage.js";
 import {
+  THEME_PREFERENCE_KEY,
+  loadThemePreference,
+  saveThemePreference,
+} from "../platform/browser/themePreference.js";
+import {
   cloneTheme,
   resolveTheme,
   themeSheetMetrics,
   themeStyle,
 } from "../core/workspace/themes.js";
 import { isTauriRuntime, resolveTauriInvoke } from "../platform/tauri/runtime.ts";
+import { saveNativeThemePreference } from "../platform/tauri/preferences.ts";
 import { TitleBar } from "../ui/components/TitleBar.jsx";
 
 const FilesPanel = lazy(() => import("../ui/components/FilesPanel.jsx").then(({ FilesPanel: Component }) => ({ default: Component })));
@@ -37,6 +43,9 @@ function FilesPanelFallback({ pinned = false }) {
 }
 
 export function App() {
+  const nativeRuntime = useMemo(() => isTauriRuntime(), []);
+  const nativeInvoke = useMemo(() => resolveTauriInvoke(), []);
+  const [themePreference, setThemePreference] = useState(loadThemePreference);
   const workspaceState = useLocalWorkspace();
   const {
       workspace,
@@ -49,7 +58,6 @@ export function App() {
     dismissRecovery,
     restoreRecoverySessions,
     discardRecoverySessions,
-    exportRecoverySessions,
     replaceWorkspace,
     updateObject,
     updateCell,
@@ -82,8 +90,58 @@ export function App() {
   workspaceObjectsHandleRef.current.current = workspace.objects;
   const workspaceRootId = workspace.homeObjectId;
   const inOut = useInOut({ workspace, workspaceRootId, workspaceHydrated: hydrated });
-  const nativeRuntime = useMemo(() => isTauriRuntime(), []);
-  const nativeInvoke = useMemo(() => resolveTauriInvoke(), []);
+  const themeSources = useMemo(() => themePreference?.theme
+    ? { ...workspace.themes, [themePreference.themeId]: themePreference.theme }
+    : workspace.themes, [themePreference, workspace.themes]);
+  const activeTheme = useMemo(
+    () => resolveTheme(themePreference?.themeId || workspace.activeThemeId, themeSources),
+    [themePreference?.themeId, themeSources, workspace.activeThemeId],
+  );
+  const rememberTheme = useCallback((theme) => {
+    const saved = saveThemePreference(theme);
+    if (saved) setThemePreference(saved);
+    if (saved && nativeRuntime) void saveNativeThemePreference(saved).catch(() => undefined);
+  }, [nativeRuntime]);
+  const selectTheme = useCallback((themeId) => {
+    const selected = resolveTheme(themeId, themeSources);
+    rememberTheme(selected);
+    if (nativeRuntime) setActiveTheme(selected.id);
+  }, [nativeRuntime, rememberTheme, setActiveTheme, themeSources]);
+  const saveGlobalTheme = useCallback((theme) => {
+    saveTheme(theme);
+    rememberTheme(resolveTheme(theme.id, { ...workspace.themes, [theme.id]: theme }));
+  }, [rememberTheme, saveTheme, workspace.themes]);
+  const updateGlobalTheme = useCallback((themeId, patch) => {
+    updateTheme(themeId, patch);
+    if (themePreference?.themeId !== themeId) return;
+    const current = themePreference.theme || workspace.themes[themeId];
+    if (!current) return;
+    rememberTheme(resolveTheme(themeId, {
+      [themeId]: {
+        ...current,
+        ...patch,
+        tokens: patch.tokens ? { ...current.tokens, ...patch.tokens } : current.tokens,
+      },
+    }));
+  }, [rememberTheme, themePreference, updateTheme, workspace.themes]);
+  const deleteGlobalTheme = useCallback((themeId) => {
+    deleteTheme(themeId);
+    if (themePreference?.themeId === themeId) rememberTheme(resolveTheme("paper-public"));
+  }, [deleteTheme, rememberTheme, themePreference?.themeId]);
+
+  useEffect(() => {
+    if (!hydrated || themePreference) return;
+    rememberTheme(resolveTheme(workspace.activeThemeId, workspace.themes));
+  }, [hydrated, rememberTheme, themePreference, workspace.activeThemeId, workspace.themes]);
+
+  useEffect(() => {
+    const handleStorage = (event) => {
+      if (event.storageArea !== window.localStorage || event.key !== THEME_PREFERENCE_KEY) return;
+      setThemePreference(loadThemePreference());
+    };
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
+  }, []);
   const nativeSnapshotRef = useRef({ version: 0, pending: null, writing: false });
   const nativeFlushTimerRef = useRef(null);
   const [nativeGuideOpen, setNativeGuideOpen] = useState(false);
@@ -123,10 +181,10 @@ export function App() {
     createEmbeddedFile,
     replaceObjectFile,
     setHomeObject,
-    setActiveTheme,
-    saveTheme,
-    updateTheme,
-    deleteTheme,
+    setActiveTheme: selectTheme,
+    saveTheme: saveGlobalTheme,
+    updateTheme: updateGlobalTheme,
+    deleteTheme: deleteGlobalTheme,
     updateSettings,
     openObject: inOut.openObject,
     schedule: inOut.schedule,
@@ -352,12 +410,12 @@ export function App() {
     nativeGuideShownRef.current = true;
     if (!workspace.settings.onboardingComplete) {
       if (!workspace.settings.onboardingThemeId) {
-        setActiveTheme("one-dark");
+        selectTheme("one-dark");
         updateSettings({ onboardingThemeId: "one-dark" });
       }
       setNativeGuideOpen(true);
     }
-  }, [hydrated, nativeRuntime, setActiveTheme, updateSettings, workspace.settings]);
+  }, [hydrated, nativeRuntime, selectTheme, updateSettings, workspace.settings]);
 
   useEffect(() => {
     if (!nativeRuntime || !hydrated || !nativeInvoke || !workspace.settings.nativeWorkspacePath) return undefined;
@@ -561,10 +619,6 @@ export function App() {
     anchor.remove();
   };
 
-  const activeTheme = useMemo(
-    () => resolveTheme(workspace.activeThemeId, workspace.themes),
-    [workspace.activeThemeId, workspace.themes],
-  );
   const sheetMetrics = useMemo(() => themeSheetMetrics(activeTheme), [activeTheme]);
   const visibleLayerStart = Math.max(0, inOut.layers.length - MAX_VISIBLE_LAYERS);
   const visibleLayers = inOut.layers.slice(visibleLayerStart);
@@ -767,12 +821,12 @@ export function App() {
           <SettingsPanel
             initialTab={shell.settingsInitialTab}
             activeTheme={activeTheme}
-            customThemes={workspace.themes}
+            customThemes={themeSources}
             settings={workspace.settings}
-            onSelectTheme={setActiveTheme}
-            onCloneTheme={(theme) => saveTheme(cloneTheme(theme))}
-            onUpdateTheme={updateTheme}
-            onDeleteTheme={deleteTheme}
+            onSelectTheme={selectTheme}
+            onCloneTheme={(theme) => saveGlobalTheme(cloneTheme(theme))}
+            onUpdateTheme={updateGlobalTheme}
+            onDeleteTheme={deleteGlobalTheme}
             onImportTheme={commands.importTheme}
             onExportTheme={commands.downloadTheme}
             onUpdateSettings={updateSettings}
@@ -784,6 +838,7 @@ export function App() {
             onSetUpdateChannel={nativeRuntime ? (channel) => import("../platform/tauri/updater.js").then((m) => m.setUpdateChannel(channel)) : undefined}
             onCheckForUpdate={nativeRuntime ? () => import("../platform/tauri/updater.js").then((m) => m.checkForUpdate()) : undefined}
             onDownloadAndInstallUpdate={nativeRuntime ? () => import("../platform/tauri/updater.js").then((m) => m.downloadAndInstallUpdate()) : undefined}
+            onPrepareRemoval={nativeRuntime ? (mode) => import("../platform/tauri/preferences.ts").then((m) => m.prepareNativeRemoval(mode)) : undefined}
             onOpenGuide={nativeRuntime ? () => setNativeGuideOpen(true) : undefined}
             onClose={shell.closeSettings}
           />
@@ -793,10 +848,10 @@ export function App() {
       {nativeRuntime && nativeGuideOpen ? (
         <Suspense fallback={null}>
           <NativeOnboarding
-            activeThemeId={workspace.settings.onboardingThemeId || workspace.activeThemeId}
+            activeThemeId={activeTheme.id}
             workspacePath={workspace.settings.nativeWorkspacePath}
             onChooseTheme={(themeId) => {
-              setActiveTheme(themeId);
+              selectTheme(themeId);
               updateSettings({ onboardingThemeId: themeId });
             }}
             onChooseFolder={chooseNativeFolder}
@@ -810,11 +865,6 @@ export function App() {
           <SessionRecoveryDialog
             sessions={recoverySessions}
             onRestore={restoreRecoverySessions}
-            onExport={async () => {
-              const result = await exportRecoverySessions();
-              if (result.failed) shell.showNotice(`${result.failed} workspace export${result.failed === 1 ? "" : "s"} failed`);
-              else shell.showNotice(`${result.exported} workspace${result.exported === 1 ? "" : "s"} exported`);
-            }}
             onDiscard={discardRecoverySessions}
             onDismiss={dismissRecovery}
           />

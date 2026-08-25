@@ -38,9 +38,9 @@
   },
   "bundle": {
     "active": true,
-    "publisher": "Tactile",
+    "publisher": "Dysfunction",
     "licenseFile": "../LICENSE",
-    "copyright": "Copyright © 2026 Tactile",
+    "copyright": "Copyright © 2026 Dysfunction",
     "createUpdaterArtifacts": true,
     "windows": {
       "digestAlgorithm": "sha256",

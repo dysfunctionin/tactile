@@ -41,8 +41,6 @@ import {
   releaseBrowserSessionClaim,
 } from "../../platform/browser/session.js";
 import { createWave2Shadow } from "../../core/engine/shadow.js";
-import { downloadWorkspaceZip } from "../../core/workspace/export.js";
-import { createBrowserPersistence } from "../../platform/browser/persistence.js";
 import { recordCellChanges } from "../objects/sheet/grid/cellChangeJournal.js";
 import { isTauriRuntime } from "../../platform/tauri/runtime.ts";
 import { getObjectTypeDefinition } from "../objects/registry/index.js";
@@ -59,6 +57,14 @@ function initialWorkspace() {
     });
   }
   return workspace;
+}
+
+function browserRecoveryLabel(workspace) {
+  const workspaceName = String(workspace?.name || "").trim();
+  const homeTitle = String(workspace?.objects?.[workspace?.homeObjectId]?.title || "").trim();
+  if (workspaceName && workspaceName !== "Tactile") return workspaceName;
+  if (homeTitle && homeTitle !== "Home") return homeTitle;
+  return workspaceName || homeTitle || "Untitled workspace";
 }
 
 function touch(workspace, objects, repairTopology = false) {
@@ -94,7 +100,8 @@ export function useLocalWorkspace() {
   const nativeRuntime = isTauriRuntime();
   const browserSessionRef = useRef(null);
   if (!nativeRuntime && !browserSessionRef.current) {
-    const restoreToken = new URLSearchParams(window.location.search).get("restore-session");
+    const params = new URLSearchParams(window.location.search);
+    const restoreToken = params.get("restore-session");
     browserSessionRef.current = browserSessionForPage({ restoreToken });
     if (restoreToken) {
       const url = new URL(window.location.href);
@@ -115,9 +122,9 @@ export function useLocalWorkspace() {
   const workspaceMutationRef = useRef(false);
   const replacementReconcileRef = useRef(null);
 
-  const markBrowserWorkspaceDirty = useCallback((workspaceLabel) => {
+  const markBrowserWorkspaceDirty = useCallback((nextWorkspace) => {
     if (!browserSessionRef.current) return;
-    browserSessionRef.current.markDirty(workspaceLabel);
+    browserSessionRef.current.markDirty(browserRecoveryLabel(nextWorkspace));
     setNeedsExport(true);
   }, []);
 
@@ -200,12 +207,16 @@ export function useLocalWorkspace() {
     };
   }, []);
 
-  const restoreRecoverySessions = useCallback(() => {
-    const sessions = recoverySessions;
-    if (!sessions.length) return;
-    const claims = claimOrphanedBrowserSessions(sessions.map((session) => session.sessionId));
+  const restoreRecoverySessions = useCallback((sessionIds) => {
+    const availableIds = new Set(recoverySessions.map((session) => session.sessionId));
+    const requestedIds = [...new Set(sessionIds || [])].filter((sessionId) => availableIds.has(sessionId));
+    if (!requestedIds.length) return;
+    const discardedIds = recoverySessions
+      .map((session) => session.sessionId)
+      .filter((sessionId) => !requestedIds.includes(sessionId));
+    const claims = claimOrphanedBrowserSessions(requestedIds);
     if (!claims.length) {
-      setRecoverySessions([]);
+      setRecoverySessions((current) => current.filter((session) => !requestedIds.includes(session.sessionId)));
       return;
     }
     const restoreUrl = (token) => {
@@ -213,41 +224,25 @@ export function useLocalWorkspace() {
       url.searchParams.set("restore-session", token);
       return url.href;
     };
-    claims.slice(1).forEach((claim) => {
+    const blockedIds = [];
+    claims.forEach((claim) => {
       const opened = window.open(restoreUrl(claim.restoreToken), "_blank");
-      if (!opened) releaseBrowserSessionClaim(claim.restoreToken);
+      if (!opened) {
+        blockedIds.push(claim.sessionId);
+        releaseBrowserSessionClaim(claim.restoreToken);
+      }
     });
-    window.location.assign(restoreUrl(claims[0].restoreToken));
+    const finishRestore = () => {
+      setRecoverySessions((current) => current.filter((session) => blockedIds.includes(session.sessionId)));
+    };
+    if (discardedIds.length) void deleteBrowserSessions(discardedIds).then(finishRestore);
+    else finishRestore();
   }, [recoverySessions]);
 
   const discardRecoverySessions = useCallback(async () => {
     const ids = recoverySessions.map((session) => session.sessionId);
     setRecoverySessions([]);
     await deleteBrowserSessions(ids);
-  }, [recoverySessions]);
-
-  const exportRecoverySessions = useCallback(async () => {
-    const exportedIds = [];
-    const failedIds = [];
-    for (const recovery of recoverySessions) {
-      const persistence = createBrowserPersistence({
-        databaseName: recovery.databaseName,
-        localStorage: null,
-        autoMigrate: false,
-      });
-      try {
-        const recoveredWorkspace = await persistence.open();
-        await downloadWorkspaceZip(recoveredWorkspace);
-        exportedIds.push(recovery.sessionId);
-      } catch {
-        failedIds.push(recovery.sessionId);
-      } finally {
-        await persistence.close();
-      }
-    }
-    if (exportedIds.length) await deleteBrowserSessions(exportedIds);
-    setRecoverySessions((current) => current.filter((session) => failedIds.includes(session.sessionId)));
-    return { exported: exportedIds.length, failed: failedIds.length };
   }, [recoverySessions]);
 
   useEffect(() => {
@@ -301,7 +296,7 @@ export function useLocalWorkspace() {
     setWorkspace((current) => {
       const next = updater(current);
       if (next === current) return current;
-      markBrowserWorkspaceDirty(next.name);
+      markBrowserWorkspaceDirty(next);
       const history = historyRef.current;
       const now = Date.now();
       const coalesced = history.lastKey === historyKey && now - history.lastAt < 650;
@@ -350,7 +345,7 @@ export function useLocalWorkspace() {
       });
       if (!changed) return current;
 
-      markBrowserWorkspaceDirty(current.name);
+      markBrowserWorkspaceDirty(current);
 
       recordCellChanges(cells, historyChanges.map((change) => change.cellId));
 
@@ -386,7 +381,7 @@ export function useLocalWorkspace() {
     const replacesPersistedSnapshot = shadow?.state?.persistence === "active";
     workspaceMutationRef.current = true;
     historyRef.current = { past: [], future: [], lastKey: null, lastAt: 0 };
-    markBrowserWorkspaceDirty(normalized.name);
+    markBrowserWorkspaceDirty(normalized);
     if (replacesPersistedSnapshot) {
       await shadow.replaceSnapshot(normalized, { normalized: true });
       replacementReconcileRef.current = normalized;
@@ -777,7 +772,7 @@ export function useLocalWorkspace() {
       const history = historyRef.current;
       const previous = history.past.pop();
       if (!previous) return current;
-      markBrowserWorkspaceDirty(current.name);
+      markBrowserWorkspaceDirty(current);
       if (previous.kind === "cells") {
         history.future.push(previous);
         history.lastKey = null;
@@ -799,7 +794,7 @@ export function useLocalWorkspace() {
       const history = historyRef.current;
       const next = history.future.pop();
       if (!next) return current;
-      markBrowserWorkspaceDirty(current.name);
+      markBrowserWorkspaceDirty(current);
       if (next.kind === "cells") {
         history.past.push(next);
         history.lastKey = null;
@@ -828,7 +823,6 @@ export function useLocalWorkspace() {
     dismissRecovery: () => setRecoverySessions([]),
     restoreRecoverySessions,
     discardRecoverySessions,
-    exportRecoverySessions,
     replaceWorkspace,
     updateObject,
     updateCell,

@@ -18,7 +18,7 @@ Dense sheet cells are stored in bounded 32 x 32 spatial chunks rather than one I
 
 Browser sessions publish only lifecycle metadata to a small `localStorage` registry. Heartbeats and a `BroadcastChannel` liveness probe exclude active tabs from recovery. A dirty session registers the browser's generic `beforeunload` confirmation. Confirmed close, unanswered close, crash, or force-close makes the session recoverable after its ownership signal and handoff grace expire. Recovery is discovered only when a new blank tab starts; existing work tabs are never interrupted.
 
-Recovery offers Restore tabs, Export all, Discard, or dismissal to continue blank. Restore claims every orphan atomically, adopts one in the current tab, and opens one tab per remaining session with one-time tokens. Failed popup opens and failed exports remain recoverable. Blank or successfully exported sessions need no warning and may be deleted after close.
+Recovery offers checkbox selection, Restore Selected, Restore All, Discard, or dismissal to continue blank. The recovery tab always remains a blank workspace. Restore Selected claims the selected orphans atomically, opens each in a new tab with a one-time token, and permanently deletes every unselected orphan. Restore All opens every orphan in a new tab. Popup-blocked claims are released and remain visible for retry. Discard permanently deletes every listed orphan. Blank or successfully exported sessions need no warning and may be deleted after close.
 
 Native startup and persistence remain folder-scoped. The configured workspace path is authoritative and may be changed in Settings.
 
@@ -34,6 +34,6 @@ Native startup and persistence remain folder-scoped. The configured workspace pa
 
 ## Validation and rollback
 
-Platform tests cover session identity, reload reuse, copied-session collision, close outcomes, crash expiry, restore claims, popup-block release, chunked snapshot round trips, and patch persistence. Playwright scenarios cover same-tab reload, fresh-tab blank state, concurrent isolation, export prompting, live-tab exclusion, orphan discovery, multi-tab restore, large import, and dense structural edits. Native persistence tests guard the folder-authority path.
+Platform tests cover session identity, reload reuse, copied-session collision, close outcomes, crash expiry, restore claims, popup-block release, chunked snapshot round trips, and patch persistence. Playwright scenarios cover same-tab reload, fresh-tab blank state, concurrent isolation, export prompting, live-tab exclusion, orphan discovery, selected restore and discard semantics, popup-block recovery, multi-tab restore, large import, and dense structural edits. Native persistence tests guard the folder-authority path.
 
 Rollback removes session-specific database selection and recovery UI together; do not restore the full-workspace `localStorage` cache as browser authority.

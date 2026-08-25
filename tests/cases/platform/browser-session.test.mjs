@@ -101,6 +101,36 @@ scenario("a new tab with copied session storage rotates to an isolated workspace
   assert.notEqual(second.databaseName, first.databaseName);
 });
 
+scenario("reopening a closed session without a restore token starts clean", () => {
+  const localStorage = new MemoryStorage();
+  const sessionStorage = new MemoryStorage();
+  const closed = createBrowserSession({
+    localStorage,
+    sessionStorage,
+    performance: performanceWith("navigate"),
+    now: () => 100,
+  });
+  closed.markDirty("Closed workspace");
+  closed.markClosed();
+
+  const reopened = createBrowserSession({
+    localStorage,
+    sessionStorage,
+    performance: performanceWith("navigate"),
+    now: () => 200,
+  });
+
+  assert.equal(reopened.isNew, true);
+  assert.equal(reopened.needsExport, false);
+  assert.notEqual(reopened.sessionId, closed.sessionId);
+  assert.equal(
+    discoverOrphanedBrowserSessions({ localStorage, now: () => Date.now() + 60_000 }).some(
+      (session) => session.sessionId === closed.sessionId,
+    ),
+    true,
+  );
+});
+
 scenario("canceling a close returns the dirty session to active ownership", () => {
   const localStorage = new MemoryStorage();
   const session = createBrowserSession({

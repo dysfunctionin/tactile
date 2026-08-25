@@ -37,6 +37,26 @@ async function reloadDirtySession(page) {
   await page.reload();
 }
 
+async function seedOrphanRecords(page, labels) {
+  await page.evaluate((workspaceLabels) => {
+    const key = "tactile.browser.sessions.v1";
+    const registry = JSON.parse(localStorage.getItem(key) || "{}");
+    workspaceLabels.forEach((workspaceLabel, index) => {
+      const sessionId = `seeded-orphan-${index}`;
+      registry[sessionId] = {
+        ownerId: `closed-owner-${index}`,
+        state: "orphan",
+        needsExport: true,
+        workspaceLabel,
+        databaseName: `tactile-local-workspace-records-${sessionId}`,
+        lastSeen: Date.now() - 10_000,
+        closedAt: Date.now() - 10_000 - index,
+      };
+    });
+    localStorage.setItem(key, JSON.stringify(registry));
+  }, labels);
+}
+
 scenario(
   "an imported workspace survives reload but a new tab starts blank",
   async ({ page, context, artifactPath, spec }) => {
@@ -83,6 +103,120 @@ scenario("canceling browser close protection reveals the workspace export action
   await expect(page.getByRole("button", { name: "Export .zip" })).toBeVisible();
 });
 
+scenario("a fresh blank workspace does not register close protection", async ({ page }) => {
+  await page.goto("/");
+  await expect(workspaceCell(page, "home")).toBeVisible();
+
+  const closeState = await page.evaluate(() => {
+    const event = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(event);
+    const sessionId = sessionStorage.getItem("tactile.browser.session.v1");
+    const registry = JSON.parse(localStorage.getItem("tactile.browser.sessions.v1") || "{}");
+    return {
+      prevented: event.defaultPrevented,
+      needsExport: registry[sessionId]?.needsExport === true,
+    };
+  });
+
+  expect(closeState).toEqual({ prevented: false, needsExport: false });
+});
+
+scenario(
+  "restore selected permanently discards unselected workspaces",
+  { timeoutMs: 30_000 },
+  async ({ page, context, step }) => {
+    await page.goto("/");
+    await seedOrphanRecords(page, ["Page 1", "Page 2", "Page 3"]);
+
+    const recovery = await context.newPage();
+    await step("open recovery page", () => recovery.goto("/"));
+    const dialog = recovery.getByRole("dialog", { name: "Restore closed workspaces?" });
+    await step("show recovery dialog", () => expect(dialog).toBeVisible({ timeout: 5_000 }));
+    await step("select Page 1", () => dialog.getByRole("checkbox", { name: /Page 1/ }).check());
+    await step("enable selected restore", () =>
+      expect(dialog.getByRole("button", { name: "Restore Selected (1)" })).toBeEnabled(),
+    );
+
+    const blankSessionId = await recovery.evaluate(() => sessionStorage.getItem("tactile.browser.session.v1"));
+    const opened = context.waitForEvent("page");
+    await step("restore selected", () => dialog.getByRole("button", { name: "Restore Selected (1)" }).click());
+    const restored = await opened;
+    await expect(recovery.getByRole("dialog", { name: "Restore closed workspaces?" })).toHaveCount(0, {
+      timeout: 5_000,
+    });
+    await expect(workspaceCell(recovery, "home")).toBeVisible();
+    expect(await recovery.evaluate(() => sessionStorage.getItem("tactile.browser.session.v1"))).toBe(blankSessionId);
+    await expect
+      .poll(() => restored.evaluate(() => sessionStorage.getItem("tactile.browser.session.v1")))
+      .toBe("seeded-orphan-0");
+    await expect
+      .poll(() =>
+        recovery.evaluate(() => {
+          const registry = JSON.parse(localStorage.getItem("tactile.browser.sessions.v1") || "{}");
+          return ["seeded-orphan-1", "seeded-orphan-2"].some((sessionId) => sessionId in registry);
+        }),
+      )
+      .toBe(false);
+    await restored.close();
+  },
+);
+
+scenario(
+  "discard permanently removes every recoverable workspace",
+  { timeoutMs: 30_000 },
+  async ({ page, context }) => {
+    await page.goto("/");
+    await seedOrphanRecords(page, ["Page 1", "Page 2", "Page 3"]);
+
+    const recovery = await context.newPage();
+    await recovery.goto("/");
+    const dialog = recovery.getByRole("dialog", { name: "Restore closed workspaces?" });
+    await expect(dialog).toBeVisible({ timeout: 5_000 });
+    const blankSessionId = await recovery.evaluate(() => sessionStorage.getItem("tactile.browser.session.v1"));
+
+    await dialog.getByRole("button", { name: "Discard" }).click();
+
+    await expect(dialog).toHaveCount(0);
+    await expect(workspaceCell(recovery, "home")).toBeVisible();
+    expect(await recovery.evaluate(() => sessionStorage.getItem("tactile.browser.session.v1"))).toBe(blankSessionId);
+    await expect
+      .poll(() =>
+        recovery.evaluate(() => {
+          const registry = JSON.parse(localStorage.getItem("tactile.browser.sessions.v1") || "{}");
+          return ["seeded-orphan-0", "seeded-orphan-1", "seeded-orphan-2"].some((sessionId) => sessionId in registry);
+        }),
+      )
+      .toBe(false);
+  },
+);
+
+scenario("restore all keeps popup-blocked workspaces in the recovery flow", async ({ page, context }) => {
+  await page.goto("/");
+  await seedOrphanRecords(page, ["Page 1", "Page 2", "Page 3", "Page 4"]);
+
+  const recovery = await context.newPage();
+  await recovery.goto("/");
+  const dialog = recovery.getByRole("dialog", { name: "Restore closed workspaces?" });
+  await expect(dialog).toBeVisible({ timeout: 5_000 });
+  await recovery.evaluate(() => {
+    const open = window.open.bind(window);
+    let opened = false;
+    window.open = (...args) => {
+      if (opened) return null;
+      opened = true;
+      return open(...args);
+    };
+  });
+
+  const opened = context.waitForEvent("page");
+  await dialog.getByRole("button", { name: "Restore All" }).click();
+  const restoredTab = await opened;
+  await expect(recovery.getByRole("dialog", { name: "Restore closed workspaces?" })).toBeVisible({ timeout: 5_000 });
+  await expect(recovery.locator(".session-recovery-list li")).toHaveCount(3);
+  await expect(workspaceCell(recovery, "home")).toBeVisible();
+  await restoredTab.close();
+});
+
 scenario("closing one dirty tab never opens recovery in another live tab", async ({ page, context, artifactPath }) => {
   await importThroughSettings(page, artifactPath);
   const second = await context.newPage();
@@ -125,34 +259,36 @@ scenario(
         .map(([sessionId]) => sessionId),
     );
 
-    const opened = context.waitForEvent("page");
-    await step("request restore tabs", () => dialog.getByRole("button", { name: "Restore tabs" }).click());
-    const restoredSecond = await step("wait for restored tab", () => opened);
+    const pagesBeforeRestore = new Set(context.pages());
+    await step("request restore tabs", () => dialog.getByRole("button", { name: "Restore All" }).click());
+    await expect.poll(() => context.pages().filter((candidate) => !pagesBeforeRestore.has(candidate)).length).toBe(2);
+    const [restoredFirst, restoredSecond] = context.pages().filter((candidate) => !pagesBeforeRestore.has(candidate));
     await step("wait for restored workspaces", () =>
-      Promise.all([recovery.waitForLoadState("domcontentloaded"), restoredSecond.waitForLoadState("domcontentloaded")]),
+      Promise.all([
+        restoredFirst.waitForLoadState("domcontentloaded"),
+        restoredSecond.waitForLoadState("domcontentloaded"),
+      ]),
     );
-    await expect
-      .poll(
-        async () =>
-          orphanSessionIds.includes(
-            await recovery.evaluate(() => sessionStorage.getItem("tactile.browser.session.v1")),
-          ),
-        { timeout: 5_000 },
-      )
-      .toBe(true);
+    await expect(workspaceCell(recovery, "home")).toBeVisible();
     await step("show first restored workspace", () =>
-      expect(workspaceCell(recovery, spec.rootSheetId)).toBeVisible({ timeout: 5_000 }),
+      expect(workspaceCell(restoredFirst, spec.rootSheetId)).toBeVisible({ timeout: 5_000 }),
     );
     await step("show second restored workspace", () =>
       expect(workspaceCell(restoredSecond, spec.rootSheetId)).toBeVisible({ timeout: 5_000 }),
     );
 
     const values = await Promise.all([
-      workspaceCell(recovery, spec.rootSheetId).textContent(),
+      workspaceCell(restoredFirst, spec.rootSheetId).textContent(),
       workspaceCell(restoredSecond, spec.rootSheetId).textContent(),
     ]);
     expect(values.join(" ")).toContain("Recovered first");
     expect(values.join(" ")).toContain("Recovered second");
+    const restoredSessionIds = await Promise.all([
+      restoredFirst.evaluate(() => sessionStorage.getItem("tactile.browser.session.v1")),
+      restoredSecond.evaluate(() => sessionStorage.getItem("tactile.browser.session.v1")),
+    ]);
+    expect(restoredSessionIds.every((sessionId) => orphanSessionIds.includes(sessionId))).toBe(true);
+    await restoredFirst.close();
     await restoredSecond.close();
   },
 );
