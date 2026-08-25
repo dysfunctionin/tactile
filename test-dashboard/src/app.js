@@ -392,7 +392,9 @@ function buildNavGroups() {
         const dotStatus = sidebarStatus(entry);
         const dot = h("span", `dot status-${dotStatus}`);
         if (dotStatus === "slower") {
-          const previousPass = entry.runs.slice(1).find((run) => run.status === "pass" && Number.isFinite(run.durationMs));
+          const previousPass = entry.runs
+            .slice(1)
+            .find((run) => run.status === "pass" && Number.isFinite(run.durationMs));
           dot.title = `Passed, but slower than the previous pass (${formatMs(entry.runs[0].durationMs)} vs ${formatMs(previousPass.durationMs)})`;
         }
         link.append(dot);
@@ -577,9 +579,7 @@ function renderOverview(main) {
   for (const [key, entry] of failingEarlier) earlierGrid.append(scenarioCard(entry, key, { expanded: false }));
   failSection.append(earlierGrid);
 
-  const failedInRetainedRuns = state.entries.filter(([, entry]) =>
-    entry.runs.some((run) => run.status !== "pass"),
-  );
+  const failedInRetainedRuns = state.entries.filter(([, entry]) => entry.runs.some((run) => run.status !== "pass"));
   failSection.append(
     h("h3", "sub-heading", `Failed in retained runs (${failedInRetainedRuns.length})`),
     h(
@@ -681,7 +681,7 @@ function renderGraph(main) {
     "Cost comparison",
     `${scoped.length} scenario${scoped.length === 1 ? "" : "s"} in scope. Bars show the most recent duration for each, with the change against its previous run.`,
   );
-  compare.append(compareBars(scoped));
+  compare.append(compareBars(scoped, { showType: !state.graphType }));
   main.append(compare);
 }
 
