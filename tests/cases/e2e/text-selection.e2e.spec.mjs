@@ -108,6 +108,12 @@ async function cellCenter(page, address) {
 scenario("uses active theme selection tokens across controls and document text", async ({ page }) => {
   await page.goto("/");
   await importWorkspace(page);
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  const settings = page.getByRole("dialog", { name: "Settings" });
+  const selectionTheme = settings.locator(".theme-card", { hasText: "Selection test" });
+  await selectionTheme.click();
+  await expect(selectionTheme).toHaveClass(/is-selected/);
+  await settings.getByRole("button", { name: "Close settings" }).click();
 
   await page.locator(".base-object-layer .name-box").first().click();
   const addressInput = page.locator(".base-object-layer .address-popover input");

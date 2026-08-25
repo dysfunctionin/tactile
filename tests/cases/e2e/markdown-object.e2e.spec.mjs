@@ -19,7 +19,7 @@ graph LR
   B --> C[Renderer]
 \`\`\``;
 
-function markdownWorkspace({ activeThemeId } = {}) {
+function markdownWorkspace() {
   const workspace = createBlankWorkspace({ id: "markdown-object-e2e", name: "Markdown object" });
   const root = workspace.objects.home;
   root.title = "Home";
@@ -45,7 +45,6 @@ function markdownWorkspace({ activeThemeId } = {}) {
   });
   workspace.objects = { [root.id]: root, [note.id]: note };
   workspace.settings.reduceMotion = true;
-  if (activeThemeId) workspace.activeThemeId = activeThemeId;
   return workspace;
 }
 
@@ -233,7 +232,13 @@ scenario("renders a Markdown document with visible LaTeX and Mermaid output", as
 
 scenario("renders Mermaid with the active dark Tactile theme", async ({ page }) => {
   await page.goto("/");
-  await importWorkspace(page, markdownWorkspace({ activeThemeId: "one-dark" }));
+  await importWorkspace(page);
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  const settings = page.getByRole("dialog", { name: "Settings" });
+  const tactileNight = settings.locator(".theme-card", { hasText: "Tactile Night" });
+  await tactileNight.click();
+  await expect(tactileNight).toHaveClass(/is-selected/);
+  await settings.getByRole("button", { name: "Close settings" }).click();
 
   const layer = await openMarkdownObject(page);
   const surface = layer.locator(".markdown-object");
