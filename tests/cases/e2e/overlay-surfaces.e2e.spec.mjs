@@ -27,6 +27,7 @@ async function surfaceGeometry(locator) {
 }
 
 async function selectRowColumnCommand(menu, command) {
+  await expect(menu).toBeVisible();
   await menu.getByRole("menuitem", { name: "Rows & columns", exact: true }).click();
   const submenu = menu.locator(".cell-menu-submenu");
   await expect(submenu).toBeVisible();
@@ -164,8 +165,11 @@ scenario("row and column insertion visibly shifts sheet cells", async ({ page })
 
   const cellA1 = page.locator('[role="gridcell"][data-cell-address="A1"]');
   await cellA1.dblclick();
-  await cellA1.locator(".cell-inline-editor").fill("anchor");
+  const editor = cellA1.locator(".cell-inline-editor");
+  await editor.fill("anchor");
   await page.keyboard.press("Enter");
+  await expect(editor).toHaveCount(0);
+  await expect(cellA1).toContainText("anchor");
 
   await cellA1.click({ button: "right" });
   let menu = page.getByRole("menu", { name: "Commands for A1" });
