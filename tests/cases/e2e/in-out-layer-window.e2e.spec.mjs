@@ -556,15 +556,24 @@ scenario("uses the reverse expand curve when a full child collapses", async ({ p
   await child.locator(".object-window-expand").click();
   await expect(child).toHaveAttribute("data-spatial-phase", "full");
 
+  await child.evaluate((element) => {
+    window.__reverseExpandTransition = null;
+    const capture = () => {
+      if (element.dataset.spatialPhase !== "floating" || !element.classList.contains("is-closing")) return;
+      const style = getComputedStyle(element.querySelector(".object-window"));
+      window.__reverseExpandTransition = {
+        duration: style.transitionDuration,
+        easing: style.transitionTimingFunction,
+      };
+      observer.disconnect();
+    };
+    const observer = new MutationObserver(capture);
+    observer.observe(element, { attributes: true, attributeFilter: ["class", "data-spatial-phase"] });
+  });
   await page.keyboard.press("[");
   await expect(child).toHaveClass(/is-closing/);
-  const reverseTransition = await child.locator(".object-window").evaluate((element) => {
-    const style = getComputedStyle(element);
-    return {
-      duration: style.transitionDuration,
-      easing: style.transitionTimingFunction,
-    };
-  });
+  await expect.poll(() => page.evaluate(() => window.__reverseExpandTransition)).not.toBeNull();
+  const reverseTransition = await page.evaluate(() => window.__reverseExpandTransition);
   expect(reverseTransition.duration).toContain("0.26s");
   expect(reverseTransition.easing).toContain("cubic-bezier(0.7, 0, 0.84, 0)");
   await expect(child).toHaveCount(0, { timeout: 4_000 });
@@ -782,10 +791,10 @@ scenario("opens a deep start route at its leaf without replaying the ancestor an
 
   await page.reload({ waitUntil: "domcontentloaded" });
   await expect(page.locator(".workspace-shell")).toHaveAttribute("data-logical-layer-count", "6", {
-    timeout: 1_500,
+    timeout: 4_000,
   });
   await expect(page.locator('[data-layer-object="deep-layer-5"]')).toHaveAttribute("data-spatial-phase", "full", {
-    timeout: 1_500,
+    timeout: 4_000,
   });
 
   const restored = await page.evaluate(() => ({

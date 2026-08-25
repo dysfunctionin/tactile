@@ -26,6 +26,7 @@ The shell owns workspace identity, navigation, start-object metadata, commands, 
 - Browser workspace authority is tab-scoped and ephemeral; reload restores that tab, while a new tab starts blank. See ADR 0002.
 - Browser startup renders a blank seed only until its tab database hydrates. Hydration must preserve saved navigation history, while an interactive workspace replacement resets it.
 - Browser IndexedDB stores dense sheet cells in bounded spatial chunks. Portable JSON remains cell-oriented, and small edits still persist through forward patches.
+- Lazy object renderers keep a stable React component identity after resolution or preload so ordinary parent renders do not remount active object interactions.
 - Native workspace authority remains the user-selected folder and may be changed in Settings.
 - Portable files are the user recovery authority. Native SQLite/WAL is an optimization, not the only copy.
 - Unknown fields and future/plugin state round-trip without coercion.
@@ -35,7 +36,7 @@ The shell owns workspace identity, navigation, start-object metadata, commands, 
 - Composition: `src/app/`, `src/ui/hooks/`, `src/ui/shell/`
 - Domain/topology: `src/core/`, `src/core/workspace/model.js`
 - Registry/objects: `src/ui/objects/registry/`, `src/ui/objects/`
-- Browser persistence: `src/platform/browser/`, `src/platform/browser/storage.js`
+- Browser persistence and ownership: `src/platform/browser/persistence.js`, `src/platform/browser/session.js`
 - Native contracts/cache: `src/platform/tauri/`, `src-tauri/src/`
 - Portable import/export: `src/core/workspace/export.js`, `src/core/compat/`, `src-tauri/src/portable/`
 

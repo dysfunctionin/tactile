@@ -7,7 +7,6 @@ import {
   subscribeObjectTypeDefinitions,
 } from "./index.js";
 
-const loadedRenderers = new Map();
 const lazyRenderers = new Map();
 
 function lazyObjectRenderer(type, version = objectTypeRegistryVersion()) {
@@ -15,7 +14,6 @@ function lazyObjectRenderer(type, version = objectTypeRegistryVersion()) {
   if (lazyRenderers.has(key)) return lazyRenderers.get(key);
   const Renderer = lazy(async () => {
     const Renderer = await loadObjectRenderer(type);
-    loadedRenderers.set(key, Renderer);
     return { default: Renderer };
   });
   lazyRenderers.set(key, Renderer);
@@ -41,11 +39,6 @@ export function ObjectRenderer({ objectHandle, workspaceObjectsHandle, ...props 
     objectTypeRegistryVersion,
   );
   const definition = getObjectTypeDefinition(object.type);
-  const key = `${definition.type}:${version}`;
-  const LoadedRenderer = loadedRenderers.get(key);
-  if (LoadedRenderer) return definition.type === "sheet"
-    ? <LoadedRenderer objectHandle={objectHandle} workspaceObjectsHandle={workspaceObjectsHandle} {...props} />
-    : <LoadedRenderer object={object} workspaceObjects={workspaceObjectsHandle.current} {...props} />;
   const Renderer = version === 0
     ? OBJECT_RENDERERS[definition.type] || lazyObjectRenderer(definition.type, version)
     : lazyObjectRenderer(definition.type, version);
@@ -59,12 +52,5 @@ export function ObjectRenderer({ objectHandle, workspaceObjectsHandle, ...props 
 }
 
 export function preloadObjectRenderer(type) {
-  const definition = getObjectTypeDefinition(type);
-  const key = `${definition.type}:${objectTypeRegistryVersion()}`;
-  return loadObjectRenderer(type)
-    .then((Renderer) => {
-      loadedRenderers.set(key, Renderer);
-      return Renderer;
-    })
-    .catch(() => null);
+  return loadObjectRenderer(type).catch(() => null);
 }
