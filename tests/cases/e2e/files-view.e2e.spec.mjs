@@ -185,18 +185,12 @@ scenario("files opens deep routes directly without replaying every ancestor tran
   await expect(page.locator(".workspace-shell")).toHaveAttribute("data-rendered-layer-count", "2");
   await expect(page.locator('[data-spatial-phase="origin"], [data-spatial-phase="floating"]')).toHaveCount(0);
   await expect(page.locator(".spatial-layer")).toHaveAttribute("data-spatial-phase", "full");
+  await expect(page.locator(".app-dock-path")).not.toHaveClass(/is-transitioning/);
   expect(
     await page.evaluate(() => {
       const state = window.history.state;
       return {
-        root: state?.tactileRootObjectId,
-        stack: state?.tactileStack?.map(({ objectId, linkId, sourceObjectId, sourceAddress, mode }) => ({
-          objectId,
-          linkId,
-          sourceObjectId,
-          sourceAddress,
-          mode,
-        })),
+        routeIntent: state?.tactileRoute,
         dockPath: [...document.querySelectorAll(".app-dock-path .app-dock-path-button")].map(
           (button) => button.dataset.pathObjectId,
         ),
@@ -204,14 +198,14 @@ scenario("files opens deep routes directly without replaying every ancestor tran
       };
     }),
   ).toEqual({
-    root: "home",
-    stack: [
-      { objectId: "deep-1", linkId: "home-deep-1", sourceObjectId: "home", sourceAddress: "A1", mode: "full" },
-      { objectId: "deep-2", linkId: "deep-1-deep-2", sourceObjectId: "deep-1", sourceAddress: "A1", mode: "full" },
-      { objectId: "deep-3", linkId: "deep-2-deep-3", sourceObjectId: "deep-2", sourceAddress: "A1", mode: "full" },
-      { objectId: "deep-4", linkId: "deep-3-deep-4", sourceObjectId: "deep-3", sourceAddress: "A1", mode: "full" },
-      { objectId: "deep-5", linkId: "deep-4-deep-5", sourceObjectId: "deep-4", sourceAddress: "A1", mode: "full" },
-    ],
+    routeIntent: {
+      format: "tactile-route",
+      version: 1,
+      workspaceId: "files-deep-route-e2e",
+      rootObjectId: "home",
+      linkIds: ["home-deep-1", "deep-1-deep-2", "deep-2-deep-3", "deep-3-deep-4", "deep-4-deep-5"],
+      mode: "full",
+    },
     dockPath: ["home", "deep-1", "ellipsis", "deep-4", "deep-5"],
     route: "home-deep-1,deep-1-deep-2,deep-2-deep-3,deep-3-deep-4,deep-4-deep-5",
   });
@@ -225,17 +219,12 @@ scenario("files opens deep routes directly without replaying every ancestor tran
   await expect(page.locator(".workspace-shell")).toHaveAttribute("data-logical-layer-count", "3");
   await expect(page.locator('[data-spatial-phase="origin"], [data-spatial-phase="floating"]')).toHaveCount(0);
   await expect(page.locator(".spatial-layer")).toHaveAttribute("data-spatial-phase", "full");
+  await expect(page.locator(".app-dock-path")).not.toHaveClass(/is-transitioning/);
   expect(
     await page.evaluate(() => {
       const state = window.history.state;
       return {
-        stack: state?.tactileStack?.map(({ objectId, linkId, sourceObjectId, sourceAddress, mode }) => ({
-          objectId,
-          linkId,
-          sourceObjectId,
-          sourceAddress,
-          mode,
-        })),
+        routeIntent: state?.tactileRoute,
         dockPath: [...document.querySelectorAll(".app-dock-path .app-dock-path-button")].map(
           (button) => button.dataset.pathObjectId,
         ),
@@ -243,10 +232,14 @@ scenario("files opens deep routes directly without replaying every ancestor tran
       };
     }),
   ).toEqual({
-    stack: [
-      { objectId: "deep-1", linkId: "home-deep-1", sourceObjectId: "home", sourceAddress: "A1", mode: "full" },
-      { objectId: "deep-2", linkId: "deep-1-deep-2", sourceObjectId: "deep-1", sourceAddress: "A1", mode: "full" },
-    ],
+    routeIntent: {
+      format: "tactile-route",
+      version: 1,
+      workspaceId: "files-deep-route-e2e",
+      rootObjectId: "home",
+      linkIds: ["home-deep-1", "deep-1-deep-2"],
+      mode: "full",
+    },
     dockPath: ["home", "deep-1", "deep-2"],
     route: "home-deep-1,deep-1-deep-2",
   });
@@ -257,7 +250,7 @@ scenario("files opens deep routes directly without replaying every ancestor tran
   const interactiveChild = page.locator('[data-layer-object="deep-3"]');
   await expect(interactiveChild).toHaveAttribute("data-spatial-phase", "floating", { timeout: 4_000 });
   await expect(interactiveChild.locator(".object-header-parent")).toHaveCount(1);
-  expect(await page.evaluate(() => window.history.state?.tactileStack?.at(-1)?.mode)).toBe("floating");
+  expect(await page.evaluate(() => window.history.state?.tactileRoute?.mode)).toBe("floating");
 });
 
 scenario("files closes with Escape without changing the active object", async ({ page }) => {
@@ -505,21 +498,20 @@ scenario("files context-menu Rename validates names and preserves live object li
   await expect(page).toHaveURL(/route=home-child/);
   expect(
     await page.evaluate(() => {
-      const segment = window.history.state?.tactileStack?.at(-1);
+      const route = window.history.state?.tactileRoute;
       return {
-        objectId: segment?.objectId,
-        linkId: segment?.linkId,
-        sourceObjectId: segment?.sourceObjectId,
-        sourceAddress: segment?.sourceAddress,
+        workspaceId: route?.workspaceId,
+        rootObjectId: route?.rootObjectId,
+        linkId: route?.linkIds?.at(-1),
       };
     }),
-  ).toEqual({ objectId: "child", linkId: "home-child", sourceObjectId: "home", sourceAddress: "A1" });
+  ).toEqual({ workspaceId: "files-view-e2e", rootObjectId: "home", linkId: "home-child" });
 });
 
 scenario("files context commands use active Paper tokens for enabled text and icons", async ({ page }) => {
   await page.goto("/");
   const workspace = filesWorkspace();
-  workspace.activeThemeId = "contrast-paper";
+  workspace.activeThemeId = "paper-public";
   workspace.themes = {
     "contrast-paper": {
       id: "contrast-paper",
@@ -539,6 +531,12 @@ scenario("files context commands use active Paper tokens for enabled text and ic
     },
   };
   await importWorkspace(page, workspace);
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  const settings = page.getByRole("dialog", { name: "Settings" });
+  const contrastPaper = settings.locator(".theme-card", { hasText: "Contrast Paper" });
+  await contrastPaper.click();
+  await expect(contrastPaper).toHaveClass(/is-selected/);
+  await settings.getByRole("button", { name: "Close settings" }).click();
   await page.getByRole("button", { name: "Browse files", exact: true }).click();
 
   await page.locator('.files-tree-row[data-object-id="child"]').click({ button: "right" });
@@ -560,6 +558,7 @@ scenario("files context commands use active Paper tokens for enabled text and ic
       ink: resolveToken("--ink"),
     };
   });
+  expect(colors.ink).toBe("rgb(244, 247, 250)");
   expect(colors.text).toBe(colors.ink);
   expect(colors.icon).toBe(colors.ink);
 });

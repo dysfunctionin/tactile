@@ -7,7 +7,9 @@ use tauri::http::{header::CONTENT_SECURITY_POLICY, Response as HttpResponse, Sta
 use tauri::{AppHandle, Manager};
 
 pub mod assets;
+mod cleanup;
 pub mod portable;
+mod preferences;
 pub mod storage;
 mod updater;
 
@@ -177,6 +179,45 @@ fn workspace_set_last_path(app: AppHandle, path: String) -> Result<(), String> {
     }
     let marker = last_workspace_path_file(&app)?;
     atomic_write(&marker, path.as_bytes())
+}
+
+#[tauri::command]
+fn preferences_load(app: AppHandle) -> Result<Option<preferences::AppPreferences>, String> {
+    let directory = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| error.to_string())?;
+    preferences::load(&directory)
+}
+
+#[tauri::command]
+fn preferences_save_theme(
+    app: AppHandle,
+    preference: preferences::ThemePreference,
+) -> Result<preferences::AppPreferences, String> {
+    let directory = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| error.to_string())?;
+    preferences::save_theme(&directory, preference)
+}
+
+#[tauri::command]
+fn app_prepare_removal(app: AppHandle, mode: cleanup::RemovalMode) -> Result<(), String> {
+    let paths = app.path();
+    let config = paths.app_config_dir().map_err(|error| error.to_string())?;
+    let directories = vec![
+        config.clone(),
+        paths.app_data_dir().map_err(|error| error.to_string())?,
+        paths
+            .app_local_data_dir()
+            .map_err(|error| error.to_string())?,
+        paths.app_cache_dir().map_err(|error| error.to_string())?,
+        paths.app_log_dir().map_err(|error| error.to_string())?,
+    ];
+    cleanup::schedule(mode, directories, preferences::preferences_path(&config))?;
+    app.exit(0);
+    Ok(())
 }
 
 #[tauri::command]
@@ -997,6 +1038,9 @@ pub fn run() {
             workspace_read_snapshot,
             workspace_get_last_path,
             workspace_set_last_path,
+            preferences_load,
+            preferences_save_theme,
+            app_prepare_removal,
             workspace_open_directory,
             workspace_open_url,
             workspace_write_snapshot,

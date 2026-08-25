@@ -12,6 +12,7 @@ Use with `.agents/workflows/testing.md` for QA, performance, or certification ta
 - Browser interaction uses the Playwright configuration under `config/playwright/`.
 - Performance budgets live in `tests/harness/measurement.mjs` and are asserted by the `performance` scenarios.
 - Interaction latency on heavy workspaces is covered by `tests/cases/e2e/large-sheet-interactions.e2e.spec.mjs`; the first interaction after a large import costs far more than later ones, so compare like with like.
+- Workspace import is covered at both sizes by `tests/cases/e2e/workspace-import.e2e.spec.mjs`, driven from Settings so the command wiring is exercised rather than the file reader alone.
 - Preserve sparse/virtualized sheet behavior, bounded mounted cells, input latency, and bundle budgets.
 - Do not replace measured baselines or certification evidence without recording environment, command, commit, and comparison.
 - A checked-in report is evidence from its recorded run, not a timeless certification.

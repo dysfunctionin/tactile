@@ -47,6 +47,7 @@ export function useShellState({ schedule, settings, onUpdateSettings, workspaceH
     ? clampFilesWidth(settings.filesWidth)
     : legacyPreferences?.filesWidth || FILES_DEFAULT_WIDTH;
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsInitialTab, setSettingsInitialTab] = useState("appearance");
   const [filesOpen, setFilesOpen] = useState(filesPinned);
   const [filesResizing, setFilesResizing] = useState(false);
   const [exportState, setExportState] = useState("idle");
@@ -75,9 +76,10 @@ export function useShellState({ schedule, settings, onUpdateSettings, workspaceH
     schedule(() => setNotice(""), 2800);
   }, [schedule]);
 
-  const openSettings = useCallback((sourceElement) => {
+  const openSettings = useCallback((sourceElement, initialTab = "appearance") => {
     settingsReturnFocusRef.current = sourceElement || document.activeElement;
     // setFilesOpen(false);
+    setSettingsInitialTab(initialTab);
     setSettingsOpen(true);
   }, []);
 
@@ -121,6 +123,7 @@ export function useShellState({ schedule, settings, onUpdateSettings, workspaceH
   return {
     settingsOpen,
     setSettingsOpen,
+    settingsInitialTab,
     filesOpen,
     setFilesOpen,
     filesPinned,

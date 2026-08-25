@@ -23,6 +23,11 @@ The shell owns workspace identity, navigation, start-object metadata, commands, 
 - `homeObjectId` selects launch behavior; it does not rewrite containment.
 - Portable workspace/object normalization is v4. Native cache schema is private and rebuildable.
 - Browser/native persistence uses forward deltas and revision acknowledgements; inverse patches stay in the engine.
+- Browser workspace authority is tab-scoped and ephemeral; reload restores that tab, while a new tab starts blank. See ADR 0002.
+- Browser startup renders a blank seed only until its tab database hydrates. Capture compact workspace/root/link navigation intent before that seed can validate history, resolve it only against the authoritative hydrated workspace, and keep visual layer geometry/animation state ephemeral. Interactive workspace replacement still resets navigation.
+- Browser IndexedDB stores dense sheet cells in bounded spatial chunks. Portable JSON remains cell-oriented, and small edits still persist through forward patches.
+- Lazy object renderers keep a stable React component identity after resolution or preload so ordinary parent renders do not remount active object interactions.
+- Native workspace authority remains the user-selected folder and may be changed in Settings.
 - Portable files are the user recovery authority. Native SQLite/WAL is an optimization, not the only copy.
 - Unknown fields and future/plugin state round-trip without coercion.
 
@@ -31,7 +36,7 @@ The shell owns workspace identity, navigation, start-object metadata, commands, 
 - Composition: `src/app/`, `src/ui/hooks/`, `src/ui/shell/`
 - Domain/topology: `src/core/`, `src/core/workspace/model.js`
 - Registry/objects: `src/ui/objects/registry/`, `src/ui/objects/`
-- Browser persistence: `src/platform/browser/`, `src/platform/browser/storage.js`
+- Browser persistence and ownership: `src/platform/browser/persistence.js`, `src/platform/browser/session.js`
 - Native contracts/cache: `src/platform/tauri/`, `src-tauri/src/`
 - Portable import/export: `src/core/workspace/export.js`, `src/core/compat/`, `src-tauri/src/portable/`
 

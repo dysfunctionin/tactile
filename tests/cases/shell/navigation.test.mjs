@@ -6,7 +6,17 @@ import {
   createSheetObject,
   normalizeWorkspace,
 } from "../../../src/core/workspace/model.js";
-import { deriveObjectPath, homeStackFromWorkspace, resolveHomePath } from "../../../src/ui/shell/inOut.js";
+import {
+  NAVIGATION_ROUTE_FORMAT,
+  NAVIGATION_ROUTE_VERSION,
+  deriveObjectPath,
+  homeStackFromWorkspace,
+  navigationIntentFromState,
+  navigationIntentFromUrl,
+  resolveHomePath,
+  resolveNavigationIntent,
+  visibleLayerWindow,
+} from "../../../src/ui/shell/inOut.js";
 import { defineSuite } from "../../harness/index.mjs";
 
 const scenario = defineSuite({ type: "unit", suite: "shell" });
@@ -76,5 +86,52 @@ scenario("preserves a saved home route when an object has multiple parents", () 
       sourceAddress,
     })),
     [{ objectId: "grandchild", sourceObjectId: "alternate", sourceAddress: "C3" }],
+  );
+});
+
+scenario("resolves compact reload intent only against its authoritative workspace", () => {
+  const workspace = normalizeWorkspace(nestedWorkspace());
+  const path = deriveObjectPath(workspace.objects, "grandchild");
+  const intent = {
+    format: NAVIGATION_ROUTE_FORMAT,
+    version: NAVIGATION_ROUTE_VERSION,
+    workspaceId: workspace.id,
+    rootObjectId: "home",
+    linkIds: path.map((entry) => entry.linkId),
+    mode: "full",
+  };
+
+  assert.deepEqual(navigationIntentFromState({ tactileRoute: intent }), intent);
+  assert.equal(resolveNavigationIntent(intent, workspace.objects, "provisional-workspace"), null);
+  assert.deepEqual(
+    resolveNavigationIntent(intent, workspace.objects, workspace.id).map((entry) => entry.objectId),
+    ["child", "grandchild"],
+  );
+});
+
+scenario("parses a compact route from the URL without workspace objects", () => {
+  assert.deepEqual(
+    navigationIntentFromUrl(
+      "https://tactile.test/?workspace=navigation-test&root=home&route=home-child,child-grandchild&mode=full",
+    ),
+    {
+      format: NAVIGATION_ROUTE_FORMAT,
+      version: NAVIGATION_ROUTE_VERSION,
+      workspaceId: "navigation-test",
+      rootObjectId: "home",
+      linkIds: ["home-child", "child-grandchild"],
+      mode: "full",
+    },
+  );
+});
+
+scenario("projects a deep logical route to only its active parent and leaf", () => {
+  const logicalLayers = Array.from({ length: 6 }, (_, index) => ({ objectId: `layer-${index}` }));
+  const visible = visibleLayerWindow(logicalLayers);
+
+  assert.equal(visible.start, 4);
+  assert.deepEqual(
+    visible.layers.map((layer) => layer.objectId),
+    ["layer-4", "layer-5"],
   );
 });

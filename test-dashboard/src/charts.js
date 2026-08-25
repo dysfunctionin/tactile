@@ -130,7 +130,7 @@ export function stepBars(steps) {
  * Every scenario side by side for the latest run, longest first.
  * Answers "what costs the most right now" in one view.
  */
-export function compareBars(entries, { limit = 24 } = {}) {
+export function compareBars(entries, { limit = 24, showType = false } = {}) {
   const figure = document.createElement("figure");
   figure.className = "chart";
   const caption = document.createElement("figcaption");
@@ -162,7 +162,7 @@ export function compareBars(entries, { limit = 24 } = {}) {
     const label = document.createElement("a");
     label.className = "bar-label";
     label.href = `#/scenario/${encodeURIComponent(key)}`;
-    label.textContent = entry.scenario;
+    label.textContent = `${showType ? `[${entry.type}] ` : ""}${entry.scenario}`;
     label.title = `${entry.type} / ${entry.suite} — ${entry.scenario}`;
 
     const track = document.createElement("span");

@@ -2,7 +2,16 @@ import { config } from "./config.js";
 import { describeFailure, loadResults, readSource, writeSource } from "./data.js";
 import { compareBars, durationChart, relativeTrend, stepBars } from "./charts.js";
 import { cleanDiagnostic, createAgentContext } from "./agent-context.js";
-import { formatMs, formatPercent, scenarioMetrics, stepComparison, trendClass, verdict } from "./metrics.js";
+import {
+  aggregateRunMetrics,
+  formatMs,
+  formatPercent,
+  scenarioMetrics,
+  sidebarStatus,
+  stepComparison,
+  trendClass,
+  verdict,
+} from "./metrics.js";
 
 const root = document.querySelector("#app");
 let themes = [];
@@ -187,6 +196,31 @@ function failureCause(entry) {
   return panel;
 }
 
+function retainedFailureCard(entry, key) {
+  const failedRuns = entry.runs.filter((run) => run.status !== "pass");
+  const latestRun = entry.runs.find((run) => run.runId === state.latestRunId);
+  const card = h("article", "retained-failure-card");
+  const header = h("div", "retained-failure-header");
+  const title = h("a", "card-link", entry.scenario);
+  title.href = `#/scenario/${encodeURIComponent(key)}`;
+  header.append(title, h("span", "pill neutral", `${failedRuns.length}/${entry.runs.length} retained runs`));
+  card.append(header);
+
+  const latest = h("div", "retained-failure-latest");
+  latest.append(h("span", "retained-failure-label", `Latest run · ${state.latestRunId}`));
+  latest.append(statusPill(latestRun?.status || "not-run"));
+  card.append(latest);
+
+  const failed = h("div", "retained-failure-runs");
+  failed.append(h("span", "retained-failure-label", "Failed run IDs"));
+  for (const run of failedRuns) {
+    const runStatus = h("span", `pill status-${run.status}`, `${run.runId} · ${run.status}`);
+    failed.append(runStatus);
+  }
+  card.append(failed);
+  return card;
+}
+
 function scenarioDetail(entry) {
   const metrics = scenarioMetrics(entry);
   const detail = h("div", "detail");
@@ -355,7 +389,15 @@ function buildNavGroups() {
         const link = h("a", "nav-link");
         link.href = `#/scenario/${encodeURIComponent(key)}`;
         if (key === active) link.classList.add("is-active");
-        link.append(h("span", `dot status-${entry.runs[0]?.status || "unknown"}`));
+        const dotStatus = sidebarStatus(entry);
+        const dot = h("span", `dot status-${dotStatus}`);
+        if (dotStatus === "slower") {
+          const previousPass = entry.runs
+            .slice(1)
+            .find((run) => run.status === "pass" && Number.isFinite(run.durationMs));
+          dot.title = `Passed, but slower than the previous pass (${formatMs(entry.runs[0].durationMs)} vs ${formatMs(previousPass.durationMs)})`;
+        }
+        link.append(dot);
         link.append(h("span", "nav-link-text", entry.scenario));
         link.append(h("span", "nav-link-time", formatMs(entry.runs[0]?.durationMs)));
         suiteBlock.append(link);
@@ -458,6 +500,7 @@ function renderControls() {
 
 function renderOverview(main) {
   const latest = state.history.runs?.[0];
+  const runMetrics = aggregateRunMetrics(state.entries, state.history.runs);
   const header = h("header", "page-header");
   const title = h("div", "page-title");
   title.append(h("h1", null, "Overview"));
@@ -484,6 +527,9 @@ function renderOverview(main) {
     ]) {
       totals.append(metricBlock(label, String(value), tone));
     }
+    totals.append(
+      metricBlock("Total run time", formatMs(runMetrics.current), "", "sum of scenario durations across all types"),
+    );
     header.append(totals);
 
     const notInRun = state.entries.filter(([, entry]) => !isCurrent(entry)).length;
@@ -532,6 +578,19 @@ function renderOverview(main) {
   const earlierGrid = h("div", "grid");
   for (const [key, entry] of failingEarlier) earlierGrid.append(scenarioCard(entry, key, { expanded: false }));
   failSection.append(earlierGrid);
+
+  const failedInRetainedRuns = state.entries.filter(([, entry]) => entry.runs.some((run) => run.status !== "pass"));
+  failSection.append(
+    h("h3", "sub-heading", `Failed in retained runs (${failedInRetainedRuns.length})`),
+    h(
+      "p",
+      "section-subtitle",
+      "Includes recovered intermittent failures. Run IDs identify each retained failure; latest-run status shows whether it still fails now.",
+    ),
+  );
+  const retainedGrid = h("div", "retained-failure-grid");
+  for (const [key, entry] of failedInRetainedRuns) retainedGrid.append(retainedFailureCard(entry, key));
+  failSection.append(retainedGrid);
 
   main.append(failSection);
 }
@@ -622,7 +681,7 @@ function renderGraph(main) {
     "Cost comparison",
     `${scoped.length} scenario${scoped.length === 1 ? "" : "s"} in scope. Bars show the most recent duration for each, with the change against its previous run.`,
   );
-  compare.append(compareBars(scoped));
+  compare.append(compareBars(scoped, { showType: !state.graphType }));
   main.append(compare);
 }
 

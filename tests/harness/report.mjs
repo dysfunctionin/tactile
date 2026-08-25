@@ -10,6 +10,11 @@ import { DEFAULT_TIMEOUT_RATIO_LIMIT, HISTORY_LIMIT, SCHEMA_VERSION, STATUS, rou
 import { RESULTS_DIR, SHARD_DIR, currentRunId } from "./writer.mjs";
 
 const run = promisify(execFile);
+const ANSI_SEQUENCE = new RegExp(`${String.fromCharCode(27)}\\[[0-?]*[ -/]*[@-~]`, "g");
+
+function stripAnsi(value) {
+  return String(value).replace(ANSI_SEQUENCE, "");
+}
 
 async function gitInfo() {
   try {
@@ -132,7 +137,7 @@ function scenarioKey(record) {
 
 function retainedError(error) {
   if (!error) return null;
-  const clean = (value) => (value ? String(value).replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, "") : null);
+  const clean = (value) => (value ? stripAnsi(value) : null);
   return {
     failureType: clean(error.failureType),
     message: clean(error.message),
@@ -152,8 +157,7 @@ async function readHistory() {
  * Keeps the last few runs per scenario so duration and status can be graphed.
  * Re-reporting the same run replaces its entry rather than duplicating it.
  */
-async function writeHistory(summary, records) {
-  const previous = await readHistory();
+export function mergeHistory(previous, summary, records) {
   const runs = [
     {
       runId: summary.runId,
@@ -164,11 +168,10 @@ async function writeHistory(summary, records) {
     },
     ...(previous.runs || []).filter((run) => run.runId !== summary.runId),
   ].slice(0, HISTORY_LIMIT);
-  const retained = new Set(runs.map((run) => run.runId));
 
   const scenarios = {};
   for (const [key, entry] of Object.entries(previous.scenarios || {})) {
-    const kept = (entry.runs || []).filter((run) => retained.has(run.runId) && run.runId !== summary.runId);
+    const kept = (entry.runs || []).filter((run) => run.runId !== summary.runId).slice(0, HISTORY_LIMIT);
     if (kept.length) scenarios[key] = { ...entry, runs: kept };
   }
 
@@ -197,15 +200,19 @@ async function writeHistory(summary, records) {
     ].slice(0, HISTORY_LIMIT);
   }
 
-  const history = {
+  return {
     schemaVersion: SCHEMA_VERSION,
     limit: HISTORY_LIMIT,
     updatedAt: summary.finishedAt,
     runs,
     scenarios,
   };
+}
+
+async function writeHistory(summary, records) {
+  const history = mergeHistory(await readHistory(), summary, records);
   await writeFile(path.join(RESULTS_DIR, "history.json"), `${JSON.stringify(history, null, 2)}\n`, "utf8");
-  return { runs: history.runs.length, scenarios: Object.keys(scenarios).length };
+  return { runs: history.runs.length, scenarios: Object.keys(history.scenarios).length };
 }
 
 export function printSummary(summary) {

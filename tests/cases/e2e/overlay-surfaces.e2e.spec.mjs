@@ -27,6 +27,7 @@ async function surfaceGeometry(locator) {
 }
 
 async function selectRowColumnCommand(menu, command) {
+  await expect(menu).toBeVisible();
   await menu.getByRole("menuitem", { name: "Rows & columns", exact: true }).click();
   const submenu = menu.locator(".cell-menu-submenu");
   await expect(submenu).toBeVisible();
@@ -164,16 +165,21 @@ scenario("row and column insertion visibly shifts sheet cells", async ({ page })
 
   const cellA1 = page.locator('[role="gridcell"][data-cell-address="A1"]');
   await cellA1.dblclick();
-  await cellA1.locator(".cell-inline-editor").fill("anchor");
+  const editor = cellA1.locator(".cell-inline-editor");
+  await editor.fill("anchor");
   await page.keyboard.press("Enter");
+  await expect(editor).toHaveCount(0);
+  await expect(cellA1).toContainText("anchor");
 
-  await cellA1.click({ button: "right" });
+  await expect(cellA1).toHaveAttribute("aria-selected", "true");
+  await cellA1.press("Control+]");
   let menu = page.getByRole("menu", { name: "Commands for A1" });
   await selectRowColumnCommand(menu, "Insert row above");
   await expect(page.locator('[role="gridcell"][data-cell-address="A2"]')).toContainText("anchor");
   await expect(page.locator(".object-statusbar")).toContainText("257 × 64");
 
-  await cellA1.click({ button: "right" });
+  await expect(cellA1).toHaveAttribute("aria-selected", "true");
+  await cellA1.press("Control+]");
   menu = page.getByRole("menu", { name: "Commands for A1" });
   await selectRowColumnCommand(menu, "Insert column left");
   await expect(page.locator('[role="gridcell"][data-cell-address="B2"]')).toContainText("anchor");
@@ -192,7 +198,8 @@ scenario(
     await page.locator('input[type="file"][accept*=".json"]').setInputFiles(artifactPath);
     await expect(rootCell("A1")).toBeVisible({ timeout: 120_000 });
 
-    await rootCell("A1").click({ button: "right" });
+    await rootCell("A1").click();
+    await rootCell("A1").press("Control+]");
     let menu = page.getByRole("menu", { name: "Commands for A1" });
     await selectRowColumnCommand(menu, "Insert row above");
     await expect(page.locator(".object-statusbar")).toContainText(`${rootRows + 1} × ${rootColumns}`, {
@@ -200,7 +207,8 @@ scenario(
     });
     await expect(rootCell("A1")).toBeEmpty();
 
-    await rootCell("A1").click({ button: "right" });
+    await rootCell("A1").click();
+    await rootCell("A1").press("Control+]");
     menu = page.getByRole("menu", { name: "Commands for A1" });
     await selectRowColumnCommand(menu, "Insert column left");
     await expect(page.locator(".object-statusbar")).toContainText(`${rootRows + 1} × ${rootColumns + 1}`, {
@@ -208,14 +216,16 @@ scenario(
     });
     await expect(rootCell("A1")).toBeEmpty();
 
-    await rootCell("A1").click({ button: "right" });
+    await rootCell("A1").click();
+    await rootCell("A1").press("Control+]");
     menu = page.getByRole("menu", { name: "Commands for A1" });
     await selectRowColumnCommand(menu, "Delete row");
     await expect(page.locator(".object-statusbar")).toContainText(`${rootRows} × ${rootColumns + 1}`, {
       timeout: 120_000,
     });
 
-    await rootCell("A1").click({ button: "right" });
+    await rootCell("A1").click();
+    await rootCell("A1").press("Control+]");
     menu = page.getByRole("menu", { name: "Commands for A1" });
     await selectRowColumnCommand(menu, "Delete column");
     await expect(page.locator(".object-statusbar")).toContainText(`${rootRows} × ${rootColumns}`, { timeout: 120_000 });

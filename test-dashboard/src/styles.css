@@ -12,6 +12,7 @@
 
   --better: #3f7d4f;
   --worse: #b3402f;
+  --warning: #c28a12;
   --steady: #7a7568;
 
   --radius: 8px;
@@ -27,6 +28,7 @@
 [data-color-scheme="dark"] {
   --better: #6fbf84;
   --worse: #e0705c;
+  --warning: #e2b84b;
   --steady: #9a9382;
 }
 
@@ -254,6 +256,10 @@ body {
   background: var(--better);
 }
 
+.dot.status-slower {
+  background: var(--warning);
+}
+
 .dot.status-fail,
 .dot.status-timeout {
   background: var(--worse);
@@ -297,6 +303,46 @@ body {
 }
 
 .pill.stale {
+  color: var(--steady);
+  border-style: dashed;
+}
+
+.retained-failure-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.retained-failure-card {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--warning);
+  border-radius: var(--radius);
+  background: var(--paper-elevated);
+}
+
+.retained-failure-header,
+.retained-failure-latest,
+.retained-failure-runs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.retained-failure-header {
+  justify-content: space-between;
+  font-weight: 650;
+}
+
+.retained-failure-label {
+  color: var(--steady);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.pill.status-not-run {
   color: var(--steady);
   border-style: dashed;
 }

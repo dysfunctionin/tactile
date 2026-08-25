@@ -30,6 +30,63 @@ function lastShadowAlpha(value) {
   return Number(match?.[1] ?? match?.[2] ?? 1);
 }
 
+function renderedTheme(page) {
+  return page.locator(".tactile-app").evaluate((element) => {
+    const style = getComputedStyle(element);
+    return {
+      colorScheme: style.colorScheme,
+      paper: style.getPropertyValue("--paper").trim(),
+      accent: style.getPropertyValue("--accent").trim(),
+    };
+  });
+}
+
+scenario("keeps the selected theme across live tabs and browser restarts", async ({ page, context }) => {
+  await page.goto("/");
+  const second = await context.newPage();
+  await second.goto("/");
+
+  await page.getByRole("button", { name: "Settings" }).click();
+  const dialog = page.getByRole("dialog", { name: "Settings" });
+  const tactileNight = dialog.locator(".theme-card", { hasText: "Tactile Night" });
+  await tactileNight.click();
+  await expect(tactileNight).toHaveClass(/is-selected/);
+
+  const selectedTheme = await renderedTheme(page);
+  await expect.poll(() => renderedTheme(second)).toEqual(selectedTheme);
+  expect(selectedTheme.colorScheme).toBe("dark");
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const preference = JSON.parse(localStorage.getItem("tactile.theme-preference.v1") || "null");
+        return preference?.themeId;
+      }),
+    )
+    .toBe("one-dark");
+
+  for (const candidate of [page, second]) {
+    expect(
+      await candidate.evaluate(() => {
+        const sessionId = sessionStorage.getItem("tactile.browser.session.v1");
+        const registry = JSON.parse(localStorage.getItem("tactile.browser.sessions.v1") || "{}");
+        return registry[sessionId]?.needsExport === true;
+      }),
+    ).toBe(false);
+  }
+
+  await page.close();
+  await second.close();
+  const reopened = await context.newPage();
+  await reopened.goto("/");
+  await expect.poll(() => renderedTheme(reopened)).toEqual(selectedTheme);
+  expect(await reopened.evaluate(() => document.documentElement.dataset.startupTheme)).toBe("dark");
+  await reopened.getByRole("button", { name: "Settings" }).click();
+  await expect(
+    reopened.getByRole("dialog", { name: "Settings" }).locator(".theme-card", { hasText: "Tactile Night" }),
+  ).toHaveClass(/is-selected/);
+  await reopened.close();
+});
+
 scenario("lists and applies every requested built-in theme", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Settings" }).click();

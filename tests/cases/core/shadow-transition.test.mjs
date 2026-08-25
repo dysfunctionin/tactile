@@ -71,6 +71,55 @@ scenario("the normalized transaction engine is the only runtime mode", () => {
   defaultEngine.dispose();
 });
 
+scenario("browser-style shadow startup restores persistence without writing the render seed", async () => {
+  const seed = createBlankWorkspace({ id: "workspace-render-seed" });
+  const persisted = createBlankWorkspace({ id: "workspace-persisted-session" });
+  const persistence = fakePersistence();
+  persistence.open = async (request) => {
+    persistence.calls.push({ type: "open", request });
+    return request === undefined ? persisted : null;
+  };
+
+  const shadow = createWave2Shadow(seed, { persistence });
+  const resolved = await shadow.ready;
+
+  assert.equal(resolved.id, persisted.id);
+  assert.deepEqual(persistence.calls, [{ type: "open", request: undefined }]);
+  shadow.dispose();
+});
+
+scenario("initial-snapshot shadow startup keeps native-style snapshots authoritative", async () => {
+  const initial = createBlankWorkspace({ id: "workspace-native-seed" });
+  const persistence = fakePersistence();
+
+  const shadow = createWave2Shadow(initial, { persistence, useInitialSnapshot: true });
+  const resolved = await shadow.ready;
+
+  assert.equal(resolved.id, initial.id);
+  assert.equal(persistence.calls[0].type, "open");
+  assert.deepEqual(persistence.calls[0].request, { workspaceId: initial.id });
+  assert.equal(persistence.calls[1].type, "snapshot");
+  assert.equal(persistence.calls[1].snapshot.id, initial.id);
+  assert.equal(persistence.calls[1].options.activate, true);
+  shadow.dispose();
+});
+
+scenario("whole-workspace replacement is durable before it resolves", async () => {
+  const initial = createBlankWorkspace({ id: "workspace-before-import" });
+  const imported = createBlankWorkspace({ id: "workspace-after-import" });
+  const persistence = fakePersistence();
+  const shadow = createWave2Shadow(initial, { persistence, useInitialSnapshot: true });
+  await shadow.ready;
+
+  const resolved = await shadow.replaceSnapshot(imported);
+
+  assert.equal(resolved.id, imported.id);
+  const snapshots = persistence.calls.filter((call) => call.type === "snapshot");
+  assert.equal(snapshots.at(-1).snapshot.id, imported.id);
+  assert.equal(snapshots.at(-1).options.activate, true);
+  shadow.dispose();
+});
+
 scenario("shadow transition batches a rectangular edit and leaves unrelated objects out of the command", () => {
   const initial = createBlankWorkspace({ id: "workspace-wave2-batch" });
   const next = workspaceWithCell(initial, "A1", { value: "A" });
@@ -81,4 +130,26 @@ scenario("shadow transition batches a rectangular edit and leaves unrelated obje
   assert.equal(transition.commands[0].type, "set-range");
   assert.deepEqual(transition.commands[0].changes.map((change) => change.cellId).sort(), ["A1", "B1"]);
   assert.deepEqual([...transition.changedSheets.keys()], ["home"]);
+});
+
+scenario("large legacy transitions reset the shadow snapshot instead of committing per-cell patches", async () => {
+  const initial = createBlankWorkspace({ id: "workspace-wave2-large-reset" });
+  const next = normalizeWorkspace(initial);
+  for (let index = 0; index <= 20_000; index += 1) {
+    const row = Math.floor(index / 200);
+    const column = index % 200;
+    const cell = createCellRecord(row, column, { value: String(index) });
+    next.objects.home.cells[cell.id] = cell;
+  }
+  const persistence = fakePersistence();
+  const shadow = createWave2Shadow(initial, { persistence, useInitialSnapshot: true });
+  await shadow.ready;
+
+  await shadow.reconcile(next, { normalized: true });
+
+  assert.equal(persistence.calls.filter((call) => call.type === "commit").length, 0);
+  const persisted = persistence.calls.filter((call) => call.type === "snapshot").at(-1).snapshot;
+  assert.equal(persisted.id, next.id);
+  assert.equal(Object.keys(persisted.objects.home.cells).length, 20_001);
+  shadow.dispose();
 });

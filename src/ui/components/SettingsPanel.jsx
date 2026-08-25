@@ -4,6 +4,7 @@ import {
   IconBrackets,
   IconCheck,
   IconCopy,
+  IconDatabase,
   IconDownload,
   IconFileTypeCsv,
   IconFolderOpen,
@@ -168,17 +169,20 @@ export function SettingsPanel({
   onExportTheme,
   onUpdateSettings,
   onExportWorkspace,
+  onImportWorkspace,
 onChangeWorkspaceFolder,
   onOpenWorkspaceFolder,
   onGetUpdateChannel,
   onSetUpdateChannel,
   onCheckForUpdate,
   onDownloadAndInstallUpdate,
+  onPrepareRemoval,
   onOpenGuide,
   onClose,
+  initialTab = "appearance",
 }) {
   const plugins = useObjectPlugins();
-  const [tab, setTab] = useState("appearance");
+  const [tab, setTab] = useState(initialTab);
   const [themeFilter, setThemeFilter] = useState("all");
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [authoringPromptCopied, setAuthoringPromptCopied] = useState(false);
@@ -186,6 +190,8 @@ onChangeWorkspaceFolder,
   const [updateInfo, setUpdateInfo] = useState(null);
   const [updateChannel, setUpdateChannel] = useState(null);
   const [channelChanging, setChannelChanging] = useState(false);
+  const [removalMode, setRemovalMode] = useState(null);
+  const [removalState, setRemovalState] = useState("idle");
   const themeInputRef = useRef(null);
   const panelRef = useRef(null);
   const closeRef = useRef(null);
@@ -312,6 +318,16 @@ onChangeWorkspaceFolder,
     }
   };
 
+  const prepareRemoval = async () => {
+    if (!onPrepareRemoval || !removalMode) return;
+    setRemovalState("working");
+    try {
+      await onPrepareRemoval(removalMode);
+    } catch {
+      setRemovalState("error");
+    }
+  };
+
   return (
     <div className="settings-layer" role="presentation">
       <button className="settings-scrim" type="button" aria-label="Dismiss settings" onClick={onClose} />
@@ -361,6 +377,9 @@ onChangeWorkspaceFolder,
           ))}
           {onCheckForUpdate ? (
             <SettingTab id="settings-tab-updates" controls="settings-panel-updates" active={tab === "updates"} icon={IconRefresh} onClick={() => setTab("updates")}>Updates</SettingTab>
+          ) : null}
+          {onPrepareRemoval ? (
+            <SettingTab id="settings-tab-app-data" controls="settings-panel-app-data" active={tab === "app-data"} icon={IconTrash} onClick={() => setTab("app-data")}>Uninstall</SettingTab>
           ) : null}
           <SettingTab id="settings-tab-agents" controls="settings-panel-agents" active={tab === "agents"} icon={IconSparkles} onClick={() => setTab("agents")}>Agents.md</SettingTab>
         </nav>
@@ -511,6 +530,7 @@ onChangeWorkspaceFolder,
               <pre><code>workspace.json{"\n"}objects/home/sheet.csv{"\n"}objects/text-…/content.md{"\n"}themes/your-theme.json</code></pre>
               <div className="files-actions">
                 <button type="button" onClick={onExportWorkspace}><IconDownload size={15} /> Export .zip</button>
+                {onImportWorkspace ? <button type="button" onClick={onImportWorkspace}><IconUpload size={15} /> Import workspace</button> : null}
                 {onOpenGuide ? <button type="button" onClick={onOpenGuide}><IconSparkles size={15} /> Open getting started guide</button> : null}
               </div>
               {onChangeWorkspaceFolder ? (
@@ -588,6 +608,61 @@ onChangeWorkspaceFolder,
                   <IconRefresh size={14} /> Check again
                 </button>
               </div>
+            </div>
+          ) : null}
+
+          {tab === "app-data" && onPrepareRemoval ? (
+            <div className="app-data-settings" id="settings-panel-app-data" role="tabpanel" aria-labelledby="settings-tab-app-data">
+              <div className="app-data-settings-intro">
+                <IconDatabase size={30} stroke={1.35} />
+                <div>
+                  <h3>Prepare to remove Tactile</h3>
+                  <p>Choose what remains on this device before removing Tactile.</p>
+                </div>
+              </div>
+
+              <div className="app-data-boundary">
+                <IconCheck size={16} stroke={1.7} />
+                <span><strong>Your workspace folders stay intact</strong><small>Only Tactile-managed preferences, caches, logs, databases, and browser-engine data are eligible for cleanup.</small></span>
+              </div>
+
+              <div className="app-data-options" role="radiogroup" aria-label="Local data cleanup choice">
+                <button
+                  className={removalMode === "preservePreferences" ? "is-selected" : ""}
+                  type="button"
+                  role="radio"
+                  aria-checked={removalMode === "preservePreferences"}
+                  onClick={() => { setRemovalMode("preservePreferences"); setRemovalState("idle"); }}
+                >
+                  <span className="app-data-option-mark"><IconCheck size={15} /></span>
+                  <span><strong>Keep preferences</strong><small>Preserve appearance settings in the versioned user profile. Remove everything else managed by the app.</small></span>
+                </button>
+                <button
+                  className={`is-destructive${removalMode === "deleteEverything" ? " is-selected" : ""}`}
+                  type="button"
+                  role="radio"
+                  aria-checked={removalMode === "deleteEverything"}
+                  onClick={() => { setRemovalMode("deleteEverything"); setRemovalState("idle"); }}
+                >
+                  <span className="app-data-option-mark"><IconTrash size={15} /></span>
+                  <span><strong>Delete everything</strong><small>Remove the user profile and all other Tactile-managed data from this device.</small></span>
+                </button>
+              </div>
+
+              <div className={`app-data-confirm${removalMode === "deleteEverything" ? " is-destructive" : ""}`}>
+                <span>
+                  <strong>{removalMode ? "Ready to clean up" : "Choose what to preserve"}</strong>
+                  <small>Tactile will close after cleanup is scheduled. Then remove the application using your operating system.</small>
+                </span>
+                <button
+                  type="button"
+                  disabled={!removalMode || removalState === "working"}
+                  onClick={() => void prepareRemoval()}
+                >
+                  {removalState === "working" ? "Scheduling…" : "Close & clean up"}
+                </button>
+              </div>
+              {removalState === "error" ? <p className="app-data-error" role="alert">Cleanup could not be scheduled. No data was removed.</p> : null}
             </div>
           ) : null}
 

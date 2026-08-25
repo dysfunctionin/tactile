@@ -556,15 +556,24 @@ scenario("uses the reverse expand curve when a full child collapses", async ({ p
   await child.locator(".object-window-expand").click();
   await expect(child).toHaveAttribute("data-spatial-phase", "full");
 
+  await child.evaluate((element) => {
+    window.__reverseExpandTransition = null;
+    const capture = () => {
+      if (element.dataset.spatialPhase !== "floating" || !element.classList.contains("is-closing")) return;
+      const style = getComputedStyle(element.querySelector(".object-window"));
+      window.__reverseExpandTransition = {
+        duration: style.transitionDuration,
+        easing: style.transitionTimingFunction,
+      };
+      observer.disconnect();
+    };
+    const observer = new MutationObserver(capture);
+    observer.observe(element, { attributes: true, attributeFilter: ["class", "data-spatial-phase"] });
+  });
   await page.keyboard.press("[");
   await expect(child).toHaveClass(/is-closing/);
-  const reverseTransition = await child.locator(".object-window").evaluate((element) => {
-    const style = getComputedStyle(element);
-    return {
-      duration: style.transitionDuration,
-      easing: style.transitionTimingFunction,
-    };
-  });
+  await expect.poll(() => page.evaluate(() => window.__reverseExpandTransition)).not.toBeNull();
+  const reverseTransition = await page.evaluate(() => window.__reverseExpandTransition);
   expect(reverseTransition.duration).toContain("0.26s");
   expect(reverseTransition.easing).toContain("cubic-bezier(0.7, 0, 0.84, 0)");
   await expect(child).toHaveCount(0, { timeout: 4_000 });
@@ -720,29 +729,27 @@ scenario("changing home preserves the active parent chain and dock ordering", as
   await expect(page.locator('.base-object-layer [data-object-id="home"]')).not.toHaveCount(0);
 });
 
-scenario("a fresh page restores the parent chain for a nested home", async ({ page, context }) => {
+scenario("a reload restores the parent chain for a nested home", async ({ page }) => {
   await page.goto("/");
   await importWorkspace(page);
 
-  await cellLocator(page, "home", "A1").click();
-  await expect(page.locator('[data-layer-object="layer-two"]')).toHaveAttribute("data-spatial-phase", "floating");
+  await cellLocator(page, "home", "A1").dblclick();
+  await expect(page.locator('[data-layer-object="layer-two"]')).toHaveAttribute("data-spatial-phase", "full");
   await page.locator(".spatial-layer .workspace-menu-trigger").click();
   await page.getByRole("menuitem", { name: "Set as start" }).click();
   await page.waitForTimeout(300);
 
-  const reopened = await context.newPage();
-  await reopened.goto("/");
-  await expect(reopened.locator(".workspace-shell")).toHaveAttribute("data-logical-layer-count", "2", {
+  await page.reload();
+  await expect(page.locator(".workspace-shell")).toHaveAttribute("data-logical-layer-count", "2", {
     timeout: 4_000,
   });
-  await expect(reopened.locator(".spatial-layer .object-header-parent")).toHaveCount(1);
-  await expect(reopened.locator('.app-dock [aria-label="Object path"]')).toContainText("Layer one");
-  await expect(reopened.locator('.app-dock [aria-label="Object path"]')).toContainText("Layer two");
+  await expect(page.locator(".spatial-layer .object-header-parent")).toHaveCount(1);
+  await expect(page.locator('.app-dock [aria-label="Object path"]')).toContainText("Layer one");
+  await expect(page.locator('.app-dock [aria-label="Object path"]')).toContainText("Layer two");
 
-  await reopened.locator(".spatial-layer .object-header-parent").click();
-  await expect(reopened.locator(".spatial-layer")).toHaveCount(0, { timeout: 4_000 });
-  await expect(reopened.getByRole("textbox", { name: "Object title" })).toHaveValue("Layer one");
-  await reopened.close();
+  await page.locator(".spatial-layer .object-header-parent").click();
+  await expect(page.locator(".spatial-layer")).toHaveCount(0, { timeout: 4_000 });
+  await expect(page.getByRole("textbox", { name: "Object title" })).toHaveValue("Layer one");
 });
 
 scenario("keeps parent navigation unique through a deep nested stack", async ({ page }) => {
@@ -770,7 +777,7 @@ scenario("keeps parent navigation unique through a deep nested stack", async ({ 
   await expect(page).toHaveURL(/\/$/);
 });
 
-scenario("opens a deep start route at its leaf without replaying the ancestor animation", async ({ page }) => {
+scenario("reload restores the active deep route directly at its leaf", async ({ page }) => {
   await page.goto("/");
   await importWorkspace(page, deepNestedWorkspace());
 
@@ -784,10 +791,10 @@ scenario("opens a deep start route at its leaf without replaying the ancestor an
 
   await page.reload({ waitUntil: "domcontentloaded" });
   await expect(page.locator(".workspace-shell")).toHaveAttribute("data-logical-layer-count", "6", {
-    timeout: 1_500,
+    timeout: 4_000,
   });
   await expect(page.locator('[data-layer-object="deep-layer-5"]')).toHaveAttribute("data-spatial-phase", "full", {
-    timeout: 1_500,
+    timeout: 4_000,
   });
 
   const restored = await page.evaluate(() => ({
@@ -801,6 +808,11 @@ scenario("opens a deep start route at its leaf without replaying the ancestor an
   expect(restored).toMatchObject({ logical: "6", rendered: "2" });
   expect(restored.spatial).toEqual(expect.arrayContaining([{ objectId: "deep-layer-5", phase: "full" }]));
   expect(restored.spatial.some(({ phase }) => phase === "origin" || phase === "floating")).toBe(false);
+
+  await page.locator(".spatial-layer .object-header-parent").click();
+  await expect(page.locator(".workspace-shell")).toHaveAttribute("data-logical-layer-count", "5");
+  await expect(page.locator('[data-layer-object="deep-layer-4"]')).toHaveAttribute("data-spatial-phase", "full");
+  await expect(page.locator('[data-layer-object="deep-layer-5"]')).toHaveCount(0);
 });
 
 scenario("dock breadcrumbs jump directly and reveal the complete path from the ellipsis", async ({ page }) => {

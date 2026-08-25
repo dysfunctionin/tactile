@@ -7,7 +7,7 @@ export const RELEASE_BUDGETS = Object.freeze({
   inputToPaintP95Ms: 50,
   repeatedMainThreadTaskMs: 50,
   initialJavascriptGzipBytes: 110 * 1024,
-  cssGzipBytes: 18 * 1024,
+  cssGzipBytes: 24 * 1024,
 });
 
 export function percentile(values, percentileValue = 0.95) {

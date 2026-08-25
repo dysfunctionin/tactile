@@ -23,6 +23,91 @@ export const IN_OUT_TIMING = {
 export const MAX_VISIBLE_LAYERS = 2;
 
 export const HISTORY_KIND = "tactile-in-out";
+export const NAVIGATION_ROUTE_FORMAT = "tactile-route";
+export const NAVIGATION_ROUTE_VERSION = 1;
+
+export function visibleLayerWindow(layers, limit = MAX_VISIBLE_LAYERS) {
+  const logicalLayers = Array.isArray(layers) ? layers : [];
+  const start = Math.max(0, logicalLayers.length - limit);
+  return { start, layers: logicalLayers.slice(start) };
+}
+
+function normalizeNavigationIntent(value) {
+  if (!value || typeof value !== "object") return null;
+  const linkIds = Array.isArray(value.linkIds)
+    ? value.linkIds.map(String).filter(Boolean)
+    : [];
+   if (!linkIds.length && !value.rootObjectId) return null;
+  return {
+    format: NAVIGATION_ROUTE_FORMAT,
+    version: NAVIGATION_ROUTE_VERSION,
+    workspaceId: String(value.workspaceId || ""),
+    rootObjectId: String(value.rootObjectId || ""),
+    linkIds,
+    mode: value.mode === "full" ? "full" : "floating",
+  };
+}
+
+export function navigationIntentFromState(state) {
+  const compact = state?.tactileRoute;
+  if (
+    compact?.format === NAVIGATION_ROUTE_FORMAT
+    && compact?.version === NAVIGATION_ROUTE_VERSION
+  ) return normalizeNavigationIntent(compact);
+  if (state?.tactile !== HISTORY_KIND || !Array.isArray(state.tactileStack)) return null;
+  const linkIds = state.tactileStack.map((entry) => entry?.linkId).filter(Boolean);
+  if (linkIds.length !== state.tactileStack.length) return null;
+  return normalizeNavigationIntent({
+    workspaceId: state.tactileWorkspaceId,
+    rootObjectId: state.tactileRootObjectId,
+    linkIds,
+    mode: state.tactileStack.at(-1)?.mode,
+  });
+}
+
+export function navigationIntentFromUrl(url) {
+  const target = url instanceof URL ? url : new URL(String(url));
+  return normalizeNavigationIntent({
+    workspaceId: target.searchParams.get("workspace"),
+    rootObjectId: target.searchParams.get("root"),
+    linkIds: (target.searchParams.get("route") || "").split(","),
+    mode: target.searchParams.get("mode"),
+  });
+}
+
+export function navigationIntentFromWindow() {
+  if (typeof window === "undefined") return null;
+  return navigationIntentFromState(window.history.state)
+    || navigationIntentFromUrl(window.location.href);
+}
+
+export function resolveNavigationIntent(intent, objects, workspaceId = "") {
+   if (!intent || !objects) return null;
+  if (workspaceId && intent.workspaceId && intent.workspaceId !== workspaceId) return null;
+   if (intent.rootObjectId && !objects[intent.rootObjectId]) return null;
+   if (!intent.linkIds.length) return [];
+  const routed = routeFromLinkIds(objects, intent.linkIds, intent.mode);
+  if (!routed.valid || routed.stack.length !== intent.linkIds.length) return null;
+  if (intent.rootObjectId && routed.stack[0]?.sourceObjectId !== intent.rootObjectId) return null;
+  return routed.stack.map((entry) => historyEntryForPath(objects, entry, entry.mode));
+}
+
+function historyStateForStack(previousState, stack, workspaceId, rootObjectId) {
+  const { tactileStack: _legacyStack, ...previous } = previousState || {};
+  const linkIds = stack.map((entry) => entry.linkId).filter(Boolean);
+  return {
+    ...previous,
+    tactile: HISTORY_KIND,
+     tactileRoute: {
+       format: NAVIGATION_ROUTE_FORMAT,
+       version: NAVIGATION_ROUTE_VERSION,
+       workspaceId,
+       rootObjectId,
+       linkIds,
+       mode: stack.at(-1)?.mode === "full" ? "full" : "floating",
+     },
+  };
+}
 
 export function historyUrlForStack(stack, workspaceId = "", rootObjectId = "") {
   const url = new URL(window.location.href);
@@ -132,6 +217,9 @@ export function homeStackFromWorkspace(workspace) {
 }
 
 export function historyStackFromState(state, objects = null, workspaceId = "") {
+  const intent = navigationIntentFromState(state);
+  if (intent && !objects && Array.isArray(state?.tactileStack)) return state.tactileStack;
+  if (intent) return resolveNavigationIntent(intent, objects, workspaceId) || [];
   if (state?.tactile !== HISTORY_KIND || !Array.isArray(state.tactileStack)) return [];
   if (workspaceId && state.tactileWorkspaceId && state.tactileWorkspaceId !== workspaceId) return [];
   if (!objects) return state.tactileStack;
@@ -143,19 +231,9 @@ export function historyStackFromState(state, objects = null, workspaceId = "") {
 
 export function historyStackFromLocation(objects, workspaceId = "") {
   const url = new URL(window.location.href);
-  if (workspaceId && url.searchParams.get("workspace") && url.searchParams.get("workspace") !== workspaceId) return [];
-  const route = url.searchParams.get("route");
-  if (route) {
-    const routed = routeFromLinkIds(
-      objects,
-      route.split(",").filter(Boolean),
-      url.searchParams.get("mode") === "full" ? "full" : "floating",
-    );
-    const rootObjectId = url.searchParams.get("root");
-    if (routed.stack.length && (!rootObjectId || routed.stack[0].sourceObjectId === rootObjectId)) {
-      return routed.stack.map((entry) => historyEntryForPath(objects, entry, entry.mode));
-    }
-  }
+  const intent = navigationIntentFromUrl(url);
+  const resolved = resolveNavigationIntent(intent, objects, workspaceId);
+  if (resolved) return resolved;
   const objectId = url.searchParams.get("in");
   const sourceObjectId = url.searchParams.get("from");
   const sourceAddress = url.searchParams.get("cell");
@@ -185,7 +263,7 @@ export function historyStackFromLocation(objects, workspaceId = "") {
 }
 
 export function navigationRootFromState(state, objects, fallbackId) {
-  const stateRoot = state?.tactileRootObjectId;
+  const stateRoot = navigationIntentFromState(state)?.rootObjectId || state?.tactileRootObjectId;
   if (stateRoot && objects?.[stateRoot]) return String(stateRoot);
   if (typeof window !== "undefined") {
     const urlRoot = new URL(window.location.href).searchParams.get("root");
@@ -233,6 +311,7 @@ function rectSnapshot(element) {
 }
 
 export function useInOut({ workspace, workspaceRootId, workspaceHydrated = true }) {
+  const [startupNavigationIntent] = useState(navigationIntentFromWindow);
   const [layers, setLayers] = useState(() => [{
     key: "root",
     objectId: navigationRootFromHistory(workspace, workspaceRootId),
@@ -273,8 +352,9 @@ export function useInOut({ workspace, workspaceRootId, workspaceHydrated = true 
 
   useEffect(() => {
     const workspaceChanged = workspaceIdRef.current !== workspace.id;
-    const becameHydrated = workspaceHydrated && !hydrationRef.current;
-    const replacingWorkspace = workspaceChanged && !becameHydrated;
+    const wasHydrated = hydrationRef.current;
+    const becameHydrated = workspaceHydrated && !wasHydrated;
+    const replacingWorkspace = workspaceChanged && wasHydrated && workspaceHydrated;
     workspaceIdRef.current = workspace.id;
     hydrationRef.current = workspaceHydrated;
     if (!workspaceChanged && !becameHydrated) return;
@@ -326,13 +406,7 @@ export function useInOut({ workspace, workspaceRootId, workspaceHydrated = true 
   }, [workspace.objects]);
 
   const writeHistoryStack = useCallback((stack, replace = false, rootObjectId = layersRef.current[0]?.objectId || workspaceRootId) => {
-    const nextState = {
-      ...(window.history.state || {}),
-      tactile: HISTORY_KIND,
-      tactileWorkspaceId: workspace.id,
-      tactileStack: stack,
-      tactileRootObjectId: rootObjectId,
-    };
+    const nextState = historyStateForStack(window.history.state, stack, workspace.id, rootObjectId);
     const method = replace ? "replaceState" : "pushState";
     window.history[method](nextState, "", historyUrlForStack(stack, workspace.id, rootObjectId));
   }, [workspace.id, workspaceRootId]);
@@ -523,8 +597,19 @@ export function useInOut({ workspace, workspaceRootId, workspaceHydrated = true 
         phase: "base",
         closing: false,
       };
+      const visibleEntryStart = Math.max(0, targetStack.length - MAX_VISIBLE_LAYERS);
       const directLayers = targetStack.map((entry, index) => {
         const key = `history-${entry.objectId}-${openedAt}-${index}`;
+        if (index < visibleEntryStart) {
+          return {
+            ...entry,
+            key,
+            phase: "full",
+            requestedMode: "full",
+            fullHistoryStep: false,
+            closing: false,
+          };
+        }
         const layer = makeLayerFromEntry(entry, key, sourceElementForEntry(entry));
         return {
           ...layer,
@@ -772,58 +857,51 @@ export function useInOut({ workspace, workspaceRootId, workspaceHydrated = true 
     if (!workspaceHydrated) return;
     if (historyReadyRef.current) return;
     if (!workspace.objects?.[workspaceRootId]) return;
+    const startupStack = resolveNavigationIntent(startupNavigationIntent, workspace.objects, workspace.id);
     const stateStack = historyStackFromState(window.history.state, workspace.objects, workspace.id);
     const locationStack = historyStackFromLocation(workspace.objects, workspace.id);
-    const stack = stateStack.length
+    const stack = startupStack?.length
+      ? startupStack
+      : stateStack.length
       ? stateStack
       : locationStack.length
         ? locationStack
         : locationHasExplicitRoot(workspace.objects)
           ? []
           : homeStackFromWorkspace(workspace);
-    const rootObjectId = navigationRootFromState(window.history.state, workspace.objects, stack[0]?.sourceObjectId || workspaceRootId);
+    const capturedRootId = startupStack?.length && workspace.objects?.[startupNavigationIntent?.rootObjectId]
+      ? startupNavigationIntent.rootObjectId
+      : null;
+    const rootObjectId = capturedRootId
+      || navigationRootFromState(window.history.state, workspace.objects, stack[0]?.sourceObjectId || workspaceRootId);
     if (stack.length && !stateStack.length) {
       window.history.replaceState(
-        {
-          ...(window.history.state || {}),
-          tactile: HISTORY_KIND,
-          tactileWorkspaceId: workspace.id,
-          tactileStack: [],
-          tactileRootObjectId: rootObjectId,
-        },
+        historyStateForStack(window.history.state, [], workspace.id, rootObjectId),
         "",
         historyUrlForStack([], workspace.id, rootObjectId),
       );
       stack.forEach((_, index) => {
         const historyStack = stack.slice(0, index + 1);
         window.history.pushState(
-          {
-            ...(window.history.state || {}),
-            tactile: HISTORY_KIND,
-            tactileWorkspaceId: workspace.id,
-            tactileStack: historyStack,
-            tactileRootObjectId: rootObjectId,
-          },
+          historyStateForStack(window.history.state, historyStack, workspace.id, rootObjectId),
           "",
           historyUrlForStack(historyStack, workspace.id, rootObjectId),
         );
       });
-    } else if (window.history.state?.tactile !== HISTORY_KIND || stateStack.length !== stack.length) {
+    } else if (
+      window.history.state?.tactile !== HISTORY_KIND
+      || stateStack.length !== stack.length
+      || !window.history.state?.tactileRoute
+    ) {
       window.history.replaceState(
-        {
-          ...(window.history.state || {}),
-          tactile: HISTORY_KIND,
-          tactileWorkspaceId: workspace.id,
-          tactileStack: stack,
-          tactileRootObjectId: rootObjectId,
-        },
+        historyStateForStack(window.history.state, stack, workspace.id, rootObjectId),
         "",
         historyUrlForStack(stack, workspace.id, rootObjectId),
       );
     }
     historyReadyRef.current = true;
     syncHistoryStack(stack, rootObjectId, { immediate: true });
-  }, [syncHistoryStack, workspace, workspaceRootId, workspaceHydrated]);
+  }, [startupNavigationIntent, syncHistoryStack, workspace, workspaceRootId, workspaceHydrated]);
 
   useEffect(() => {
     if (!workspaceHydrated || !historyReadyRef.current) {
@@ -898,8 +976,13 @@ export function useInOut({ workspace, workspaceRootId, workspaceHydrated = true 
     return () => document.removeEventListener("pointerdown", handleOutsideFloatingPointer, true);
   }, []);
 
+  const visible = visibleLayerWindow(layers);
+
   return {
     layers,
+    logicalLayers: layers,
+    visibleLayers: visible.layers,
+    visibleLayerStart: visible.start,
     layersRef,
     schedule,
     openObject,

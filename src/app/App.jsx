@@ -1,9 +1,9 @@
-import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AppDock } from "../ui/components/AppDock.jsx";
 import { SpatialLayer } from "../ui/components/SpatialLayer.jsx";
 import { useLocalWorkspace } from "../ui/hooks/useLocalWorkspace.js";
 import { ObjectSurface } from "../ui/shell/ObjectSurface.jsx";
-import { layerHistoryEntry, MAX_VISIBLE_LAYERS, useInOut } from "../ui/shell/inOut.js";
+import { layerHistoryEntry, useInOut } from "../ui/shell/inOut.js";
 import { useSelectionCommands } from "../ui/shell/selectionCommands.js";
 import { useShellState } from "../ui/shell/useShellState.js";
 import { buildFilesIndex } from "../ui/shell/filesIndex.js";
@@ -14,18 +14,25 @@ import { buildPortablePackage } from "../core/workspace/export.js";
 import { createBlankWorkspace, isBareUrlValue, normalizeWorkspace } from "../core/workspace/model.js";
 import { saveNativeWorkspacePath } from "../platform/browser/storage.js";
 import {
+  THEME_PREFERENCE_KEY,
+  loadThemePreference,
+  saveThemePreference,
+} from "../platform/browser/themePreference.js";
+import {
   cloneTheme,
   resolveTheme,
   themeSheetMetrics,
   themeStyle,
 } from "../core/workspace/themes.js";
 import { isTauriRuntime, resolveTauriInvoke } from "../platform/tauri/runtime.ts";
+import { saveNativeThemePreference } from "../platform/tauri/preferences.ts";
 import { TitleBar } from "../ui/components/TitleBar.jsx";
 
 const FilesPanel = lazy(() => import("../ui/components/FilesPanel.jsx").then(({ FilesPanel: Component }) => ({ default: Component })));
 const SettingsPanel = lazy(() => import("../ui/components/SettingsPanel.jsx").then(({ SettingsPanel: Component }) => ({ default: Component })));
 const TooltipLayer = lazy(() => import("../ui/components/TooltipLayer.jsx").then(({ TooltipLayer: Component }) => ({ default: Component })));
 const NativeOnboarding = lazy(() => import("../ui/components/NativeOnboarding.jsx").then(({ NativeOnboarding: Component }) => ({ default: Component })));
+const SessionRecoveryDialog = lazy(() => import("../ui/components/SessionRecoveryDialog.jsx").then(({ SessionRecoveryDialog: Component }) => ({ default: Component })));
 
 function FilesPanelFallback({ pinned = false }) {
   return (
@@ -36,11 +43,21 @@ function FilesPanelFallback({ pinned = false }) {
 }
 
 export function App() {
+  const nativeRuntime = useMemo(() => isTauriRuntime(), []);
+  const nativeInvoke = useMemo(() => resolveTauriInvoke(), []);
+  const [themePreference, setThemePreference] = useState(loadThemePreference);
   const workspaceState = useLocalWorkspace();
   const {
       workspace,
       hydrated,
     saveState,
+    closeExportRequested,
+    clearCloseExportRequest,
+    markWorkspaceExported,
+    recoverySessions,
+    dismissRecovery,
+    restoreRecoverySessions,
+    discardRecoverySessions,
     replaceWorkspace,
     updateObject,
     updateCell,
@@ -73,8 +90,59 @@ export function App() {
   workspaceObjectsHandleRef.current.current = workspace.objects;
   const workspaceRootId = workspace.homeObjectId;
   const inOut = useInOut({ workspace, workspaceRootId, workspaceHydrated: hydrated });
-  const nativeRuntime = useMemo(() => isTauriRuntime(), []);
-  const nativeInvoke = useMemo(() => resolveTauriInvoke(), []);
+  const logicalLayers = inOut.logicalLayers;
+  const themeSources = useMemo(() => themePreference?.theme
+    ? { ...workspace.themes, [themePreference.themeId]: themePreference.theme }
+    : workspace.themes, [themePreference, workspace.themes]);
+  const activeTheme = useMemo(
+    () => resolveTheme(themePreference?.themeId || workspace.activeThemeId, themeSources),
+    [themePreference?.themeId, themeSources, workspace.activeThemeId],
+  );
+  const rememberTheme = useCallback((theme) => {
+    const saved = saveThemePreference(theme);
+    if (saved) setThemePreference(saved);
+    if (saved && nativeRuntime) void saveNativeThemePreference(saved).catch(() => undefined);
+  }, [nativeRuntime]);
+  const selectTheme = useCallback((themeId) => {
+    const selected = resolveTheme(themeId, themeSources);
+    rememberTheme(selected);
+    if (nativeRuntime) setActiveTheme(selected.id);
+  }, [nativeRuntime, rememberTheme, setActiveTheme, themeSources]);
+  const saveGlobalTheme = useCallback((theme) => {
+    saveTheme(theme);
+    rememberTheme(resolveTheme(theme.id, { ...workspace.themes, [theme.id]: theme }));
+  }, [rememberTheme, saveTheme, workspace.themes]);
+  const updateGlobalTheme = useCallback((themeId, patch) => {
+    updateTheme(themeId, patch);
+    if (themePreference?.themeId !== themeId) return;
+    const current = themePreference.theme || workspace.themes[themeId];
+    if (!current) return;
+    rememberTheme(resolveTheme(themeId, {
+      [themeId]: {
+        ...current,
+        ...patch,
+        tokens: patch.tokens ? { ...current.tokens, ...patch.tokens } : current.tokens,
+      },
+    }));
+  }, [rememberTheme, themePreference, updateTheme, workspace.themes]);
+  const deleteGlobalTheme = useCallback((themeId) => {
+    deleteTheme(themeId);
+    if (themePreference?.themeId === themeId) rememberTheme(resolveTheme("paper-public"));
+  }, [deleteTheme, rememberTheme, themePreference?.themeId]);
+
+  useEffect(() => {
+    if (!hydrated || themePreference) return;
+    rememberTheme(resolveTheme(workspace.activeThemeId, workspace.themes));
+  }, [hydrated, rememberTheme, themePreference, workspace.activeThemeId, workspace.themes]);
+
+  useEffect(() => {
+    const handleStorage = (event) => {
+      if (event.storageArea !== window.localStorage || event.key !== THEME_PREFERENCE_KEY) return;
+      setThemePreference(loadThemePreference());
+    };
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
+  }, []);
   const nativeSnapshotRef = useRef({ version: 0, pending: null, writing: false });
   const nativeFlushTimerRef = useRef(null);
   const [nativeGuideOpen, setNativeGuideOpen] = useState(false);
@@ -114,21 +182,22 @@ export function App() {
     createEmbeddedFile,
     replaceObjectFile,
     setHomeObject,
-    setActiveTheme,
-    saveTheme,
-    updateTheme,
-    deleteTheme,
+    setActiveTheme: selectTheme,
+    saveTheme: saveGlobalTheme,
+    updateTheme: updateGlobalTheme,
+    deleteTheme: deleteGlobalTheme,
     updateSettings,
     openObject: inOut.openObject,
     schedule: inOut.schedule,
     showNotice: shell.showNotice,
     setExportState: shell.setExportState,
+    onWorkspaceExported: markWorkspaceExported,
     importInputRef: shell.importInputRef,
     resetSelection: () => resetSelectionRef.current?.(),
   });
   const selection = useSelectionCommands({
     workspace,
-    layers: inOut.layers,
+    layers: logicalLayers,
     openObject: inOut.openObject,
     openLinkCell: commands.openLinkCell,
     showNotice: shell.showNotice,
@@ -139,6 +208,12 @@ export function App() {
     redo,
   });
   resetSelectionRef.current = selection.resetSelection;
+
+  useEffect(() => {
+    if (!closeExportRequested || nativeRuntime) return;
+    shell.openSettings(null, "files");
+    clearCloseExportRequest();
+  }, [clearCloseExportRequest, closeExportRequested, nativeRuntime, shell]);
 
   // Keep the document-level keyboard and clipboard bridge mounted once. The
   // active shell/selection callbacks change as workspace state changes, but
@@ -264,8 +339,8 @@ export function App() {
     };
   }, []);
 
-  const objectPaths = useMemo(() => inOut.layers.map((_, index) => {
-    const rootLayer = inOut.layers[0];
+  const objectPaths = useMemo(() => logicalLayers.map((_, index) => {
+    const rootLayer = logicalLayers[0];
     // Keep the actual navigation root in the dock path even when it is the
     // workspace's ordinary Home object. The dock intentionally removes the
     // workspace shell entry, so omitting this layer made Home disappear from
@@ -274,7 +349,7 @@ export function App() {
     const rootObjectId = rootLayer?.objectId || workspaceRootId;
     const routeForIndex = (targetIndex) => ({
       rootObjectId,
-      segments: inOut.layers.slice(1, targetIndex + 1).map((layer) => ({
+      segments: logicalLayers.slice(1, targetIndex + 1).map((layer) => ({
         ...layerHistoryEntry(layer),
         mode: "full",
       })),
@@ -286,21 +361,21 @@ export function App() {
         title: workspace.objects[rootLayer.objectId]?.title || "Untitled",
         route: routeForIndex(0),
       }] : []),
-      ...inOut.layers.slice(1, index + 1).map((layer) => ({
+      ...logicalLayers.slice(1, index + 1).map((layer) => ({
       id: layer.objectId,
       title: workspace.objects[layer.objectId]?.title || "Untitled",
-      route: routeForIndex(inOut.layers.indexOf(layer)),
+      route: routeForIndex(logicalLayers.indexOf(layer)),
       })),
     ];
-  }), [inOut.layers, workspace, workspaceRootId]);
+  }), [logicalLayers, workspace, workspaceRootId]);
 
-  const currentObject = workspace.objects[inOut.layers[inOut.layers.length - 1]?.objectId || workspaceRootId];
+  const currentObject = workspace.objects[logicalLayers[logicalLayers.length - 1]?.objectId || workspaceRootId];
   const currentObjectTitle = currentObject?.title || workspace.name || "Home";
   const activeObjectId = currentObject?.id || workspaceRootId;
   const fullDockPath = objectPaths.at(-1) || [{ id: workspace.id, title: workspace.name }];
   // The root sheet is already named in the header; keep the root dock quiet,
   // while nested navigation still exposes Home as the first breadcrumb.
-  const activeDockPath = inOut.layers.length === 1 && inOut.layers[0]?.objectId === workspaceRootId
+  const activeDockPath = logicalLayers.length === 1 && logicalLayers[0]?.objectId === workspaceRootId
     ? fullDockPath.slice(0, 1)
     : fullDockPath;
 
@@ -336,12 +411,12 @@ export function App() {
     nativeGuideShownRef.current = true;
     if (!workspace.settings.onboardingComplete) {
       if (!workspace.settings.onboardingThemeId) {
-        setActiveTheme("one-dark");
+        selectTheme("one-dark");
         updateSettings({ onboardingThemeId: "one-dark" });
       }
       setNativeGuideOpen(true);
     }
-  }, [hydrated, nativeRuntime, setActiveTheme, updateSettings, workspace.settings]);
+  }, [hydrated, nativeRuntime, selectTheme, updateSettings, workspace.settings]);
 
   useEffect(() => {
     if (!nativeRuntime || !hydrated || !nativeInvoke || !workspace.settings.nativeWorkspacePath) return undefined;
@@ -451,7 +526,7 @@ export function App() {
       saveNativeWorkspacePath(path);
     }
     if (nextWorkspace) {
-      replaceWorkspace(nextWorkspace);
+      await replaceWorkspace(nextWorkspace);
       shell.showNotice("Workspace loaded from selected folder");
     } else {
       updateSettings({
@@ -509,7 +584,7 @@ export function App() {
       await nativeInvoke("workspace_prepare_directory", { path });
       await nativeInvoke("workspace_set_last_path", { path });
       saveNativeWorkspacePath(path);
-      replaceWorkspace(nextWorkspace);
+      await replaceWorkspace(nextWorkspace);
       shell.showNotice("Home directory changed");
     } catch (error) {
       shell.showNotice(error?.message || "That folder could not be selected");
@@ -545,14 +620,9 @@ export function App() {
     anchor.remove();
   };
 
-  const activeTheme = useMemo(
-    () => resolveTheme(workspace.activeThemeId, workspace.themes),
-    [workspace.activeThemeId, workspace.themes],
-  );
   const sheetMetrics = useMemo(() => themeSheetMetrics(activeTheme), [activeTheme]);
-  const visibleLayerStart = Math.max(0, inOut.layers.length - MAX_VISIBLE_LAYERS);
-  const visibleLayers = inOut.layers.slice(visibleLayerStart);
-  const topLayer = inOut.layers.at(-1);
+  const { visibleLayerStart, visibleLayers } = inOut;
+  const topLayer = logicalLayers.at(-1);
   const floatingLayerActive = topLayer?.phase === "floating";
   // The worksheet and ancestor layers become inert under a floating child,
   // but the global dock remains available for direct breadcrumb navigation.
@@ -573,8 +643,8 @@ export function App() {
     } else {
       objectHandle.current = object;
     }
-    const isTopLayer = index > 0 && index === inOut.layers.length - 1;
-    const isVisibleParentLayer = parentContextVisible && index === inOut.layers.length - 2;
+    const isTopLayer = index > 0 && index === logicalLayers.length - 1;
+    const isVisibleParentLayer = parentContextVisible && index === logicalLayers.length - 2;
     const selectedAddress = selection.selectedByObject[object.id] || "A1";
     const selectionRange = selection.rangeByObject[object.id] || { anchor: selectedAddress, focus: selectedAddress };
     const multiSelectedAddresses = selection.multiSelectedByObject[object.id] || [];
@@ -649,7 +719,7 @@ export function App() {
       {nativeRuntime ? <TitleBar /> : null}
       <div
         className="workspace-shell"
-        data-logical-layer-count={inOut.layers.length}
+        data-logical-layer-count={logicalLayers.length}
         data-rendered-layer-count={visibleLayers.length}
         inert={shell.settingsOpen || (shell.filesOpen && !shell.filesPinned)}
         aria-hidden={shell.settingsOpen || (shell.filesOpen && !shell.filesPinned) ? "true" : undefined}
@@ -749,23 +819,26 @@ export function App() {
       {shell.settingsOpen ? (
         <Suspense fallback={null}>
           <SettingsPanel
+            initialTab={shell.settingsInitialTab}
             activeTheme={activeTheme}
-            customThemes={workspace.themes}
+            customThemes={themeSources}
             settings={workspace.settings}
-            onSelectTheme={setActiveTheme}
-            onCloneTheme={(theme) => saveTheme(cloneTheme(theme))}
-            onUpdateTheme={updateTheme}
-            onDeleteTheme={deleteTheme}
+            onSelectTheme={selectTheme}
+            onCloneTheme={(theme) => saveGlobalTheme(cloneTheme(theme))}
+            onUpdateTheme={updateGlobalTheme}
+            onDeleteTheme={deleteGlobalTheme}
             onImportTheme={commands.importTheme}
             onExportTheme={commands.downloadTheme}
             onUpdateSettings={updateSettings}
             onExportWorkspace={commands.exportWorkspace}
+            onImportWorkspace={commands.importWorkspace}
             onChangeWorkspaceFolder={nativeRuntime ? changeNativeWorkspaceFolder : undefined}
             onOpenWorkspaceFolder={nativeRuntime ? openNativeWorkspaceFolder : undefined}
             onGetUpdateChannel={nativeRuntime ? () => import("../platform/tauri/updater.js").then((m) => m.getUpdateChannel()) : undefined}
             onSetUpdateChannel={nativeRuntime ? (channel) => import("../platform/tauri/updater.js").then((m) => m.setUpdateChannel(channel)) : undefined}
             onCheckForUpdate={nativeRuntime ? () => import("../platform/tauri/updater.js").then((m) => m.checkForUpdate()) : undefined}
             onDownloadAndInstallUpdate={nativeRuntime ? () => import("../platform/tauri/updater.js").then((m) => m.downloadAndInstallUpdate()) : undefined}
+            onPrepareRemoval={nativeRuntime ? (mode) => import("../platform/tauri/preferences.ts").then((m) => m.prepareNativeRemoval(mode)) : undefined}
             onOpenGuide={nativeRuntime ? () => setNativeGuideOpen(true) : undefined}
             onClose={shell.closeSettings}
           />
@@ -775,14 +848,25 @@ export function App() {
       {nativeRuntime && nativeGuideOpen ? (
         <Suspense fallback={null}>
           <NativeOnboarding
-            activeThemeId={workspace.settings.onboardingThemeId || workspace.activeThemeId}
+            activeThemeId={activeTheme.id}
             workspacePath={workspace.settings.nativeWorkspacePath}
             onChooseTheme={(themeId) => {
-              setActiveTheme(themeId);
+              selectTheme(themeId);
               updateSettings({ onboardingThemeId: themeId });
             }}
             onChooseFolder={chooseNativeFolder}
             onFinish={finishNativeGuide}
+          />
+        </Suspense>
+      ) : null}
+
+      {!nativeRuntime && recoverySessions.length ? (
+        <Suspense fallback={null}>
+          <SessionRecoveryDialog
+            sessions={recoverySessions}
+            onRestore={restoreRecoverySessions}
+            onDiscard={discardRecoverySessions}
+            onDismiss={dismissRecovery}
           />
         </Suspense>
       ) : null}

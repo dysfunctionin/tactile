@@ -73,7 +73,7 @@ function selectionWorkspace() {
         tokens: selectionTokens,
       },
     },
-    activeThemeId: "selection",
+    activeThemeId: "paper-public",
     settings: { reduceMotion: true, openSingleClick: "floating", openDoubleClick: "full" },
   };
 }
@@ -85,6 +85,15 @@ async function importWorkspace(page) {
     buffer: Buffer.from(JSON.stringify(selectionWorkspace())),
   });
   await expect(page.locator('[data-object-id="home"][data-cell-address="A1"]')).toBeVisible();
+}
+
+async function selectSelectionTheme(page) {
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  const settings = page.getByRole("dialog", { name: "Settings" });
+  const selectionTheme = settings.locator(".theme-card", { hasText: "Selection test" });
+  await selectionTheme.click();
+  await expect(selectionTheme).toHaveClass(/is-selected/);
+  await settings.getByRole("button", { name: "Close settings" }).click();
 }
 
 async function selectionStyle(page, selector) {
@@ -108,6 +117,7 @@ async function cellCenter(page, address) {
 scenario("uses active theme selection tokens across controls and document text", async ({ page }) => {
   await page.goto("/");
   await importWorkspace(page);
+  await selectSelectionTheme(page);
 
   await page.locator(".base-object-layer .name-box").first().click();
   const addressInput = page.locator(".base-object-layer .address-popover input");
@@ -149,6 +159,7 @@ scenario("uses active theme selection tokens across controls and document text",
 scenario("keeps cell and range selection visuals distinct from text selection", async ({ page }) => {
   await page.goto("/");
   await importWorkspace(page);
+  await selectSelectionTheme(page);
 
   const start = await cellCenter(page, "B2");
   const end = await cellCenter(page, "C3");
