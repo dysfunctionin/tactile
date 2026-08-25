@@ -1,7 +1,13 @@
 import { formatMs, formatPercent, scenarioMetrics, stepComparison, verdict } from "./metrics.js";
 
+const ANSI_SEQUENCE = new RegExp(`${String.fromCharCode(27)}\\[[0-?]*[ -/]*[@-~]`, "g");
+
+function stripAnsi(value) {
+  return String(value).replace(ANSI_SEQUENCE, "");
+}
+
 export function cleanDiagnostic(value) {
-  return value ? String(value).replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, "") : "";
+  return value ? stripAnsi(value) : "";
 }
 
 function cell(value) {
@@ -106,7 +112,7 @@ export function createAgentContext(entry, summary) {
       const errorText = [runError.failureType, runError.message, runError.stack]
         .filter(Boolean)
         .join("\n")
-        .replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, "")
+        .replace(ANSI_SEQUENCE, "")
         .replaceAll("```", "''' ");
       lines.push("", `### ${run.runId}`, "```text", errorText, "```");
     }

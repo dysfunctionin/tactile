@@ -10,6 +10,11 @@ import { DEFAULT_TIMEOUT_RATIO_LIMIT, HISTORY_LIMIT, SCHEMA_VERSION, STATUS, rou
 import { RESULTS_DIR, SHARD_DIR, currentRunId } from "./writer.mjs";
 
 const run = promisify(execFile);
+const ANSI_SEQUENCE = new RegExp(`${String.fromCharCode(27)}\\[[0-?]*[ -/]*[@-~]`, "g");
+
+function stripAnsi(value) {
+  return String(value).replace(ANSI_SEQUENCE, "");
+}
 
 async function gitInfo() {
   try {
@@ -132,7 +137,7 @@ function scenarioKey(record) {
 
 function retainedError(error) {
   if (!error) return null;
-  const clean = (value) => (value ? String(value).replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, "") : null);
+  const clean = (value) => (value ? stripAnsi(value) : null);
   return {
     failureType: clean(error.failureType),
     message: clean(error.message),
@@ -166,9 +171,7 @@ export function mergeHistory(previous, summary, records) {
 
   const scenarios = {};
   for (const [key, entry] of Object.entries(previous.scenarios || {})) {
-    const kept = (entry.runs || [])
-      .filter((run) => run.runId !== summary.runId)
-      .slice(0, HISTORY_LIMIT);
+    const kept = (entry.runs || []).filter((run) => run.runId !== summary.runId).slice(0, HISTORY_LIMIT);
     if (kept.length) scenarios[key] = { ...entry, runs: kept };
   }
 
