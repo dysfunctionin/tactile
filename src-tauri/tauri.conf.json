@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Tactile Alpha",
-  "version": "1.3.0-alpha.1",
-  "identifier": "com.tactile.workspace.alpha",
+  "productName": "Tactile",
+  "version": "1.3.0",
+  "identifier": "com.tactile.workspace",
   "build": {
     "beforeDevCommand": "npm run dev -- --host 127.0.0.1",
     "beforeBuildCommand": "npm run build",
