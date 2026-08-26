@@ -39,7 +39,7 @@ Explicit user requirements override repository guidance. Within the repository, 
 - Routine work starts from `alpha`; `main` is production-only.
 - Preserve unrelated worktree changes and keep edits scoped.
 - Prefer existing boundaries and focused tests over new abstractions.
-- In browsers, each tab owns an isolated ephemeral workspace database; preserve reload reuse, fresh-tab blank state, live-tab exclusion during cleanup, and close protection together. See ADR 0002.
+- In browsers, each tab owns an isolated ephemeral workspace database; preserve reload reuse, fresh-tab blank state, dirty-session restoration, clean-session cleanup, live-tab exclusion, and close protection together. See ADR 0002.
 - Theme selection is app-global: web uses origin local storage and native uses versioned `$APPCONFIG/preferences.json`; do not make appearance authority workspace-scoped. Preserve custom-theme snapshots, native cache migration, clean blank browser sessions, and user workspace folders during app-data cleanup. See ADR 0003.
 - Edit only `version.json` for app versions; synchronize generated mirrors.
 - Never move a published tag or commit official binaries/build outputs.
