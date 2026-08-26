@@ -32,7 +32,6 @@ const FilesPanel = lazy(() => import("../ui/components/FilesPanel.jsx").then(({ 
 const SettingsPanel = lazy(() => import("../ui/components/SettingsPanel.jsx").then(({ SettingsPanel: Component }) => ({ default: Component })));
 const TooltipLayer = lazy(() => import("../ui/components/TooltipLayer.jsx").then(({ TooltipLayer: Component }) => ({ default: Component })));
 const NativeOnboarding = lazy(() => import("../ui/components/NativeOnboarding.jsx").then(({ NativeOnboarding: Component }) => ({ default: Component })));
-const SessionRecoveryDialog = lazy(() => import("../ui/components/SessionRecoveryDialog.jsx").then(({ SessionRecoveryDialog: Component }) => ({ default: Component })));
 
 function FilesPanelFallback({ pinned = false }) {
   return (
@@ -54,10 +53,6 @@ export function App() {
     closeExportRequested,
     clearCloseExportRequest,
     markWorkspaceExported,
-    recoverySessions,
-    dismissRecovery,
-    restoreRecoverySessions,
-    discardRecoverySessions,
     replaceWorkspace,
     updateObject,
     updateCell,
@@ -856,17 +851,6 @@ export function App() {
             }}
             onChooseFolder={chooseNativeFolder}
             onFinish={finishNativeGuide}
-          />
-        </Suspense>
-      ) : null}
-
-      {!nativeRuntime && recoverySessions.length ? (
-        <Suspense fallback={null}>
-          <SessionRecoveryDialog
-            sessions={recoverySessions}
-            onRestore={restoreRecoverySessions}
-            onDiscard={discardRecoverySessions}
-            onDismiss={dismissRecovery}
           />
         </Suspense>
       ) : null}

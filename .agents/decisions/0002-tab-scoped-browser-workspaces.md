@@ -18,9 +18,9 @@ Reload navigation is a compact, versioned intent containing the tab workspace ID
 
 Dense sheet cells are stored in bounded 32 x 32 spatial chunks rather than one IndexedDB record per cell. Snapshot import and structural sheet replacement therefore issue hundreds of chunk writes instead of hundreds of thousands of cell writes. Forward patches update only affected chunks. Opening a version-1 per-cell workspace atomically rewrites it in version-2 chunks; this private schema does not change portable workspace v4.
 
-Browser sessions publish only lifecycle metadata to a small `localStorage` registry. Heartbeats and a `BroadcastChannel` liveness probe exclude active tabs from recovery. A dirty session registers the browser's generic `beforeunload` confirmation. Confirmed close, unanswered close, crash, or force-close makes the session recoverable after its ownership signal and handoff grace expire. Recovery is discovered only when a new blank tab starts; existing work tabs are never interrupted.
+Browser sessions publish only lifecycle metadata to a small `localStorage` registry. A dirty session registers the browser's generic `beforeunload` confirmation; successfully exporting clears that close protection. Closed sessions are discardable and are not offered for recovery.
 
-Recovery offers checkbox selection, Restore Selected, Restore All, Discard, or dismissal to continue blank. The recovery tab always remains a blank workspace. Restore Selected claims the selected orphans atomically, opens each in a new tab with a one-time token, and permanently deletes every unselected orphan. Restore All opens every orphan in a new tab. Popup-blocked claims are released and remain visible for retry. Discard permanently deletes every listed orphan. Blank or successfully exported sessions need no warning and may be deleted after close.
+A new blank tab cleans retired session databases and legacy recovery records. Heartbeats and a `BroadcastChannel` liveness probe exclude active tabs from destructive cleanup, and recent active leases are retained when liveness cannot be established. Blocked IndexedDB deletions remain registered so a later blank tab can retry them.
 
 Native startup and persistence remain folder-scoped. The configured workspace path is authoritative and may be changed in Settings.
 
@@ -29,13 +29,13 @@ Native startup and persistence remain folder-scoped. The configured workspace pa
 - Large browser imports survive reload without depending on `localStorage` capacity.
 - Large imports and dense structural edits avoid per-cell IndexedDB request overhead.
 - Concurrent tabs cannot read or overwrite one another's active workspaces.
-- Browser data is ephemeral by product contract but may remain physically present until a later cleanup pass; browsers cannot guarantee asynchronous IndexedDB deletion during shutdown.
+- Browser data is ephemeral by product contract and closed workspaces are not recoverable. Data may remain physically present until a later cleanup pass because browsers cannot guarantee asynchronous IndexedDB deletion during shutdown.
 - Close protection uses browser-provided text. Custom close dialogs and automatic asynchronous export during shutdown are unsupported.
 - Browser sessions do not automatically migrate the previous global browser workspace.
 - Portable exports remain the durable user-owned browser artifact.
 
 ## Validation and rollback
 
-Platform tests cover session identity, reload reuse, copied-session collision, close outcomes, crash expiry, restore claims, popup-block release, chunked snapshot round trips, and patch persistence. Playwright scenarios cover same-tab reload, fresh-tab blank state, concurrent isolation, export prompting, live-tab exclusion, orphan discovery, selected restore and discard semantics, popup-block recovery, multi-tab restore, large import, and dense structural edits. Native persistence tests guard the folder-authority path.
+Platform tests cover session identity, reload reuse, copied-session collision, close outcomes, live-tab and lease cleanup exclusions, legacy-record deletion, blocked deletion retries, chunked snapshot round trips, and patch persistence. Playwright scenarios cover same-tab reload, fresh-tab blank state, concurrent isolation, export prompting, large import, and dense structural edits. Native persistence tests guard the folder-authority path.
 
-Rollback removes session-specific database selection and recovery UI together; do not restore the full-workspace `localStorage` cache as browser authority.
+Rollback removes session-specific database selection; do not restore the full-workspace `localStorage` cache as browser authority.

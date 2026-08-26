@@ -34,12 +34,7 @@ import {
   shiftCells,
 } from "../../core/sheet/axisCells.js";
 import { loadWorkspace, loadWorkspaceCache, saveWorkspace, saveWorkspaceCache } from "../../platform/browser/storage.js";
-import {
-  browserSessionForPage,
-  claimOrphanedBrowserSessions,
-  deleteBrowserSessions,
-  releaseBrowserSessionClaim,
-} from "../../platform/browser/session.js";
+import { browserSessionForPage } from "../../platform/browser/session.js";
 import { createWave2Shadow } from "../../core/engine/shadow.js";
 import { recordCellChanges } from "../objects/sheet/grid/cellChangeJournal.js";
 import { isTauriRuntime } from "../../platform/tauri/runtime.ts";
@@ -57,14 +52,6 @@ function initialWorkspace() {
     });
   }
   return workspace;
-}
-
-function browserRecoveryLabel(workspace) {
-  const workspaceName = String(workspace?.name || "").trim();
-  const homeTitle = String(workspace?.objects?.[workspace?.homeObjectId]?.title || "").trim();
-  if (workspaceName && workspaceName !== "Tactile") return workspaceName;
-  if (homeTitle && homeTitle !== "Home") return homeTitle;
-  return workspaceName || homeTitle || "Untitled workspace";
 }
 
 function touch(workspace, objects, repairTopology = false) {
@@ -100,10 +87,9 @@ export function useLocalWorkspace() {
   const nativeRuntime = isTauriRuntime();
   const browserSessionRef = useRef(null);
   if (!nativeRuntime && !browserSessionRef.current) {
+    browserSessionRef.current = browserSessionForPage();
     const params = new URLSearchParams(window.location.search);
-    const restoreToken = params.get("restore-session");
-    browserSessionRef.current = browserSessionForPage({ restoreToken });
-    if (restoreToken) {
+    if (params.has("restore-session")) {
       const url = new URL(window.location.href);
       url.searchParams.delete("restore-session");
       window.history.replaceState(null, "", url);
@@ -114,7 +100,6 @@ export function useLocalWorkspace() {
   const [hydrated, setHydrated] = useState(false);
   const [needsExport, setNeedsExport] = useState(false);
   const [closeExportRequested, setCloseExportRequested] = useState(false);
-  const [recoverySessions, setRecoverySessions] = useState([]);
   const saveTimer = useRef(null);
   const saveSequenceRef = useRef(0);
   const historyRef = useRef({ past: [], future: [], lastKey: null, lastAt: 0 });
@@ -122,9 +107,9 @@ export function useLocalWorkspace() {
   const workspaceMutationRef = useRef(false);
   const replacementReconcileRef = useRef(null);
 
-  const markBrowserWorkspaceDirty = useCallback((nextWorkspace) => {
+  const markBrowserWorkspaceDirty = useCallback(() => {
     if (!browserSessionRef.current) return;
-    browserSessionRef.current.markDirty(browserRecoveryLabel(nextWorkspace));
+    browserSessionRef.current.markDirty();
     setNeedsExport(true);
   }, []);
 
@@ -173,14 +158,7 @@ export function useLocalWorkspace() {
     const session = browserSessionRef.current;
     if (!session) return undefined;
     const heartbeat = window.setInterval(() => session.heartbeat(), 5_000);
-    let recoveryTimer = null;
-    if (session.isNew) {
-      void session.cleanupDiscardable();
-      recoveryTimer = window.setTimeout(async () => {
-        const candidates = await session.probeOrphans();
-        if (candidates.length) setRecoverySessions(candidates);
-      }, 2_100);
-    }
+    if (session.isNew) void session.cleanupRetired();
     const handleBeforeUnload = (event) => {
       if (!session.needsExport) return;
       session.markClosePending();
@@ -199,51 +177,12 @@ export function useLocalWorkspace() {
     document.addEventListener("visibilitychange", handleResume);
     return () => {
       window.clearInterval(heartbeat);
-      if (recoveryTimer) window.clearTimeout(recoveryTimer);
       window.removeEventListener("beforeunload", handleBeforeUnload);
       window.removeEventListener("pagehide", handlePageHide);
       window.removeEventListener("focus", handleResume);
       document.removeEventListener("visibilitychange", handleResume);
     };
   }, []);
-
-  const restoreRecoverySessions = useCallback((sessionIds) => {
-    const availableIds = new Set(recoverySessions.map((session) => session.sessionId));
-    const requestedIds = [...new Set(sessionIds || [])].filter((sessionId) => availableIds.has(sessionId));
-    if (!requestedIds.length) return;
-    const discardedIds = recoverySessions
-      .map((session) => session.sessionId)
-      .filter((sessionId) => !requestedIds.includes(sessionId));
-    const claims = claimOrphanedBrowserSessions(requestedIds);
-    if (!claims.length) {
-      setRecoverySessions((current) => current.filter((session) => !requestedIds.includes(session.sessionId)));
-      return;
-    }
-    const restoreUrl = (token) => {
-      const url = new URL(window.location.href);
-      url.searchParams.set("restore-session", token);
-      return url.href;
-    };
-    const blockedIds = [];
-    claims.forEach((claim) => {
-      const opened = window.open(restoreUrl(claim.restoreToken), "_blank");
-      if (!opened) {
-        blockedIds.push(claim.sessionId);
-        releaseBrowserSessionClaim(claim.restoreToken);
-      }
-    });
-    const finishRestore = () => {
-      setRecoverySessions((current) => current.filter((session) => blockedIds.includes(session.sessionId)));
-    };
-    if (discardedIds.length) void deleteBrowserSessions(discardedIds).then(finishRestore);
-    else finishRestore();
-  }, [recoverySessions]);
-
-  const discardRecoverySessions = useCallback(async () => {
-    const ids = recoverySessions.map((session) => session.sessionId);
-    setRecoverySessions([]);
-    await deleteBrowserSessions(ids);
-  }, [recoverySessions]);
 
   useEffect(() => {
     if (!hydrated) return undefined;
@@ -819,10 +758,6 @@ export function useLocalWorkspace() {
     closeExportRequested,
     clearCloseExportRequest: () => setCloseExportRequested(false),
     markWorkspaceExported,
-    recoverySessions,
-    dismissRecovery: () => setRecoverySessions([]),
-    restoreRecoverySessions,
-    discardRecoverySessions,
     replaceWorkspace,
     updateObject,
     updateCell,
