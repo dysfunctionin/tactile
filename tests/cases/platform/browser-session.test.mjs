@@ -4,6 +4,7 @@ import {
   browserSessionForPage,
   cleanupRetiredBrowserSessions,
   createBrowserSession,
+  listOrphanedBrowserSessions,
 } from "../../../src/platform/browser/session.js";
 import { defineSuite } from "../../harness/index.mjs";
 
@@ -55,6 +56,25 @@ class MemoryBroadcastChannel {
 
   close() {
     MemoryBroadcastChannel.channels.get(this.name)?.delete(this);
+  }
+}
+
+class MemoryIndexedDB {
+  constructor(blocked = new Set()) {
+    this.blocked = blocked;
+    this.deleted = [];
+  }
+
+  deleteDatabase(databaseName) {
+    const request = {};
+    queueMicrotask(() => {
+      if (this.blocked.has(databaseName)) request.onblocked();
+      else {
+        this.deleted.push(databaseName);
+        request.onsuccess();
+      }
+    });
+    return request;
   }
 }
 
@@ -156,6 +176,64 @@ scenario("exporting clears close protection metadata", () => {
   session.markExported();
 
   assert.equal(session.needsExport, false);
+});
+
+scenario("dirty closed workspaces are listed newest first with browser timestamps", () => {
+  const localStorage = new MemoryStorage();
+  let timestamp = 100;
+  const first = createBrowserSession({
+    localStorage,
+    sessionStorage: new MemoryStorage(),
+    performance: performanceWith("navigate"),
+    now: () => timestamp,
+  });
+  first.syncWorkspace({ id: "workspace-first", name: "First workspace" });
+  timestamp = 200;
+  first.markDirty();
+  first.markClosed();
+
+  timestamp = 300;
+  const second = createBrowserSession({
+    localStorage,
+    sessionStorage: new MemoryStorage(),
+    performance: performanceWith("navigate"),
+    now: () => timestamp,
+  });
+  second.syncWorkspace({ id: "workspace-second", name: "Second workspace" });
+  second.markDirty();
+  second.markClosed();
+
+  assert.deepEqual(listOrphanedBrowserSessions({ localStorage }), [
+    {
+      sessionId: second.sessionId,
+      workspaceId: "workspace-second",
+      workspaceName: "Second workspace",
+      lastChangedAt: 300,
+      lastExportedAt: 0,
+    },
+    {
+      sessionId: first.sessionId,
+      workspaceId: "workspace-first",
+      workspaceName: "First workspace",
+      lastChangedAt: 200,
+      lastExportedAt: 0,
+    },
+  ]);
+});
+
+scenario("clean closed workspaces are not offered for restoration", () => {
+  const localStorage = new MemoryStorage();
+  const session = createBrowserSession({
+    localStorage,
+    sessionStorage: new MemoryStorage(),
+    performance: performanceWith("navigate"),
+    now: () => 100,
+  });
+  session.syncWorkspace({ id: "clean-workspace", name: "Clean workspace" });
+  session.markClosed();
+
+  assert.deepEqual(listOrphanedBrowserSessions({ localStorage }), []);
+  assert.equal(registryFrom(localStorage)[session.sessionId].state, "discardable");
 });
 
 scenario("strict rendering initializes one browser session per page", () => {
@@ -263,6 +341,156 @@ scenario("cleanup waits for an active lease before removing an unresponsive tab"
     }),
     [session.sessionId],
   );
+});
+
+scenario("cleanup turns an expired dirty tab into a recoverable orphan", async () => {
+  const localStorage = new MemoryStorage();
+  let timestamp = 100;
+  const session = createBrowserSession({
+    localStorage,
+    sessionStorage: new MemoryStorage(),
+    performance: performanceWith("navigate"),
+    BroadcastChannel: null,
+    now: () => timestamp,
+  });
+  session.syncWorkspace({ id: "crashed-workspace", name: "Crashed workspace" });
+  timestamp = 200;
+  session.markDirty();
+
+  const removed = await cleanupRetiredBrowserSessions({
+    localStorage,
+    indexedDB: new MemoryIndexedDB(),
+    BroadcastChannel: null,
+    now: () => 60_000,
+  });
+
+  assert.deepEqual(removed, []);
+  assert.equal(registryFrom(localStorage)[session.sessionId].state, "orphan");
+  assert.equal(listOrphanedBrowserSessions({ localStorage })[0].workspaceName, "Crashed workspace");
+});
+
+scenario("discard all reports blocked databases and removes the rest", async () => {
+  const localStorage = new MemoryStorage();
+  const createOrphan = (name, timestamp) => {
+    const session = createBrowserSession({
+      localStorage,
+      sessionStorage: new MemoryStorage(),
+      performance: performanceWith("navigate"),
+      now: () => timestamp,
+    });
+    session.syncWorkspace({ id: `workspace-${name}`, name });
+    session.markDirty();
+    session.markClosed();
+    return session;
+  };
+  const removable = createOrphan("Removable", 100);
+  const blocked = createOrphan("Blocked", 200);
+  const indexedDB = new MemoryIndexedDB(new Set([blocked.databaseName]));
+  const manager = createBrowserSession({
+    localStorage,
+    sessionStorage: new MemoryStorage(),
+    performance: performanceWith("navigate"),
+    indexedDB,
+    locks: null,
+    now: () => 300,
+  });
+
+  const result = await manager.discardAllOrphans();
+
+  assert.deepEqual(result.removed, [removable.sessionId]);
+  assert.deepEqual(result.failed, [blocked.sessionId]);
+  assert.equal(registryFrom(localStorage)[removable.sessionId], undefined);
+  assert.equal(registryFrom(localStorage)[blocked.sessionId].state, "orphan");
+});
+
+scenario("restore exclusively claims an orphan and preserves the dirty current workspace", async () => {
+  const localStorage = new MemoryStorage();
+  const sessionStorage = new MemoryStorage();
+  let timestamp = 100;
+  let reloads = 0;
+  let replacedUrl = "";
+  const current = createBrowserSession({
+    localStorage,
+    sessionStorage,
+    performance: performanceWith("navigate"),
+    locks: null,
+    location: {
+      href: "https://example.test/app/",
+      reload() {
+        reloads += 1;
+      },
+    },
+    history: {
+      replaceState(_state, _title, url) {
+        replacedUrl = String(url);
+      },
+    },
+    now: () => timestamp,
+  });
+  current.syncWorkspace({ id: "current-workspace", name: "Current workspace" });
+  timestamp = 200;
+  current.markDirty();
+  sessionStorage.setItem("tactile.browser.boot.v1", JSON.stringify({ activeWorkspaceId: "current-workspace" }));
+  const registry = registryFrom(localStorage);
+  registry.target = {
+    ownerId: "target-owner",
+    state: "orphan",
+    needsExport: true,
+    databaseName: "target-database",
+    workspaceId: "target-workspace",
+    workspaceName: "Target workspace",
+    lastChangedAt: 150,
+    lastExportedAt: 0,
+    lastSeen: 150,
+  };
+  localStorage.setItem(REGISTRY_KEY, JSON.stringify(registry));
+
+  assert.equal(await current.restoreOrphan("target"), true);
+  assert.equal(await current.restoreOrphan("target"), false);
+
+  const restoredRegistry = registryFrom(localStorage);
+  assert.equal(restoredRegistry.target.state, "claimed");
+  assert.equal(restoredRegistry[current.sessionId].state, "orphan");
+  assert.equal(sessionStorage.getItem("tactile.browser.session.v1"), "target");
+  assert.equal(sessionStorage.getItem("tactile.browser.boot.v1"), null);
+  assert.match(replacedUrl, /restore-session=target/);
+  assert.equal(reloads, 1);
+});
+
+scenario("cleanup preserves a recent restore claim and recovers it after the lease expires", async () => {
+  const localStorage = new MemoryStorage();
+  localStorage.setItem(
+    REGISTRY_KEY,
+    JSON.stringify({
+      claimed: {
+        ownerId: "claim-owner",
+        state: "claimed",
+        needsExport: true,
+        databaseName: "claimed-database",
+        workspaceId: "claimed-workspace",
+        workspaceName: "Claimed workspace",
+        lastChangedAt: 100,
+        lastExportedAt: 0,
+        lastSeen: 1_000,
+      },
+    }),
+  );
+
+  await cleanupRetiredBrowserSessions({
+    localStorage,
+    indexedDB: new MemoryIndexedDB(),
+    BroadcastChannel: null,
+    now: () => 2_000,
+  });
+  assert.equal(registryFrom(localStorage).claimed.state, "claimed");
+
+  await cleanupRetiredBrowserSessions({
+    localStorage,
+    indexedDB: new MemoryIndexedDB(),
+    BroadcastChannel: null,
+    now: () => 20_000,
+  });
+  assert.equal(registryFrom(localStorage).claimed.state, "orphan");
 });
 
 scenario("a blocked database deletion remains registered for retry", async () => {
