@@ -54,7 +54,7 @@ export function useWorkspaceCommands({
     if (!file) return;
     try {
       const imported = await importWorkspaceFile(file);
-      await replaceWorkspace(imported);
+      await replaceWorkspace(imported, { cleanBaseline: true });
       resetSelection();
       showNotice(`Imported ${imported.name}`);
     } catch (error) {

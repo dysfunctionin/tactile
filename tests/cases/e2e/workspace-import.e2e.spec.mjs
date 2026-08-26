@@ -26,6 +26,19 @@ scenario("keeps an imported small workspace after a reload", async ({ page, arti
 
   const rootCell = page.locator(`[data-object-id="${spec.rootSheetId}"][data-cell-address="A1"]`);
   await expect(rootCell).toBeVisible({ timeout: 120_000 });
+  const importState = await page.evaluate(() => {
+    const sessionId = sessionStorage.getItem("tactile.browser.session.v1");
+    const registry = JSON.parse(localStorage.getItem("tactile.browser.sessions.v1") || "{}");
+    const record = registry[sessionId];
+    return {
+      lastChangedAt: record?.lastChangedAt,
+      lastExportedAt: record?.lastExportedAt,
+      needsExport: record?.needsExport,
+    };
+  });
+  expect(importState.lastChangedAt).toBeGreaterThan(0);
+  expect(importState.lastExportedAt).toBe(importState.lastChangedAt);
+  expect(importState.needsExport).toBe(false);
 
   await page.reload();
   await expect(rootCell).toBeVisible({ timeout: 120_000 });

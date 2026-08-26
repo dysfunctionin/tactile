@@ -178,6 +178,28 @@ scenario("exporting clears close protection metadata", () => {
   assert.equal(session.needsExport, false);
 });
 
+scenario("importing establishes matching change and export timestamps", () => {
+  const localStorage = new MemoryStorage();
+  let timestamp = 100;
+  const session = createBrowserSession({
+    localStorage,
+    sessionStorage: new MemoryStorage(),
+    performance: performanceWith("navigate"),
+    now: () => timestamp,
+  });
+  timestamp = 200;
+  session.markDirty();
+  timestamp = 300;
+
+  session.markImported();
+
+  const record = registryFrom(localStorage)[session.sessionId];
+  assert.equal(record.lastChangedAt, 300);
+  assert.equal(record.lastExportedAt, 300);
+  assert.equal(record.needsExport, false);
+  assert.equal(session.needsExport, false);
+});
+
 scenario("dirty closed workspaces are listed newest first with browser timestamps", () => {
   const localStorage = new MemoryStorage();
   let timestamp = 100;

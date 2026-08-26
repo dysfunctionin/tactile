@@ -360,18 +360,22 @@ export function useLocalWorkspace() {
     });
   }, [markBrowserWorkspaceDirty]);
 
-  const replaceWorkspace = useCallback(async (nextWorkspace) => {
+  const replaceWorkspace = useCallback(async (nextWorkspace, options = {}) => {
     const normalized = normalizeWorkspace(nextWorkspace);
     const shadow = wave2ShadowRef.current;
     const replacesPersistedSnapshot = shadow?.state?.persistence === "active";
+    const cleanBaseline = options.cleanBaseline === true;
     workspaceMutationRef.current = true;
     historyRef.current = { past: [], future: [], lastKey: null, lastAt: 0 };
-    markBrowserWorkspaceDirty(normalized);
+    if (!cleanBaseline) markBrowserWorkspaceDirty(normalized);
     if (replacesPersistedSnapshot) {
       await shadow.replaceSnapshot(normalized, { normalized: true });
       replacementReconcileRef.current = normalized;
     }
     setWorkspace(normalized);
+    if (cleanBaseline && browserSessionRef.current?.markImported()) {
+      setNeedsExport(false);
+    }
     return normalized;
   }, [markBrowserWorkspaceDirty]);
 

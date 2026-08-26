@@ -261,6 +261,15 @@ export function createBrowserSession(options = {}) {
         state: "active",
       }, timestamp);
     },
+    markImported() {
+      const timestamp = currentTime();
+      return updateOwnedSession(localStorage, sessionId, ownerId, {
+        lastChangedAt: timestamp,
+        lastExportedAt: timestamp,
+        needsExport: false,
+        state: "active",
+      }, timestamp);
+    },
     syncWorkspace(workspace) {
       if (!workspace) return false;
       return updateOwnedSession(localStorage, sessionId, ownerId, {
