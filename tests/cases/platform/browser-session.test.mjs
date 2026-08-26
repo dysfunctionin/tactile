@@ -258,6 +258,25 @@ scenario("clean closed workspaces are not offered for restoration", () => {
   assert.equal(registryFrom(localStorage)[session.sessionId].state, "discardable");
 });
 
+scenario("an imported clean workspace is discardable when closed", () => {
+  const localStorage = new MemoryStorage();
+  const session = createBrowserSession({
+    localStorage,
+    sessionStorage: new MemoryStorage(),
+    performance: performanceWith("navigate"),
+    now: () => 100,
+  });
+  session.syncWorkspace({ id: "imported-workspace", name: "Imported workspace" });
+  session.markImported();
+  session.markClosed();
+
+  const record = registryFrom(localStorage)[session.sessionId];
+  assert.equal(record.lastChangedAt, 100);
+  assert.equal(record.lastExportedAt, 100);
+  assert.equal(record.state, "discardable");
+  assert.deepEqual(listOrphanedBrowserSessions({ localStorage }), []);
+});
+
 scenario("strict rendering initializes one browser session per page", () => {
   const options = {
     host: {},

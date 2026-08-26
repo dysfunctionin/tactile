@@ -68,14 +68,18 @@ scenario(
   },
 );
 
-scenario("canceling browser close protection reveals the workspace export action", async ({ page, artifactPath }) => {
-  await importThroughSettings(page, artifactPath);
-  await page.evaluate(() => window.dispatchEvent(new Event("beforeunload", { cancelable: true })));
+scenario(
+  "canceling browser close protection reveals the workspace export action",
+  async ({ page, artifactPath, spec }) => {
+    await importThroughSettings(page, artifactPath);
+    await editCell(page, spec.rootSheetId, "Needs export");
+    await page.evaluate(() => window.dispatchEvent(new Event("beforeunload", { cancelable: true })));
 
-  await expect(page.getByRole("dialog", { name: "Settings" })).toBeVisible();
-  await expect(page.getByRole("tab", { name: "Files & ownership" })).toHaveAttribute("aria-selected", "true");
-  await expect(page.getByRole("button", { name: "Export .zip" })).toBeVisible();
-});
+    await expect(page.getByRole("dialog", { name: "Settings" })).toBeVisible();
+    await expect(page.getByRole("tab", { name: "Files & ownership" })).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByRole("button", { name: "Export .zip" })).toBeVisible();
+  },
+);
 
 scenario("a fresh blank workspace does not register close protection", async ({ page }) => {
   await page.goto("/");
@@ -115,9 +119,21 @@ scenario(
     const settings = recoveryPage.getByRole("dialog", { name: "Settings" });
     await expect(settings.getByRole("tab", { name: "Files & ownership" })).toHaveAttribute("aria-selected", "true");
     const restoreRegion = settings.getByRole("region", { name: "Restore workspaces" });
-    await expect(restoreRegion.locator(".restore-workspace-row")).toContainText("Small sheet");
-    await expect(restoreRegion.locator(".restore-workspace-row")).toContainText("Never");
-    await restoreRegion.getByRole("button", { name: "Restore", exact: true }).click();
+    const workspaceRow = restoreRegion.locator(".restore-workspace-row").filter({ hasText: "Small sheet" });
+    await expect(workspaceRow).toHaveCount(1);
+    const recoveryTimestamps = await recoveryPage.evaluate((workspaceId) => {
+      const registry = JSON.parse(localStorage.getItem("tactile.browser.sessions.v1") || "{}");
+      const record = Object.values(registry).find(
+        (entry) => entry?.state === "orphan" && entry.workspaceId === workspaceId,
+      );
+      return {
+        lastChangedAt: Number(record?.lastChangedAt || 0),
+        lastExportedAt: Number(record?.lastExportedAt || 0),
+      };
+    }, spec.workspaceId);
+    expect(recoveryTimestamps.lastExportedAt).toBeGreaterThan(0);
+    expect(recoveryTimestamps.lastChangedAt).toBeGreaterThan(recoveryTimestamps.lastExportedAt);
+    await workspaceRow.getByRole("button", { name: "Restore", exact: true }).click();
 
     await expect(workspaceCell(recoveryPage, spec.rootSheetId)).toContainText("Recovered value");
     await expect(recoveryPage.getByRole("button", { name: "Browse files", exact: true })).toBeVisible();
