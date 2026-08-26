@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import {
   IconAdjustments,
+  IconAlertTriangle,
   IconBrackets,
   IconCheck,
   IconCopy,
@@ -15,6 +16,7 @@ IconMoon,
   IconPlugConnected,
   IconPlus,
   IconRefresh,
+  IconRestore,
   IconSparkles,
   IconSun,
   IconTrash,
@@ -75,6 +77,14 @@ const themeFilters = [
 function boundedTokenValue(value, min, max) {
   const number = Number(value);
   return Number.isFinite(number) ? Math.max(min, Math.min(max, number)) : min;
+}
+
+function formatRecoveryTimestamp(value) {
+  if (!value) return "Never";
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
 }
 
 function formatPluginSize(bytes) {
@@ -161,6 +171,10 @@ export function SettingsPanel({
   activeTheme,
   customThemes,
   settings,
+  orphanedWorkspaces = [],
+  onRestoreWorkspace,
+  onDiscardWorkspace,
+  onDiscardAllWorkspaces,
   onSelectTheme,
   onCloneTheme,
   onUpdateTheme,
@@ -192,6 +206,9 @@ onChangeWorkspaceFolder,
   const [channelChanging, setChannelChanging] = useState(false);
   const [removalMode, setRemovalMode] = useState(null);
   const [removalState, setRemovalState] = useState("idle");
+  const [recoveryAction, setRecoveryAction] = useState("");
+  const [recoveryError, setRecoveryError] = useState("");
+  const [discardAllConfirm, setDiscardAllConfirm] = useState(false);
   const themeInputRef = useRef(null);
   const panelRef = useRef(null);
   const closeRef = useRef(null);
@@ -325,6 +342,19 @@ onChangeWorkspaceFolder,
       await onPrepareRemoval(removalMode);
     } catch {
       setRemovalState("error");
+    }
+  };
+
+  const runRecoveryAction = async (key, action) => {
+    setRecoveryAction(key);
+    setRecoveryError("");
+    try {
+      await action();
+      setDiscardAllConfirm(false);
+    } catch (error) {
+      setRecoveryError(error?.message || "The workspace operation failed.");
+    } finally {
+      setRecoveryAction("");
     }
   };
 
@@ -533,6 +563,76 @@ onChangeWorkspaceFolder,
                 {onImportWorkspace ? <button type="button" onClick={onImportWorkspace}><IconUpload size={15} /> Import workspace</button> : null}
                 {onOpenGuide ? <button type="button" onClick={onOpenGuide}><IconSparkles size={15} /> Open getting started guide</button> : null}
               </div>
+              {onRestoreWorkspace ? (
+                <section className="restore-workspaces" aria-labelledby="restore-workspaces-title">
+                  <div className="restore-workspaces-heading">
+                    <span>
+                      <IconRestore size={18} stroke={1.6} aria-hidden="true" />
+                      <span>
+                        <strong id="restore-workspaces-title">Restore workspaces</strong>
+                        <small>Closed workspaces with unexported changes remain available in this browser.</small>
+                      </span>
+                    </span>
+                    {orphanedWorkspaces.length && !discardAllConfirm ? (
+                      <button className="is-danger" type="button" onClick={() => setDiscardAllConfirm(true)}>
+                        <IconTrash size={13} /> Discard all
+                      </button>
+                    ) : null}
+                  </div>
+                  {orphanedWorkspaces.length ? (
+                    <div className="restore-workspaces-list" aria-label="Restorable workspaces">
+                      <div className="restore-workspaces-columns" aria-hidden="true">
+                        <span>Workspace</span><span>Last changed</span><span>Last exported</span><span>Actions</span>
+                      </div>
+                      {orphanedWorkspaces.map((record) => {
+                        const busy = recoveryAction === record.sessionId;
+                        return (
+                          <div className="restore-workspace-row" key={record.sessionId}>
+                            <strong>{record.workspaceName}</strong>
+                            <span data-label="Last changed">{formatRecoveryTimestamp(record.lastChangedAt)}</span>
+                            <span data-label="Last exported">{formatRecoveryTimestamp(record.lastExportedAt)}</span>
+                            <span className="restore-workspace-actions">
+                              <button
+                                type="button"
+                                disabled={Boolean(recoveryAction)}
+                                onClick={() => runRecoveryAction(record.sessionId, () => onRestoreWorkspace(record.sessionId))}
+                              >
+                                <IconRestore size={13} /> {busy ? "Restoring…" : "Restore"}
+                              </button>
+                              <button
+                                className="is-danger"
+                                type="button"
+                                disabled={Boolean(recoveryAction)}
+                                onClick={() => runRecoveryAction(record.sessionId, () => onDiscardWorkspace(record.sessionId))}
+                              >
+                                Discard
+                              </button>
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="restore-workspaces-empty">No workspaces are waiting to be restored.</p>
+                  )}
+                  {discardAllConfirm ? (
+                    <div className="restore-workspaces-confirm" role="alert">
+                      <IconAlertTriangle size={15} aria-hidden="true" />
+                      <span>Discard every restorable workspace? This cannot be undone.</span>
+                      <button type="button" onClick={() => setDiscardAllConfirm(false)} disabled={Boolean(recoveryAction)}>Cancel</button>
+                      <button
+                        className="is-danger"
+                        type="button"
+                        disabled={Boolean(recoveryAction)}
+                        onClick={() => runRecoveryAction("all", onDiscardAllWorkspaces)}
+                      >
+                        {recoveryAction === "all" ? "Discarding…" : "Discard all"}
+                      </button>
+                    </div>
+                  ) : null}
+                  {recoveryError ? <p className="restore-workspaces-error" role="alert">{recoveryError}</p> : null}
+                </section>
+              ) : null}
               {onChangeWorkspaceFolder ? (
                 <div className="native-workspace-settings">
                   <div className="native-workspace-heading">

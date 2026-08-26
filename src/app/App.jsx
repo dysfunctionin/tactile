@@ -32,7 +32,6 @@ const FilesPanel = lazy(() => import("../ui/components/FilesPanel.jsx").then(({ 
 const SettingsPanel = lazy(() => import("../ui/components/SettingsPanel.jsx").then(({ SettingsPanel: Component }) => ({ default: Component })));
 const TooltipLayer = lazy(() => import("../ui/components/TooltipLayer.jsx").then(({ TooltipLayer: Component }) => ({ default: Component })));
 const NativeOnboarding = lazy(() => import("../ui/components/NativeOnboarding.jsx").then(({ NativeOnboarding: Component }) => ({ default: Component })));
-const SessionRecoveryDialog = lazy(() => import("../ui/components/SessionRecoveryDialog.jsx").then(({ SessionRecoveryDialog: Component }) => ({ default: Component })));
 
 function FilesPanelFallback({ pinned = false }) {
   return (
@@ -54,10 +53,10 @@ export function App() {
     closeExportRequested,
     clearCloseExportRequest,
     markWorkspaceExported,
-    recoverySessions,
-    dismissRecovery,
-    restoreRecoverySessions,
-    discardRecoverySessions,
+    orphanedWorkspaces,
+    restoreWorkspace,
+    discardWorkspace,
+    discardAllWorkspaces,
     replaceWorkspace,
     updateObject,
     updateCell,
@@ -775,6 +774,7 @@ export function App() {
           path={activeDockPath}
           onNavigatePath={(item) => inOut.navigateToRoute(item.route, { mode: "full" })}
           filesOpen={shell.filesOpen}
+          orphanedWorkspaceCount={orphanedWorkspaces.length}
           onOpenFiles={shell.toggleFiles}
           onOpenSettings={shell.openSettings}
           onUndo={undo}
@@ -791,6 +791,8 @@ export function App() {
             activeObjectId={activeObjectId}
             pinned={shell.filesPinned}
             width={shell.filesWidth}
+            orphanedWorkspaceCount={orphanedWorkspaces.length}
+            onOpenRestoreSettings={(sourceElement) => shell.openSettings(sourceElement, "files")}
             onOpenRoute={(route) => inOut.navigateToRoute(route, { mode: "full", immediate: true })}
             onCreateObject={(type) => {
               const created = createObject(type);
@@ -823,6 +825,10 @@ export function App() {
             activeTheme={activeTheme}
             customThemes={themeSources}
             settings={workspace.settings}
+            orphanedWorkspaces={orphanedWorkspaces}
+            onRestoreWorkspace={nativeRuntime ? undefined : restoreWorkspace}
+            onDiscardWorkspace={nativeRuntime ? undefined : discardWorkspace}
+            onDiscardAllWorkspaces={nativeRuntime ? undefined : discardAllWorkspaces}
             onSelectTheme={selectTheme}
             onCloneTheme={(theme) => saveGlobalTheme(cloneTheme(theme))}
             onUpdateTheme={updateGlobalTheme}
@@ -856,17 +862,6 @@ export function App() {
             }}
             onChooseFolder={chooseNativeFolder}
             onFinish={finishNativeGuide}
-          />
-        </Suspense>
-      ) : null}
-
-      {!nativeRuntime && recoverySessions.length ? (
-        <Suspense fallback={null}>
-          <SessionRecoveryDialog
-            sessions={recoverySessions}
-            onRestore={restoreRecoverySessions}
-            onDiscard={discardRecoverySessions}
-            onDismiss={dismissRecovery}
           />
         </Suspense>
       ) : null}

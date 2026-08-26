@@ -1,11 +1,11 @@
-import { BROWSER_DATABASE_NAME } from "./constants.js";
+import { BOOT_METADATA_KEY, BROWSER_DATABASE_NAME } from "./constants.js";
 import { createBrowserPersistence } from "./persistence.js";
 
 const SESSION_ID_KEY = "tactile.browser.session.v1";
-const SESSION_REGISTRY_KEY = "tactile.browser.sessions.v1";
+export const BROWSER_SESSION_REGISTRY_KEY = "tactile.browser.sessions.v1";
 const ACTIVE_LEASE_MS = 15_000;
-const CLOSE_GRACE_MS = 2_000;
 const LIVENESS_CHANNEL = "tactile.browser.session-liveness.v1";
+const REGISTRY_LOCK = "tactile.browser.sessions.lock.v1";
 const PAGE_SESSION_KEY = Symbol.for("tactile.browser.page-session.v1");
 
 function randomId(prefix) {
@@ -17,7 +17,7 @@ function randomId(prefix) {
 function readRegistry(storage) {
   if (!storage) return {};
   try {
-    const parsed = JSON.parse(storage.getItem(SESSION_REGISTRY_KEY) || "{}");
+    const parsed = JSON.parse(storage.getItem(BROWSER_SESSION_REGISTRY_KEY) || "{}");
     return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
   } catch {
     return {};
@@ -27,7 +27,7 @@ function readRegistry(storage) {
 function writeRegistry(storage, registry) {
   if (!storage) return;
   try {
-    storage.setItem(SESSION_REGISTRY_KEY, JSON.stringify(registry));
+    storage.setItem(BROWSER_SESSION_REGISTRY_KEY, JSON.stringify(registry));
   } catch {
     // Session isolation still works when shared lifecycle metadata is blocked.
   }
@@ -42,10 +42,49 @@ function nowFor(options) {
   return options.now?.() ?? Date.now();
 }
 
+function sessionNeedsExport(record) {
+  if (!record) return false;
+  if (Number(record.lastChangedAt || 0) > Number(record.lastExportedAt || 0)) return true;
+  return record.needsExport === true;
+}
+
+function locksFor(value) {
+  if (value !== undefined) return value;
+  return typeof globalThis !== "undefined" ? globalThis.navigator?.locks : null;
+}
+
+function withRegistryLock(locks, action) {
+  return locks?.request ? locks.request(REGISTRY_LOCK, action) : action();
+}
+
+function recoveryRecord(sessionId, record) {
+  return {
+    sessionId,
+    workspaceId: String(record.workspaceId || ""),
+    workspaceName: String(record.workspaceName || "Untitled workspace"),
+    lastChangedAt: Number(record.lastChangedAt || 0),
+    lastExportedAt: Number(record.lastExportedAt || 0),
+  };
+}
+
+export function listOrphanedBrowserSessions(options = {}) {
+  const localStorage = storageFor(options.localStorage, "localStorage");
+  const excludeSessionId = options.excludeSessionId || null;
+  return Object.entries(readRegistry(localStorage))
+    .filter(([sessionId, record]) => (
+      sessionId !== excludeSessionId
+      && record?.state === "orphan"
+      && Number(record.lastChangedAt || 0) > 0
+      && sessionNeedsExport(record)
+    ))
+    .map(([sessionId, record]) => recoveryRecord(sessionId, record))
+    .sort((left, right) => right.lastChangedAt - left.lastChangedAt);
+}
+
 function updateOwnedSession(localStorage, sessionId, ownerId, patch, now) {
   const registry = readRegistry(localStorage);
   const current = registry[sessionId];
-  if (!current || current.ownerId !== ownerId || current.state === "claimed") return false;
+  if (!current || current.ownerId !== ownerId) return false;
   registry[sessionId] = {
     ...current,
     ...patch,
@@ -55,113 +94,108 @@ function updateOwnedSession(localStorage, sessionId, ownerId, patch, now) {
   return true;
 }
 
-export function discoverOrphanedBrowserSessions(options = {}) {
-  const localStorage = storageFor(options.localStorage, "localStorage");
-  const now = nowFor(options);
-  const excludeSessionId = options.excludeSessionId || null;
-  return Object.entries(readRegistry(localStorage))
-    .filter(([sessionId, record]) => {
-      if (sessionId === excludeSessionId || !record?.needsExport) return false;
-      if (record.state === "orphan") return now - Number(record.closedAt || record.lastSeen || 0) >= CLOSE_GRACE_MS;
-      if (record.state === "close-pending") return now - Number(record.closeRequestedAt || record.lastSeen || 0) >= ACTIVE_LEASE_MS;
-      return record.state === "active" && now - Number(record.lastSeen || 0) >= ACTIVE_LEASE_MS;
-    })
-    .map(([sessionId, record]) => ({
-      sessionId,
-      databaseName: record.databaseName || `${BROWSER_DATABASE_NAME}-${sessionId}`,
-      workspaceLabel: record.workspaceLabel || "Untitled workspace",
-      closedAt: record.closedAt || record.closeRequestedAt || record.lastSeen || null,
-    }))
-    .sort((left, right) => Number(right.closedAt || 0) - Number(left.closedAt || 0));
-}
-
-export function claimOrphanedBrowserSessions(sessionIds, options = {}) {
-  const localStorage = storageFor(options.localStorage, "localStorage");
-  const registry = readRegistry(localStorage);
-  const claims = [];
-  for (const sessionId of sessionIds) {
-    const current = registry[sessionId];
-    if (!current?.needsExport || !["orphan", "close-pending", "active"].includes(current.state)) continue;
-    const restoreToken = randomId("restore");
-    registry[sessionId] = { ...current, state: "claimed", restoreToken, claimedAt: nowFor(options) };
-    claims.push({ sessionId, restoreToken });
-  }
-  writeRegistry(localStorage, registry);
-  return claims;
-}
-
-export function releaseBrowserSessionClaim(restoreToken, options = {}) {
-  const localStorage = storageFor(options.localStorage, "localStorage");
-  const registry = readRegistry(localStorage);
-  const entry = Object.entries(registry).find(([, record]) => record?.restoreToken === restoreToken);
-  if (!entry) return false;
-  const [sessionId, record] = entry;
-  registry[sessionId] = { ...record, state: "orphan", restoreToken: null, claimedAt: null };
-  writeRegistry(localStorage, registry);
-  return true;
-}
-
-export async function deleteBrowserSessions(sessionIds, options = {}) {
-  const localStorage = storageFor(options.localStorage, "localStorage");
-  const indexedDB = options.indexedDB
-    ?? (typeof globalThis !== "undefined" ? globalThis.indexedDB : null);
-  const registry = readRegistry(localStorage);
-  for (const sessionId of sessionIds) {
-    const record = registry[sessionId];
-    const databaseName = record?.databaseName || `${BROWSER_DATABASE_NAME}-${sessionId}`;
-    if (indexedDB) {
-      await new Promise((resolve) => {
-        const request = indexedDB.deleteDatabase(databaseName);
-        request.onsuccess = () => resolve();
-        request.onerror = () => resolve();
-        request.onblocked = () => resolve();
-      });
-    }
-    delete registry[sessionId];
-  }
-  writeRegistry(localStorage, registry);
-}
-
-export function cleanupDiscardableBrowserSessions(options = {}) {
-  const localStorage = storageFor(options.localStorage, "localStorage");
-  const sessionIds = Object.entries(readRegistry(localStorage))
-    .filter(([, record]) => record?.state === "discardable" || record?.needsExport === false && record?.state !== "active")
-    .map(([sessionId]) => sessionId);
-  return deleteBrowserSessions(sessionIds, { ...options, localStorage });
-}
-
-export async function probeOrphanedBrowserSessions(options = {}) {
-  const localStorage = storageFor(options.localStorage, "localStorage");
-  const now = nowFor(options);
-  const candidates = Object.entries(readRegistry(localStorage))
-    .filter(([sessionId, record]) => {
-      if (sessionId === options.excludeSessionId || !record?.needsExport || record.state === "claimed") return false;
-      if (record.state === "orphan") return now - Number(record.closedAt || record.lastSeen || 0) >= CLOSE_GRACE_MS;
-      if (record.state === "close-pending") {
-        return now - Number(record.closeRequestedAt || record.lastSeen || 0) >= ACTIVE_LEASE_MS;
-      }
-      return record.state === "active";
-    })
-    .map(([sessionId, record]) => ({
-      sessionId,
-      databaseName: record.databaseName || `${BROWSER_DATABASE_NAME}-${sessionId}`,
-      workspaceLabel: record.workspaceLabel || "Untitled workspace",
-      closedAt: record.closedAt || record.closeRequestedAt || record.lastSeen || null,
-    }));
+async function liveSessionIds(sessionIds, options = {}) {
   const Channel = options.BroadcastChannel
     ?? (typeof window !== "undefined" ? window.BroadcastChannel : null);
-  if (!candidates.length) return candidates;
-  if (!Channel) return discoverOrphanedBrowserSessions(options);
+  if (!Channel || !sessionIds.length) return new Set();
   const channel = new Channel(LIVENESS_CHANNEL);
   const alive = new Set();
   const nonce = randomId("probe");
   channel.onmessage = (event) => {
-    if (event.data?.type === "alive" && event.data.nonce === nonce) alive.add(event.data.sessionId);
+    if (event.data?.type === "alive" && event.data.nonce === nonce && sessionIds.includes(event.data.sessionId)) {
+      alive.add(event.data.sessionId);
+    }
   };
   channel.postMessage({ type: "probe", nonce });
   await new Promise((resolve) => setTimeout(resolve, options.probeMs ?? 120));
   channel.close();
-  return candidates.filter((candidate) => !alive.has(candidate.sessionId));
+  return alive;
+}
+
+function deleteDatabase(indexedDB, databaseName) {
+  if (!indexedDB) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const request = indexedDB.deleteDatabase(databaseName);
+    request.onsuccess = () => resolve(true);
+    request.onerror = () => resolve(false);
+    request.onblocked = () => resolve(false);
+  });
+}
+
+export async function cleanupRetiredBrowserSessions(options = {}) {
+  const localStorage = storageFor(options.localStorage, "localStorage");
+  const indexedDB = options.indexedDB
+    ?? (typeof globalThis !== "undefined" ? globalThis.indexedDB : null);
+  const excludeSessionId = options.excludeSessionId || null;
+  const candidateIds = Object.keys(readRegistry(localStorage))
+    .filter((sessionId) => sessionId !== excludeSessionId);
+  const alive = await liveSessionIds(candidateIds, options);
+  const removed = [];
+
+  for (const sessionId of candidateIds) {
+    if (alive.has(sessionId)) continue;
+    const registry = readRegistry(localStorage);
+    const record = registry[sessionId];
+    if (!record) continue;
+    const recentOwner = ["active", "close-pending", "claimed"].includes(record.state)
+      && nowFor(options) - Number(record.lastSeen || 0) < ACTIVE_LEASE_MS;
+    if (recentOwner) continue;
+    if (sessionNeedsExport(record) && Number(record.lastChangedAt || 0) > 0 && record.state !== "discardable") {
+      const latest = readRegistry(localStorage);
+      const unchanged = latest[sessionId]?.ownerId === record.ownerId
+        && latest[sessionId]?.lastSeen === record.lastSeen;
+      if (!unchanged) continue;
+      latest[sessionId] = {
+        ...record,
+        state: "orphan",
+        claimedAt: null,
+        claimedBy: null,
+      };
+      writeRegistry(localStorage, latest);
+      continue;
+    }
+    const databaseName = record.databaseName || `${BROWSER_DATABASE_NAME}-${sessionId}`;
+    if (!await deleteDatabase(indexedDB, databaseName)) continue;
+    const latest = readRegistry(localStorage);
+    const unchanged = latest[sessionId]?.ownerId === record.ownerId
+      && latest[sessionId]?.lastSeen === record.lastSeen;
+    if (!unchanged) continue;
+    delete latest[sessionId];
+    writeRegistry(localStorage, latest);
+    removed.push(sessionId);
+  }
+
+  return removed;
+}
+
+export async function discardOrphanedBrowserSession(sessionId, options = {}) {
+  const localStorage = storageFor(options.localStorage, "localStorage");
+  const indexedDB = options.indexedDB
+    ?? (typeof globalThis !== "undefined" ? globalThis.indexedDB : null);
+  return withRegistryLock(locksFor(options.locks), async () => {
+    const registry = readRegistry(localStorage);
+    const record = registry[sessionId];
+    if (!record || record.state !== "orphan") return false;
+    const databaseName = record.databaseName || `${BROWSER_DATABASE_NAME}-${sessionId}`;
+    if (!await deleteDatabase(indexedDB, databaseName)) return false;
+    const latest = readRegistry(localStorage);
+    if (latest[sessionId]?.ownerId !== record.ownerId || latest[sessionId]?.lastSeen !== record.lastSeen) return false;
+    delete latest[sessionId];
+    writeRegistry(localStorage, latest);
+    return true;
+  });
+}
+
+export async function discardAllOrphanedBrowserSessions(options = {}) {
+  const localStorage = storageFor(options.localStorage, "localStorage");
+  const records = listOrphanedBrowserSessions(options);
+  const removed = [];
+  const failed = [];
+  for (const record of records) {
+    if (await discardOrphanedBrowserSession(record.sessionId, options)) removed.push(record.sessionId);
+    else failed.push(record.sessionId);
+  }
+  return { removed, failed };
 }
 
 function navigationType(performanceApi) {
@@ -174,18 +208,14 @@ export function createBrowserSession(options = {}) {
   const performanceApi = options.performance
     ?? (typeof globalThis !== "undefined" ? globalThis.performance : null);
   const now = nowFor(options);
+  const currentTime = () => nowFor(options);
   const ownerId = randomId("owner");
   const registry = readRegistry(localStorage);
-  const restoreToken = options.restoreToken || null;
-  const restored = restoreToken
-    ? Object.entries(registry).find(([, record]) => record?.state === "claimed" && record.restoreToken === restoreToken)
-    : null;
-  let sessionId = restored?.[0] || sessionStorage?.getItem(SESSION_ID_KEY) || "";
+  let sessionId = sessionStorage?.getItem(SESSION_ID_KEY) || "";
   const isReload = navigationType(performanceApi) === "reload";
 
   let isNew = !sessionId;
-  if (restored) isNew = false;
-  if (sessionId && !restored && !isReload) {
+  if (sessionId && !isReload) {
     sessionId = "";
     isNew = true;
   }
@@ -199,8 +229,6 @@ export function createBrowserSession(options = {}) {
     state: "active",
     lastSeen: now,
     databaseName,
-    restoreToken: null,
-    claimedAt: null,
   };
   writeRegistry(localStorage, registry);
 
@@ -209,27 +237,48 @@ export function createBrowserSession(options = {}) {
     ownerId,
     databaseName,
     isNew,
-    restored: Boolean(restored),
     persistence: createBrowserPersistence({
       databaseName,
       localStorage: sessionStorage,
       autoMigrate: false,
     }),
     heartbeat() {
-      return updateOwnedSession(localStorage, sessionId, ownerId, { state: "active" }, Date.now());
+      return updateOwnedSession(localStorage, sessionId, ownerId, { state: "active" }, currentTime());
     },
-    markDirty(workspaceLabel) {
+    markDirty() {
+      const timestamp = currentTime();
       return updateOwnedSession(localStorage, sessionId, ownerId, {
+        lastChangedAt: timestamp,
         needsExport: true,
-        workspaceLabel: workspaceLabel || "Untitled workspace",
         state: "active",
-      }, Date.now());
+      }, timestamp);
     },
     markExported() {
-      return updateOwnedSession(localStorage, sessionId, ownerId, { needsExport: false, state: "active" }, Date.now());
+      const timestamp = currentTime();
+      return updateOwnedSession(localStorage, sessionId, ownerId, {
+        lastExportedAt: timestamp,
+        needsExport: false,
+        state: "active",
+      }, timestamp);
+    },
+    markImported() {
+      const timestamp = currentTime();
+      return updateOwnedSession(localStorage, sessionId, ownerId, {
+        lastChangedAt: timestamp,
+        lastExportedAt: timestamp,
+        needsExport: false,
+        state: "active",
+      }, timestamp);
+    },
+    syncWorkspace(workspace) {
+      if (!workspace) return false;
+      return updateOwnedSession(localStorage, sessionId, ownerId, {
+        workspaceId: String(workspace.id || ""),
+        workspaceName: String(workspace.name || "Tactile"),
+      }, currentTime());
     },
     markClosePending() {
-      const timestamp = Date.now();
+      const timestamp = currentTime();
       return updateOwnedSession(localStorage, sessionId, ownerId, {
         state: "close-pending",
         closeRequestedAt: timestamp,
@@ -240,30 +289,79 @@ export function createBrowserSession(options = {}) {
         state: "active",
         closeRequestedAt: null,
         closedAt: null,
-      }, Date.now());
+      }, currentTime());
     },
     markClosed() {
-      const fresh = readRegistry(localStorage)[sessionId];
-      const timestamp = Date.now();
-      return updateOwnedSession(localStorage, sessionId, ownerId, fresh?.needsExport
-        ? { state: "orphan", closedAt: timestamp }
-        : { state: "discardable", closedAt: timestamp }, timestamp);
+      const timestamp = currentTime();
+      return updateOwnedSession(localStorage, sessionId, ownerId, {
+        state: session.needsExport ? "orphan" : "discardable",
+        closedAt: timestamp,
+      }, timestamp);
     },
     get needsExport() {
-      return readRegistry(localStorage)[sessionId]?.needsExport === true;
+      return sessionNeedsExport(readRegistry(localStorage)[sessionId]);
     },
     get ownsSession() {
       const fresh = readRegistry(localStorage)[sessionId];
-      return fresh?.ownerId === ownerId && fresh.state !== "claimed";
+      return fresh?.ownerId === ownerId;
     },
-    discoverOrphans() {
-      return discoverOrphanedBrowserSessions({ localStorage, excludeSessionId: sessionId });
+    cleanupRetired() {
+      return cleanupRetiredBrowserSessions({ localStorage, excludeSessionId: sessionId });
     },
-    probeOrphans() {
-      return probeOrphanedBrowserSessions({ localStorage, excludeSessionId: sessionId });
+    listOrphans() {
+      return listOrphanedBrowserSessions({ localStorage, excludeSessionId: sessionId });
     },
-    cleanupDiscardable() {
-      return cleanupDiscardableBrowserSessions({ localStorage });
+    discardOrphan(orphanSessionId) {
+      return discardOrphanedBrowserSession(orphanSessionId, {
+        localStorage,
+        indexedDB: options.indexedDB,
+        locks: options.locks,
+      });
+    },
+    discardAllOrphans() {
+      return discardAllOrphanedBrowserSessions({
+        localStorage,
+        indexedDB: options.indexedDB,
+        locks: options.locks,
+        excludeSessionId: sessionId,
+      });
+    },
+    restoreOrphan(orphanSessionId) {
+      return withRegistryLock(locksFor(options.locks), async () => {
+        const fresh = readRegistry(localStorage);
+        const target = fresh[orphanSessionId];
+        const current = fresh[sessionId];
+        if (!target || target.state !== "orphan" || !current || current.ownerId !== ownerId) return false;
+        const timestamp = currentTime();
+        fresh[sessionId] = {
+          ...current,
+          state: sessionNeedsExport(current) ? "orphan" : "discardable",
+          closedAt: timestamp,
+          lastSeen: timestamp,
+        };
+        fresh[orphanSessionId] = {
+          ...target,
+          state: "claimed",
+          claimedAt: timestamp,
+          claimedBy: ownerId,
+          lastSeen: timestamp,
+        };
+        writeRegistry(localStorage, fresh);
+        sessionStorage?.setItem(SESSION_ID_KEY, orphanSessionId);
+        sessionStorage?.removeItem(BOOT_METADATA_KEY);
+
+        const locationApi = options.location
+          ?? (typeof window !== "undefined" ? window.location : null);
+        const historyApi = options.history
+          ?? (typeof window !== "undefined" ? window.history : null);
+        if (locationApi && historyApi) {
+          const url = new URL(locationApi.href);
+          url.searchParams.set("restore-session", orphanSessionId);
+          historyApi.replaceState(null, "", url);
+          locationApi.reload();
+        }
+        return true;
+      });
     },
   };
   const Channel = options.BroadcastChannel

@@ -1,5 +1,6 @@
 import { useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
+  IconAlertTriangle,
   IconCheck,
   IconChevronDown,
   IconChevronRight,
@@ -625,6 +626,8 @@ export function FilesPanel({
   activeObjectId,
   pinned = false,
   width = 360,
+  orphanedWorkspaceCount = 0,
+  onOpenRestoreSettings,
   onOpenRoute,
   onCreateObject,
   onUpdateObject,
@@ -1146,6 +1149,18 @@ export function FilesPanel({
             </div>
           )}
         </div>
+        {orphanedWorkspaceCount > 0 ? (
+          <div className="files-restore-row" role="status">
+            <IconAlertTriangle size={15} stroke={1.7} aria-hidden="true" />
+            <span>
+              <strong>Workspaces can be restored</strong>
+              <small>{orphanedWorkspaceCount} closed workspace{orphanedWorkspaceCount === 1 ? " is" : "s are"} available.</small>
+            </span>
+            <button type="button" onClick={(event) => onOpenRestoreSettings?.(event.currentTarget)}>
+              Open Settings
+            </button>
+          </div>
+        ) : null}
         <footer className="files-panel-footer">
           <span>Open any object directly</span>
           <span className="files-panel-footer-hint"><kbd>↑↓</kbd> move <kbd>↵</kbd> open</span>

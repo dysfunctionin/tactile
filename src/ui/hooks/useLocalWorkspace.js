@@ -35,10 +35,8 @@ import {
 } from "../../core/sheet/axisCells.js";
 import { loadWorkspace, loadWorkspaceCache, saveWorkspace, saveWorkspaceCache } from "../../platform/browser/storage.js";
 import {
+  BROWSER_SESSION_REGISTRY_KEY,
   browserSessionForPage,
-  claimOrphanedBrowserSessions,
-  deleteBrowserSessions,
-  releaseBrowserSessionClaim,
 } from "../../platform/browser/session.js";
 import { createWave2Shadow } from "../../core/engine/shadow.js";
 import { recordCellChanges } from "../objects/sheet/grid/cellChangeJournal.js";
@@ -57,14 +55,6 @@ function initialWorkspace() {
     });
   }
   return workspace;
-}
-
-function browserRecoveryLabel(workspace) {
-  const workspaceName = String(workspace?.name || "").trim();
-  const homeTitle = String(workspace?.objects?.[workspace?.homeObjectId]?.title || "").trim();
-  if (workspaceName && workspaceName !== "Tactile") return workspaceName;
-  if (homeTitle && homeTitle !== "Home") return homeTitle;
-  return workspaceName || homeTitle || "Untitled workspace";
 }
 
 function touch(workspace, objects, repairTopology = false) {
@@ -100,10 +90,9 @@ export function useLocalWorkspace() {
   const nativeRuntime = isTauriRuntime();
   const browserSessionRef = useRef(null);
   if (!nativeRuntime && !browserSessionRef.current) {
+    browserSessionRef.current = browserSessionForPage();
     const params = new URLSearchParams(window.location.search);
-    const restoreToken = params.get("restore-session");
-    browserSessionRef.current = browserSessionForPage({ restoreToken });
-    if (restoreToken) {
+    if (params.has("restore-session")) {
       const url = new URL(window.location.href);
       url.searchParams.delete("restore-session");
       window.history.replaceState(null, "", url);
@@ -114,7 +103,9 @@ export function useLocalWorkspace() {
   const [hydrated, setHydrated] = useState(false);
   const [needsExport, setNeedsExport] = useState(false);
   const [closeExportRequested, setCloseExportRequested] = useState(false);
-  const [recoverySessions, setRecoverySessions] = useState([]);
+  const [orphanedWorkspaces, setOrphanedWorkspaces] = useState(() => (
+    browserSessionRef.current?.listOrphans() || []
+  ));
   const saveTimer = useRef(null);
   const saveSequenceRef = useRef(0);
   const historyRef = useRef({ past: [], future: [], lastKey: null, lastAt: 0 });
@@ -122,9 +113,9 @@ export function useLocalWorkspace() {
   const workspaceMutationRef = useRef(false);
   const replacementReconcileRef = useRef(null);
 
-  const markBrowserWorkspaceDirty = useCallback((nextWorkspace) => {
+  const markBrowserWorkspaceDirty = useCallback(() => {
     if (!browserSessionRef.current) return;
-    browserSessionRef.current.markDirty(browserRecoveryLabel(nextWorkspace));
+    browserSessionRef.current.markDirty();
     setNeedsExport(true);
   }, []);
 
@@ -133,6 +124,28 @@ export function useLocalWorkspace() {
     browserSessionRef.current.markExported();
     setNeedsExport(false);
   }, []);
+
+  const refreshOrphanedWorkspaces = useCallback(() => {
+    setOrphanedWorkspaces(browserSessionRef.current?.listOrphans() || []);
+  }, []);
+
+  const restoreWorkspace = useCallback(async (sessionId) => {
+    const restored = await browserSessionRef.current?.restoreOrphan(sessionId);
+    if (!restored) throw new Error("That workspace is no longer available to restore.");
+  }, []);
+
+  const discardWorkspace = useCallback(async (sessionId) => {
+    const discarded = await browserSessionRef.current?.discardOrphan(sessionId);
+    refreshOrphanedWorkspaces();
+    if (!discarded) throw new Error("That workspace could not be discarded.");
+  }, [refreshOrphanedWorkspaces]);
+
+  const discardAllWorkspaces = useCallback(async () => {
+    const result = await browserSessionRef.current?.discardAllOrphans();
+    refreshOrphanedWorkspaces();
+    if (result?.failed?.length) throw new Error("Some workspaces could not be discarded.");
+    return result;
+  }, [refreshOrphanedWorkspaces]);
 
   useEffect(() => {
     let cancelled = false;
@@ -158,6 +171,8 @@ export function useLocalWorkspace() {
       if (!workspaceMutationRef.current) {
         setWorkspace(normalizeWorkspace(cloneHistoryWorkspace(resolved || initial)));
       }
+      browserSessionRef.current?.syncWorkspace(resolved || initial);
+      setNeedsExport(browserSessionRef.current?.needsExport === true);
       historyRef.current = { past: [], future: [], lastKey: null, lastAt: 0 };
       setHydrated(true);
       setSaveState("saved");
@@ -173,13 +188,10 @@ export function useLocalWorkspace() {
     const session = browserSessionRef.current;
     if (!session) return undefined;
     const heartbeat = window.setInterval(() => session.heartbeat(), 5_000);
-    let recoveryTimer = null;
     if (session.isNew) {
-      void session.cleanupDiscardable();
-      recoveryTimer = window.setTimeout(async () => {
-        const candidates = await session.probeOrphans();
-        if (candidates.length) setRecoverySessions(candidates);
-      }, 2_100);
+      void session.cleanupRetired().finally(refreshOrphanedWorkspaces);
+    } else {
+      refreshOrphanedWorkspaces();
     }
     const handleBeforeUnload = (event) => {
       if (!session.needsExport) return;
@@ -193,57 +205,30 @@ export function useLocalWorkspace() {
       if (document.visibilityState === "hidden") return;
       session.resume();
     };
+    const handleStorage = (event) => {
+      if (event.storageArea === window.localStorage && event.key === BROWSER_SESSION_REGISTRY_KEY) {
+        refreshOrphanedWorkspaces();
+      }
+    };
     window.addEventListener("beforeunload", handleBeforeUnload);
     window.addEventListener("pagehide", handlePageHide);
     window.addEventListener("focus", handleResume);
+    window.addEventListener("storage", handleStorage);
     document.addEventListener("visibilitychange", handleResume);
     return () => {
       window.clearInterval(heartbeat);
-      if (recoveryTimer) window.clearTimeout(recoveryTimer);
       window.removeEventListener("beforeunload", handleBeforeUnload);
       window.removeEventListener("pagehide", handlePageHide);
       window.removeEventListener("focus", handleResume);
+      window.removeEventListener("storage", handleStorage);
       document.removeEventListener("visibilitychange", handleResume);
     };
-  }, []);
+  }, [refreshOrphanedWorkspaces]);
 
-  const restoreRecoverySessions = useCallback((sessionIds) => {
-    const availableIds = new Set(recoverySessions.map((session) => session.sessionId));
-    const requestedIds = [...new Set(sessionIds || [])].filter((sessionId) => availableIds.has(sessionId));
-    if (!requestedIds.length) return;
-    const discardedIds = recoverySessions
-      .map((session) => session.sessionId)
-      .filter((sessionId) => !requestedIds.includes(sessionId));
-    const claims = claimOrphanedBrowserSessions(requestedIds);
-    if (!claims.length) {
-      setRecoverySessions((current) => current.filter((session) => !requestedIds.includes(session.sessionId)));
-      return;
-    }
-    const restoreUrl = (token) => {
-      const url = new URL(window.location.href);
-      url.searchParams.set("restore-session", token);
-      return url.href;
-    };
-    const blockedIds = [];
-    claims.forEach((claim) => {
-      const opened = window.open(restoreUrl(claim.restoreToken), "_blank");
-      if (!opened) {
-        blockedIds.push(claim.sessionId);
-        releaseBrowserSessionClaim(claim.restoreToken);
-      }
-    });
-    const finishRestore = () => {
-      setRecoverySessions((current) => current.filter((session) => blockedIds.includes(session.sessionId)));
-    };
-    if (discardedIds.length) void deleteBrowserSessions(discardedIds).then(finishRestore);
-    else finishRestore();
-  }, [recoverySessions]);
-
-  const discardRecoverySessions = useCallback(async () => {
-    const ids = recoverySessions.map((session) => session.sessionId);
-    setRecoverySessions([]);
-    await deleteBrowserSessions(ids);
-  }, [recoverySessions]);
+  useEffect(() => {
+    if (!hydrated || !browserSessionRef.current) return;
+    browserSessionRef.current.syncWorkspace(workspace);
+  }, [hydrated, workspace.id, workspace.name]);
 
   useEffect(() => {
     if (!hydrated) return undefined;
@@ -375,18 +360,22 @@ export function useLocalWorkspace() {
     });
   }, [markBrowserWorkspaceDirty]);
 
-  const replaceWorkspace = useCallback(async (nextWorkspace) => {
+  const replaceWorkspace = useCallback(async (nextWorkspace, options = {}) => {
     const normalized = normalizeWorkspace(nextWorkspace);
     const shadow = wave2ShadowRef.current;
     const replacesPersistedSnapshot = shadow?.state?.persistence === "active";
+    const cleanBaseline = options.cleanBaseline === true;
     workspaceMutationRef.current = true;
     historyRef.current = { past: [], future: [], lastKey: null, lastAt: 0 };
-    markBrowserWorkspaceDirty(normalized);
+    if (!cleanBaseline) markBrowserWorkspaceDirty(normalized);
     if (replacesPersistedSnapshot) {
       await shadow.replaceSnapshot(normalized, { normalized: true });
       replacementReconcileRef.current = normalized;
     }
     setWorkspace(normalized);
+    if (cleanBaseline && browserSessionRef.current?.markImported()) {
+      setNeedsExport(false);
+    }
     return normalized;
   }, [markBrowserWorkspaceDirty]);
 
@@ -816,13 +805,13 @@ export function useLocalWorkspace() {
     hydrated,
     saveState,
     needsExport,
+    orphanedWorkspaces,
+    restoreWorkspace,
+    discardWorkspace,
+    discardAllWorkspaces,
     closeExportRequested,
     clearCloseExportRequest: () => setCloseExportRequested(false),
     markWorkspaceExported,
-    recoverySessions,
-    dismissRecovery: () => setRecoverySessions([]),
-    restoreRecoverySessions,
-    discardRecoverySessions,
     replaceWorkspace,
     updateObject,
     updateCell,
