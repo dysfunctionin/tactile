@@ -34,7 +34,10 @@ import {
   shiftCells,
 } from "../../core/sheet/axisCells.js";
 import { loadWorkspace, loadWorkspaceCache, saveWorkspace, saveWorkspaceCache } from "../../platform/browser/storage.js";
-import { browserSessionForPage } from "../../platform/browser/session.js";
+import {
+  BROWSER_SESSION_REGISTRY_KEY,
+  browserSessionForPage,
+} from "../../platform/browser/session.js";
 import { createWave2Shadow } from "../../core/engine/shadow.js";
 import { recordCellChanges } from "../objects/sheet/grid/cellChangeJournal.js";
 import { isTauriRuntime } from "../../platform/tauri/runtime.ts";
@@ -100,6 +103,9 @@ export function useLocalWorkspace() {
   const [hydrated, setHydrated] = useState(false);
   const [needsExport, setNeedsExport] = useState(false);
   const [closeExportRequested, setCloseExportRequested] = useState(false);
+  const [orphanedWorkspaces, setOrphanedWorkspaces] = useState(() => (
+    browserSessionRef.current?.listOrphans() || []
+  ));
   const saveTimer = useRef(null);
   const saveSequenceRef = useRef(0);
   const historyRef = useRef({ past: [], future: [], lastKey: null, lastAt: 0 });
@@ -118,6 +124,28 @@ export function useLocalWorkspace() {
     browserSessionRef.current.markExported();
     setNeedsExport(false);
   }, []);
+
+  const refreshOrphanedWorkspaces = useCallback(() => {
+    setOrphanedWorkspaces(browserSessionRef.current?.listOrphans() || []);
+  }, []);
+
+  const restoreWorkspace = useCallback(async (sessionId) => {
+    const restored = await browserSessionRef.current?.restoreOrphan(sessionId);
+    if (!restored) throw new Error("That workspace is no longer available to restore.");
+  }, []);
+
+  const discardWorkspace = useCallback(async (sessionId) => {
+    const discarded = await browserSessionRef.current?.discardOrphan(sessionId);
+    refreshOrphanedWorkspaces();
+    if (!discarded) throw new Error("That workspace could not be discarded.");
+  }, [refreshOrphanedWorkspaces]);
+
+  const discardAllWorkspaces = useCallback(async () => {
+    const result = await browserSessionRef.current?.discardAllOrphans();
+    refreshOrphanedWorkspaces();
+    if (result?.failed?.length) throw new Error("Some workspaces could not be discarded.");
+    return result;
+  }, [refreshOrphanedWorkspaces]);
 
   useEffect(() => {
     let cancelled = false;
@@ -143,6 +171,8 @@ export function useLocalWorkspace() {
       if (!workspaceMutationRef.current) {
         setWorkspace(normalizeWorkspace(cloneHistoryWorkspace(resolved || initial)));
       }
+      browserSessionRef.current?.syncWorkspace(resolved || initial);
+      setNeedsExport(browserSessionRef.current?.needsExport === true);
       historyRef.current = { past: [], future: [], lastKey: null, lastAt: 0 };
       setHydrated(true);
       setSaveState("saved");
@@ -158,7 +188,11 @@ export function useLocalWorkspace() {
     const session = browserSessionRef.current;
     if (!session) return undefined;
     const heartbeat = window.setInterval(() => session.heartbeat(), 5_000);
-    if (session.isNew) void session.cleanupRetired();
+    if (session.isNew) {
+      void session.cleanupRetired().finally(refreshOrphanedWorkspaces);
+    } else {
+      refreshOrphanedWorkspaces();
+    }
     const handleBeforeUnload = (event) => {
       if (!session.needsExport) return;
       session.markClosePending();
@@ -171,18 +205,30 @@ export function useLocalWorkspace() {
       if (document.visibilityState === "hidden") return;
       session.resume();
     };
+    const handleStorage = (event) => {
+      if (event.storageArea === window.localStorage && event.key === BROWSER_SESSION_REGISTRY_KEY) {
+        refreshOrphanedWorkspaces();
+      }
+    };
     window.addEventListener("beforeunload", handleBeforeUnload);
     window.addEventListener("pagehide", handlePageHide);
     window.addEventListener("focus", handleResume);
+    window.addEventListener("storage", handleStorage);
     document.addEventListener("visibilitychange", handleResume);
     return () => {
       window.clearInterval(heartbeat);
       window.removeEventListener("beforeunload", handleBeforeUnload);
       window.removeEventListener("pagehide", handlePageHide);
       window.removeEventListener("focus", handleResume);
+      window.removeEventListener("storage", handleStorage);
       document.removeEventListener("visibilitychange", handleResume);
     };
-  }, []);
+  }, [refreshOrphanedWorkspaces]);
+
+  useEffect(() => {
+    if (!hydrated || !browserSessionRef.current) return;
+    browserSessionRef.current.syncWorkspace(workspace);
+  }, [hydrated, workspace.id, workspace.name]);
 
   useEffect(() => {
     if (!hydrated) return undefined;
@@ -755,6 +801,10 @@ export function useLocalWorkspace() {
     hydrated,
     saveState,
     needsExport,
+    orphanedWorkspaces,
+    restoreWorkspace,
+    discardWorkspace,
+    discardAllWorkspaces,
     closeExportRequested,
     clearCloseExportRequest: () => setCloseExportRequested(false),
     markWorkspaceExported,

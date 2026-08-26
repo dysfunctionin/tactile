@@ -53,6 +53,10 @@ export function App() {
     closeExportRequested,
     clearCloseExportRequest,
     markWorkspaceExported,
+    orphanedWorkspaces,
+    restoreWorkspace,
+    discardWorkspace,
+    discardAllWorkspaces,
     replaceWorkspace,
     updateObject,
     updateCell,
@@ -770,6 +774,7 @@ export function App() {
           path={activeDockPath}
           onNavigatePath={(item) => inOut.navigateToRoute(item.route, { mode: "full" })}
           filesOpen={shell.filesOpen}
+          orphanedWorkspaceCount={orphanedWorkspaces.length}
           onOpenFiles={shell.toggleFiles}
           onOpenSettings={shell.openSettings}
           onUndo={undo}
@@ -786,6 +791,8 @@ export function App() {
             activeObjectId={activeObjectId}
             pinned={shell.filesPinned}
             width={shell.filesWidth}
+            orphanedWorkspaceCount={orphanedWorkspaces.length}
+            onOpenRestoreSettings={(sourceElement) => shell.openSettings(sourceElement, "files")}
             onOpenRoute={(route) => inOut.navigateToRoute(route, { mode: "full", immediate: true })}
             onCreateObject={(type) => {
               const created = createObject(type);
@@ -818,6 +825,10 @@ export function App() {
             activeTheme={activeTheme}
             customThemes={themeSources}
             settings={workspace.settings}
+            orphanedWorkspaces={orphanedWorkspaces}
+            onRestoreWorkspace={nativeRuntime ? undefined : restoreWorkspace}
+            onDiscardWorkspace={nativeRuntime ? undefined : discardWorkspace}
+            onDiscardAllWorkspaces={nativeRuntime ? undefined : discardAllWorkspaces}
             onSelectTheme={selectTheme}
             onCloneTheme={(theme) => saveGlobalTheme(cloneTheme(theme))}
             onUpdateTheme={updateGlobalTheme}

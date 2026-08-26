@@ -295,6 +295,7 @@ export function AppDock({
   onNavigatePath,
   onOpenFiles,
   filesOpen,
+  orphanedWorkspaceCount = 0,
   onOpenSettings,
   onUndo,
   onRedo,
@@ -329,11 +330,19 @@ export function AppDock({
         type="button"
         onClick={(event) => onOpenFiles?.(event.currentTarget)}
         data-tooltip="Browse files · Ctrl+P"
-        aria-label="Browse files"
+        aria-label={orphanedWorkspaceCount > 0
+          ? `Browse files, ${orphanedWorkspaceCount} workspace${orphanedWorkspaceCount === 1 ? "" : "s"} can be restored`
+          : "Browse files"}
         aria-expanded={filesOpen}
       >
         <IconFolderOpen size={14} stroke={1.65} />
         <span>Files</span>
+        {orphanedWorkspaceCount > 0 ? (
+          <span
+            className="app-dock-files-alert"
+            aria-hidden="true"
+          />
+        ) : null}
       </button>
       {pathPresent ? <DockPath path={path} onNavigatePath={onNavigatePath} /> : null}
       <div className="app-dock-history">

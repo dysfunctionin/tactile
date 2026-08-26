@@ -3420,6 +3420,194 @@ kbd {
   margin-bottom: 28px;
 }
 
+.restore-workspaces {
+  margin: -10px 0 26px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.restore-workspaces-heading {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 0;
+}
+
+.restore-workspaces-heading > span,
+.restore-workspaces-heading > span > span {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+}
+
+.restore-workspaces-heading > span > span {
+  display: grid;
+  gap: 3px;
+}
+
+.restore-workspaces-heading svg {
+  flex: 0 0 auto;
+  color: var(--accent);
+}
+
+.restore-workspaces-heading strong {
+  color: var(--ink);
+  font-size: 10px;
+}
+
+.restore-workspaces-heading small {
+  color: var(--muted);
+  font-size: 8px;
+  line-height: 1.45;
+}
+
+.restore-workspaces button {
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--muted);
+  background: var(--paper-elevated);
+  font-size: 8.5px;
+  cursor: pointer;
+}
+
+.restore-workspaces button:hover:not(:disabled) {
+  border-color: var(--line-strong);
+  color: var(--ink);
+}
+
+.restore-workspaces button.is-danger {
+  color: var(--negative);
+}
+
+.restore-workspaces button.is-danger:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--negative) 48%, var(--line));
+  color: var(--negative);
+  background: color-mix(in srgb, var(--negative) 8%, var(--paper-elevated));
+}
+
+.restore-workspaces button:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.restore-workspaces-list {
+  border-top: 1px solid var(--line);
+}
+
+.restore-workspaces-columns,
+.restore-workspace-row {
+  display: grid;
+  grid-template-columns: minmax(130px, 1.35fr) minmax(112px, 1fr) minmax(112px, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.restore-workspaces-columns {
+  min-height: 26px;
+  color: var(--faint);
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.restore-workspace-row {
+  min-height: 44px;
+  padding: 7px 0;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 8px;
+}
+
+.restore-workspace-row strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.restore-workspace-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 5px;
+}
+
+.restore-workspaces-empty {
+  margin: 0;
+  padding: 11px 0 13px;
+  border-top: 1px solid var(--line);
+  color: var(--faint);
+  font-size: 8.5px;
+}
+
+.restore-workspaces-confirm {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 0;
+  border-top: 1px solid color-mix(in srgb, var(--negative) 35%, var(--line));
+  color: var(--negative);
+  font-size: 8px;
+}
+
+.restore-workspaces-error {
+  margin: 0;
+  padding: 0 0 9px;
+  color: var(--negative);
+  font-size: 8px;
+}
+
+@media (max-width: 720px) {
+  .restore-workspaces-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .restore-workspaces-columns {
+    display: none;
+  }
+
+  .restore-workspace-row {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px 12px;
+    padding: 10px 0;
+  }
+
+  .restore-workspace-row > strong,
+  .restore-workspace-actions {
+    grid-column: 1 / -1;
+  }
+
+  .restore-workspace-row > span[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 3px;
+    color: var(--faint);
+    font-size: 7px;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+
+  .restore-workspace-actions {
+    justify-content: flex-start;
+  }
+
+  .restore-workspaces-confirm {
+    grid-template-columns: auto 1fr;
+  }
+}
+
 .agents-settings-intro {
   display: flex;
   align-items: flex-start;
@@ -6369,6 +6557,19 @@ kbd {
   flex: 0 0 auto;
 }
 
+.app-dock .app-dock-files-alert {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 6px;
+  height: 6px;
+  display: block;
+  border: 1px solid var(--paper-elevated);
+  border-radius: 50%;
+  background: var(--negative);
+  pointer-events: none;
+}
+
 /* Keep the Files boundary explicit when the path is empty. The separator uses
    ::before so the button's document-level tooltip can continue to own ::after. */
 .app-dock .app-dock-files::before {
@@ -6460,7 +6661,7 @@ kbd {
   inset: 0 auto 0 0;
   width: min(var(--files-sidebar-width, 360px), calc(100vw - 24px));
   display: grid;
-  grid-template-rows: auto auto auto auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto auto auto minmax(0, 1fr) auto auto;
   overflow: hidden;
   border-right: 1px solid var(--line-strong);
   color: var(--ink);
@@ -6896,6 +7097,53 @@ kbd {
   border-top: 1px solid var(--line);
   color: var(--faint);
   font-size: 8px;
+}
+
+.files-restore-row {
+  min-height: 54px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--line);
+  color: var(--accent);
+  background: var(--tray);
+}
+
+.files-restore-row > span {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.files-restore-row strong {
+  color: var(--ink);
+  font-size: 9px;
+}
+
+.files-restore-row small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 7.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.files-restore-row button {
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--muted);
+  background: var(--paper-elevated);
+  font-size: 8.5px;
+  cursor: pointer;
+}
+
+.files-restore-row button:hover {
+  border-color: var(--line-strong);
+  color: var(--ink);
 }
 
 .files-panel-footer-hint {
