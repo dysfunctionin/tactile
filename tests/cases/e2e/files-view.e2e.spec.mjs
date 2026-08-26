@@ -709,6 +709,9 @@ scenario(
     await page.goto("/");
     await importWorkspace(page);
     await page.getByRole("button", { name: "Browse files", exact: true }).click();
+    await page.locator(".files-panel").evaluate(async (panel) => {
+      await Promise.all(panel.getAnimations().map((animation) => animation.finished.catch(() => undefined)));
+    });
 
     const homeRow = page.locator('.files-tree-row[data-object-id="home"]');
     const childRow = page.locator('.files-tree-row[data-object-id="child"]');
